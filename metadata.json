@@ -1,0 +1,6 @@
+{
+  "name": "SnapNext",
+  "description": "The world's smartest AI-powered memory platform that automatically organizes, understands, protects, and transforms your digital life.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
