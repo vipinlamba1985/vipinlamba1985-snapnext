@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Home, Images, Sparkles, Users, UserCircle, Camera, Bell, Search, Plus, Send, Smartphone, Cloud, Instagram, Facebook, Star, Heart, Monitor, Plane, FileText, MapPin, CalendarDays, Folder, MessageCircle, Play, ImagePlus, Layers, Share2, Settings, CheckCircle2, ChevronRight, ShieldCheck, AlertCircle } from 'lucide-react';
+import { getStoredUser, getToken } from '@/lib/api-client';
 
 const statuses = [
   { name: 'Add status', time: 'Share a moment', color: 'from-[#181120] to-[#05020a]', add: true },
@@ -52,7 +53,78 @@ function FolderCard({ f }) { const Icon = f.icon; return <button className="roun
 function SourceCard({ s }) { const Icon = s.icon; return <button className="rounded-[26px] border border-white/10 bg-white/[0.06] p-4 text-left"><div className={`mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${s.color}`}><Icon className="h-6 w-6" /></div><div className="font-black text-white">{s.name}</div><div className="mt-1 text-xs text-white/55">{s.sub}</div><div className="mt-4 rounded-full bg-white px-4 py-2 text-center text-xs font-black text-black">Connect</div></button>; }
 function Quick({ icon: Icon, title, sub }) { return <button className="rounded-[24px] border border-white/10 bg-white/[0.06] p-4 text-left"><div className="mb-3 grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><Icon className="h-5 w-5" /></div><div className="text-sm font-black text-white">{title}</div><div className="text-xs text-white/55">{sub}</div></button>; }
 
-function HomeView({ setTab }) { return <Page><section><div className="mb-6 flex items-center justify-between"><div><p className="text-sm font-bold text-pink-300">Good evening, Vipin 👋</p><h1 className="text-3xl font-black text-white">Your Digital Life, Ready</h1><p className="mt-2 text-sm text-white/55">SnapNext prepares memories, posts, reels, and collages from your approved sources.</p></div><button onClick={() => setTab('profile')} className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10"><Settings className="h-5 w-5" /></button></div><Title title="Recent Status" action="View all" /><div className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto overflow-y-visible px-4 pb-2 pt-3">{statuses.map((s) => <StatusCard key={s.name} s={s} />)}</div></section><section><Title title="Today’s Ready-to-Post" sub="AI picked the best moments for social sharing" action="See all" /><div className="space-y-3">{['Today’s best post · Beach Weekend ready for Instagram','Father’s Day collage · 8 photos with Dad selected','Weekend reel · 12 clips with music idea'].map((t) => <div key={t} className="rounded-[28px] border border-pink-400/20 bg-gradient-to-br from-pink-500/15 to-purple-700/15 p-4 font-bold text-white">{t}</div>)}</div></section><section><Title title="People Activity" sub="Live updates from your private circle" /><div className="space-y-2">{people.slice(0,3).map((p) => <div key={p.name} className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.06] p-3"><div className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${p.color} text-xl`}>{p.emoji}</div><div className="flex-1"><div className="font-black text-white">{p.name}</div><p className="text-xs text-white/50">{p.update}</p></div><MessageCircle className="h-5 w-5 text-pink-300" /></div>)}</div></section></Page>; }
+function HomeView({ setTab, user }) { 
+  return <Page>
+    <section>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-bold text-pink-300">
+            {user ? `Welcome back, ${user.name} 👋` : 'Good evening, Vipin 👋'}
+          </p>
+          <h1 className="text-3xl font-black text-white">Your Digital Life, Ready</h1>
+          <p className="mt-2 text-sm text-white/55">SnapNext prepares memories, posts, reels, and collages from your approved sources.</p>
+          
+          {/* Dashboard / Auth visible CTA buttons */}
+          <div className="mt-6 flex flex-wrap gap-3">
+            {user ? (
+              <>
+                <Link href="/dashboard" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 text-xs font-black uppercase tracking-wider hover:brightness-110 transition shadow-lg shadow-pink-500/20">
+                  Go to Dashboard
+                </Link>
+                <Link href="/dashboard?tab=upload" className="px-5 py-2.5 rounded-xl bg-white/10 border border-white/10 text-xs font-black uppercase tracking-wider hover:bg-white/20 transition">
+                  Upload Media
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/signup" className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 text-xs font-black uppercase tracking-wider hover:brightness-110 transition shadow-lg shadow-pink-500/20">
+                  Create Free Account
+                </Link>
+                <Link href="/login" className="px-5 py-2.5 rounded-xl bg-white/10 border border-white/10 text-xs font-black uppercase tracking-wider hover:bg-white/20 transition">
+                  Sign In to Gallery
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+        <button onClick={() => setTab('profile')} className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10 shrink-0">
+          <Settings className="h-5 w-5" />
+        </button>
+      </div>
+      <Title title="Recent Status" action="View all" />
+      <div className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto overflow-y-visible px-4 pb-2 pt-3">
+        {statuses.map((s) => <StatusCard key={s.name} s={s} />)}
+      </div>
+    </section>
+    <section>
+      <Title title="Today’s Ready-to-Post" sub="AI picked the best moments for social sharing" action="See all" />
+      <div className="space-y-3">
+        {['Today’s best post · Beach Weekend ready for Instagram','Father’s Day collage · 8 photos with Dad selected','Weekend reel · 12 clips with music idea'].map((t) => (
+          <div key={t} className="rounded-[28px] border border-pink-400/20 bg-gradient-to-br from-pink-500/15 to-purple-700/15 p-4 font-bold text-white">
+            {t}
+          </div>
+        ))}
+      </div>
+    </section>
+    <section>
+      <Title title="People Activity" sub="Live updates from your private circle" />
+      <div className="space-y-2">
+        {people.slice(0,3).map((p) => (
+          <div key={p.name} className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.06] p-3">
+            <div className={`grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br ${p.color} text-xl`}>
+              {p.emoji}
+            </div>
+            <div className="flex-1">
+              <div className="font-black text-white">{p.name}</div>
+              <p className="text-xs text-white/50">{p.update}</p>
+            </div>
+            <MessageCircle className="h-5 w-5 text-pink-300" />
+          </div>
+        ))}
+      </div>
+    </section>
+  </Page>; 
+}
 
 function GalleryView() { return <Page><div><p className="text-sm font-bold text-pink-300">Smart Gallery</p><h1 className="text-3xl font-black text-white">Find anything fast</h1><p className="mt-2 text-sm text-white/50">Folders for people, trips, screenshots, documents, places, years, and AI picks.</p></div><div className="flex items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.07] px-4 py-3"><Search className="h-5 w-5 text-white/50" /><input className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/35" placeholder="Search anything in your gallery..." /></div><div className="grid grid-cols-2 gap-3">{folders.map((f) => <FolderCard key={f.name} f={f} />)}</div><section><Title title="Best of You" sub="Always visible: your best pictures selected by SnapNext AI" action="View all" /><div className="grid grid-cols-2 gap-3">{best.map((title, i) => <div key={title} className={`relative min-h-[190px] rounded-[28px] bg-gradient-to-br ${['from-pink-400 via-fuchsia-500 to-purple-700','from-cyan-300 via-blue-500 to-indigo-700','from-amber-300 via-orange-500 to-rose-600','from-emerald-300 via-teal-500 to-cyan-700'][i]} p-4`}><div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/20"><Star className="h-5 w-5" /></div><div className="absolute bottom-4 left-4 right-4"><h3 className="font-black text-white">{title}</h3><p className="text-xs text-white/65">AI selected</p></div></div>)}</div></section></Page>; }
 
@@ -117,4 +189,33 @@ function ProfileView() { return <Page><div><p className="text-sm font-bold text-
 
 function FloatingNav({ tab, setTab }) { const items = [{ id: 'home', icon: Home },{ id: 'gallery', icon: Images },{ id: 'create', icon: Sparkles, center: true, dot: true },{ id: 'people', icon: Users, dot: true },{ id: 'profile', icon: UserCircle, dot: true }]; return <nav className="fixed bottom-[calc(env(safe-area-inset-bottom)+48px)] left-0 right-0 z-50 flex justify-center px-4"><div className="flex w-[calc(100%-32px)] max-w-[380px] items-center justify-between rounded-full border border-white/40 bg-white/85 p-2 shadow-2xl backdrop-blur-xl">{items.map((item) => { const Icon = item.icon; const selected = tab === item.id; return <button key={item.id} onClick={() => setTab(item.id)} className={`relative grid place-items-center transition active:scale-95 ${selected && !item.center ? 'h-14 w-24 rounded-full bg-black/10 text-black' : 'h-14 w-14 rounded-full text-black'} ${item.center ? 'h-16 w-16 -translate-y-2 bg-gradient-to-br from-pink-500 to-purple-700 text-white shadow-xl' : ''}`}><Icon className="h-7 w-7" />{item.dot && !selected && <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />}</button>; })}</div></nav>; }
 
-export default function SnapNextV3Page() { const [tab, setTab] = useState('home'); return <div className="bg-[#07020f] text-white"><div className="pointer-events-none fixed inset-0 opacity-80"><div className="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-fuchsia-600/25 blur-3xl" /><div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-indigo-600/20 blur-3xl" /></div><header className="sticky top-0 z-30 border-b border-white/5 bg-[#07020f]/90 px-4 py-3 backdrop-blur-xl"><div className="mx-auto flex max-w-5xl items-center justify-between"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-700"><Camera className="h-5 w-5" /></div><div><div className="font-black">SnapNext Evolution</div><div className="text-[10px] font-bold uppercase tracking-widest text-white/40">Digital Life Sync</div></div></div><div className="flex items-center gap-3"><Link href="/demo-login" className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 text-[11px] font-black uppercase tracking-wider hover:brightness-110 transition shadow-lg shadow-pink-500/20">Launch App</Link><Link href="/login" className="px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-black uppercase tracking-wider hover:bg-white/10 transition">Sign In</Link><Bell className="h-5 w-5 text-white/50" /><button onClick={() => setTab('profile')} className="grid h-10 w-10 place-items-center rounded-2xl bg-white/10 text-xs font-black">VL</button></div></div></header><main className="relative z-10 mx-auto max-w-5xl px-4 pb-[calc(128px+env(safe-area-inset-bottom))] pt-5">{tab === 'home' && <HomeView setTab={setTab} />}{tab === 'gallery' && <GalleryView />}{tab === 'create' && <CreateView />}{tab === 'people' && <PeopleView />}{tab === 'profile' && <ProfileView />}</main><FloatingNav tab={tab} setTab={setTab} /></div>; }
+export default function SnapNextV3Page() { 
+  const [tab, setTab] = useState('home'); 
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    setUser(getStoredUser());
+  }, []);
+
+  return <div className="bg-[#07020f] text-white"><div className="pointer-events-none fixed inset-0 opacity-80"><div className="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-fuchsia-600/25 blur-3xl" /><div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-indigo-600/20 blur-3xl" /></div><header className="sticky top-0 z-30 border-b border-white/5 bg-[#07020f]/90 px-4 py-3 backdrop-blur-xl"><div className="mx-auto flex max-w-5xl items-center justify-between"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-700"><Camera className="h-5 w-5" /></div><div><div className="font-black">SnapNext Evolution</div><div className="text-[10px] font-bold uppercase tracking-widest text-white/40">Digital Life Sync</div></div></div>
+  
+  <div className="flex items-center gap-3">
+    {user ? (
+      <>
+        <Link href="/dashboard" className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 text-[11px] font-black uppercase tracking-wider hover:brightness-110 transition shadow-lg shadow-pink-500/20">Dashboard</Link>
+        <Link href="/dashboard?tab=upload" className="px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-black uppercase tracking-wider hover:bg-white/10 transition">Upload</Link>
+      </>
+    ) : (
+      <>
+        <Link href="/login" className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 text-[11px] font-black uppercase tracking-wider hover:brightness-110 transition shadow-lg shadow-pink-500/20">Login</Link>
+        <Link href="/signup" className="px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-black uppercase tracking-wider hover:bg-white/10 transition">Sign Up</Link>
+      </>
+    )}
+    <Bell className="h-5 w-5 text-white/50" />
+    <button onClick={() => setTab('profile')} className="grid h-10 w-10 place-items-center rounded-2xl bg-white/10 text-xs font-black">
+      {user ? user.name?.slice(0, 2).toUpperCase() : 'VL'}
+    </button>
+  </div>
+  
+  </div></header><main className="relative z-10 mx-auto max-w-5xl px-4 pb-[calc(128px+env(safe-area-inset-bottom))] pt-5">{tab === 'home' && <HomeView setTab={setTab} user={user} />}{tab === 'gallery' && <GalleryView />}{tab === 'create' && <CreateView />}{tab === 'people' && <PeopleView />}{tab === 'profile' && <ProfileView />}</main><FloatingNav tab={tab} setTab={setTab} /></div>; 
+}
