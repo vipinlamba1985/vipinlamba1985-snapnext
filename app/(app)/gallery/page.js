@@ -149,6 +149,12 @@ export default function GalleryPage() {
             <div key={m.id} className="group relative aspect-square rounded-xl overflow-hidden bg-white/5 cursor-pointer" onClick={() => { setViewer(m); setAiCaption(''); }}>
               {m.kind === 'photo' ? (
                 <img src={mediaSrc(m.id)} alt="" className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition" />
+              ) : m.kind === 'text' ? (
+                <div className="absolute inset-0 p-3 bg-gradient-to-br from-pink-500/10 via-purple-500/5 to-indigo-500/10 flex flex-col justify-between border border-white/5">
+                  <span className="text-[10px] font-bold text-pink-300">NOTE</span>
+                  <p className="text-[10px] text-white/80 line-clamp-4 italic font-serif leading-relaxed">"{m.aiAnalysis?.caption || m.aiAnalysis?.description}"</p>
+                  <div className="text-[9px] text-white/40 truncate">{m.name}</div>
+                </div>
               ) : (
                 <video src={mediaSrc(m.id)} className="absolute inset-0 h-full w-full object-cover" muted />
               )}
@@ -165,9 +171,19 @@ export default function GalleryPage() {
       {viewer && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur p-4 flex items-center justify-center" onClick={()=>setViewer(null)}>
           <div className="max-w-5xl w-full max-h-full grid md:grid-cols-[1fr_320px] gap-4" onClick={(e)=>e.stopPropagation()}>
-            <div className="relative rounded-2xl overflow-hidden bg-black grid place-items-center">
-              {viewer.kind === 'photo' ? <img src={mediaSrc(viewer.id)} className="max-h-[80vh] w-full object-contain" alt="" />
-               : <video src={mediaSrc(viewer.id)} className="max-h-[80vh] w-full" controls autoPlay />}
+            <div className="relative rounded-2xl overflow-hidden bg-black grid place-items-center min-h-[300px]">
+              {viewer.kind === 'photo' ? (
+                <img src={mediaSrc(viewer.id)} className="max-h-[80vh] w-full object-contain" alt="" />
+              ) : viewer.kind === 'text' ? (
+                <div className="p-8 text-center space-y-4 max-w-lg">
+                  <span className="text-pink-400 font-bold text-xs tracking-wider">THOUGHT CAPTURE</span>
+                  <p className="text-xl md:text-2xl font-serif italic text-pink-100 leading-relaxed">
+                    "{viewer.aiAnalysis?.caption || viewer.aiAnalysis?.description}"
+                  </p>
+                </div>
+              ) : (
+                <video src={mediaSrc(viewer.id)} className="max-h-[80vh] w-full" controls autoPlay />
+              )}
             </div>
             <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4 flex flex-col">
               <div className="flex items-center justify-between"><div className="truncate font-medium">{viewer.name}</div><button onClick={()=>setViewer(null)}><X className="h-5 w-5"/></button></div>

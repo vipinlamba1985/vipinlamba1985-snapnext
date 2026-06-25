@@ -362,6 +362,39 @@ async function handle(request, ctx) {
       return json({ saved, skipped, savedCount: saved.length, skippedCount: skipped.length });
     }
 
+    // ---------- MEDIA: TEXT QUICK CAPTURE ----------
+    if (route === '/media/text' && method === 'POST') {
+      const user = await requireUser(request);
+      if (!user) return json({ error: 'Unauthorized' }, 401);
+      const { text, title, tags = [], category = 'Personal' } = await request.json().catch(() => ({}));
+      if (!text) return json({ error: 'Text content is required' }, 400);
+
+      const id = uuidv4();
+      const doc = {
+        id,
+        userId: user.id,
+        name: title || 'Quick Captures',
+        size: text.length,
+        hash: crypto.createHash('sha256').update(text).digest('hex'),
+        mime: 'text/plain',
+        kind: 'text',
+        storageKey: '',
+        provider: 'local',
+        favorite: false,
+        trashed: false,
+        aiAnalysis: {
+          caption: text,
+          tags: tags.length ? tags : ['quick-capture', category.toLowerCase()],
+          autoAlbum: category,
+          description: text,
+          faces: []
+        },
+        createdAt: new Date(),
+      };
+      await db.collection('media').insertOne(doc);
+      return json({ ok: true, item: clean(doc) });
+    }
+
     // ---------- MEDIA: LIST ----------
     if (route === '/media' && method === 'GET') {
       const user = await requireUser(request);
