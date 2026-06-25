@@ -10,7 +10,6 @@ import { analyzeImage, analyzeVideo, transcribeAudio, askMemoryAssistant } from 
 import { sendEmail, recordWebhookEvent, hasRealProvider, isProduction } from '@/lib/email';
 import { verifyUnsubToken } from '@/lib/email/tokens';
 import { billing } from '@/lib/billing';
-import { supabase, supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase';
 import { getFavoriteLink, setPerms, canViewOwnersResource, listAcceptedFavoriteUserIds, notify, FAVORITE_PERM_KEYS } from '@/lib/favorites';
 import { runExportJob, cleanupExpiredExports, createJob, EXPORT_DIR } from '@/lib/exports';
 import { computeInsights } from '@/lib/insights';
@@ -26,42 +25,6 @@ function cors(res) {
 }
 function json(data, status = 200) { return cors(NextResponse.json(data, { status })); }
 function clean(doc) { if (!doc) return doc; const { _id, passwordHash, ...rest } = doc; return rest; }
-function safeBackendUnavailable(err) {
-  console.error('[api] legacy data service unavailable:', err?.message || err);
-  return json({ error: 'Backend data service is temporarily unavailable. Please try again later.' }, 503);
-}
-function supabaseAuthClient() { return supabaseAdmin || supabase; }
-function cleanSupabaseUser(authUser) {
-  const meta = authUser?.user_metadata || {};
-  const appMeta = authUser?.app_metadata || {};
-  return {
-    id: authUser.id,
-    email: authUser.email || '',
-    name: meta.name || meta.full_name || authUser.email?.split('@')[0] || 'User',
-    plan: appMeta.plan || meta.plan || 'free',
-    role: appMeta.role || meta.role || 'user',
-    emailVerified: !!authUser.email_confirmed_at,
-    emailPrefs: meta.emailPrefs || { product: true, community: true, favorites: true, marketing: false },
-    avatarColor: meta.avatarColor || '#a855f7',
-    createdAt: authUser.created_at ? new Date(authUser.created_at) : new Date(),
-    authProvider: 'supabase',
-  };
-}
-async function upsertSupabaseProfile(user, name) {
-  if (!supabaseAdmin || !user?.id) return;
-  try {
-    await supabaseAdmin.from('profiles').upsert({
-      id: user.id,
-      email: user.email,
-      name: name || user.user_metadata?.name || user.email?.split('@')[0] || 'User',
-      plan: user.app_metadata?.plan || 'free',
-      role: user.app_metadata?.role || 'user',
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'id' });
-  } catch (e) {
-    console.warn('[auth] profile upsert skipped:', e?.message);
-  }
-}
 
 export async function OPTIONS() { return cors(new NextResponse(null, { status: 200 })); }
 
@@ -105,53 +68,56 @@ async function handle(request, ctx) {
     route = '/' + path.join('/');
     method = request.method;
 
-    // ---------- AUTH (Supabase primary; no MongoDB required) ----------
+    const db = await getDb();
+
+    // ---------- AUTH ----------
     if (route === '/auth/signup' && method === 'POST') {
-      if (!isSupabaseConfigured) return json({ error: 'Authentication is not configured. Please contact support.' }, 503);
-      const { email, password, name } = await request.json().catch(() => ({}));
+      const { email, password, name } = await request.json();
       if (!email || !password) return json({ error: 'Email & password required' }, 400);
-      const client = supabaseAuthClient();
-      const displayName = name || email.split('@')[0];
-      const { data, error } = await client.auth.signUp({
+      const exists = await db.collection('users').findOne({ email: email.toLowerCase() });
+      if (exists) return json({ error: 'Email already in use' }, 409);
+      const user = {
+        id: uuidv4(),
         email: email.toLowerCase(),
-        password,
-        options: { data: { name: displayName, full_name: displayName } },
-      });
-      if (error) return json({ error: error.message || 'Signup failed' }, 400);
-      if (data?.user) await upsertSupabaseProfile(data.user, displayName);
-      if (!data?.session?.access_token) {
-        return json({
-          ok: true,
-          requiresEmailConfirmation: true,
-          user: data?.user ? cleanSupabaseUser(data.user) : null,
-          message: 'Account created. Please check your email to verify your account before signing in.',
+        name: name || email.split('@')[0],
+        passwordHash: hashPassword(password),
+        plan: 'free',
+        role: 'user',
+        emailVerified: false,
+        emailPrefs: { product: true, community: true, favorites: true, marketing: false },
+        avatarColor: ['#a855f7','#ec4899','#6366f1','#10b981','#f59e0b'][Math.floor(Math.random()*5)],
+        createdAt: new Date(),
+      };
+      await db.collection('users').insertOne(user);
+      const token = signToken({ userId: user.id });
+
+      // Create verification token and send verify email.
+      const verifyResult = await issueVerification(db, user);
+      try {
+        await sendEmail({
+          template: 'verify_email', to: user.email, userId: user.id,
+          data: { name: user.name, verifyUrl: verifyResult.url },
+          meta: { event: 'signup' },
         });
-      }
-      return json({ token: data.session.access_token, user: cleanSupabaseUser(data.user) });
+      } catch (e) { console.error('[signup] verify email send failed', e?.message); }
+
+      const resp = { token, user: clean(user) };
+      if (!isProduction()) resp._devVerifyUrl = verifyResult.url; // dev convenience only
+      return json(resp);
     }
 
     if (route === '/auth/login' && method === 'POST') {
-      if (!isSupabaseConfigured) return json({ error: 'Authentication is not configured. Please contact support.' }, 503);
-      const { email, password } = await request.json().catch(() => ({}));
-      if (!email || !password) return json({ error: 'Email & password required' }, 400);
-      const client = supabaseAuthClient();
-      const { data, error } = await client.auth.signInWithPassword({ email: email.toLowerCase(), password });
-      if (error || !data?.session?.access_token || !data?.user) return json({ error: error?.message || 'Invalid credentials' }, 401);
-      await upsertSupabaseProfile(data.user);
-      return json({ token: data.session.access_token, user: cleanSupabaseUser(data.user) });
+      const { email, password } = await request.json();
+      const user = await db.collection('users').findOne({ email: (email||'').toLowerCase() });
+      if (!user || !verifyPassword(password, user.passwordHash)) return json({ error: 'Invalid credentials' }, 401);
+      const token = signToken({ userId: user.id });
+      return json({ token, user: clean(user) });
     }
 
     if (route === '/auth/me' && method === 'GET') {
       const user = await requireUser(request);
       if (!user) return json({ error: 'Unauthorized' }, 401);
       return json({ user });
-    }
-
-    let db;
-    try {
-      db = await getDb();
-    } catch (err) {
-      return safeBackendUnavailable(err);
     }
 
     if (route === '/auth/forgot' && method === 'POST') {
@@ -1448,11 +1414,7 @@ async function handle(request, ctx) {
     return json({ error: `Route ${route} not found` }, 404);
   } catch (e) {
     console.error('API error:', e);
-    const message = e?.message || 'Internal error';
-    if (/mongo|mongodb|database environment variable|database connection/i.test(message)) {
-      return json({ error: 'Backend data service is temporarily unavailable. Please try again later.' }, 503);
-    }
-    return json({ error: message }, 500);
+    return json({ error: e?.message || 'Internal error' }, 500);
   }
 }
 
