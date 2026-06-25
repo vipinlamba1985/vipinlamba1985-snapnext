@@ -24,10 +24,14 @@ export default function SignupPage() {
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
-        throw new Error(`Server returned an invalid response (status ${res.status}). Please verify MONGO_URL/MONGODB_URI is correctly configured.`);
+        throw new Error(`Server returned an invalid response (status ${res.status}). Please try again or contact support.`);
       }
       if (!res.ok) throw new Error(data.error || 'Signup failed');
-      if (!data.token) throw new Error('Signup failed: no app session was returned.');
+      if (data.requiresEmailConfirmation || !data.token) {
+        toast.success(data.message || 'Account created. Please check your email to verify your account before signing in.');
+        router.push('/login');
+        return;
+      }
       setToken(data.token); setStoredUser(data.user);
       toast.success('Account created. Please check your email to verify your account.');
       router.push('/dashboard');
