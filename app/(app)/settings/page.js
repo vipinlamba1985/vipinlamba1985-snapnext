@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { apiFetch, logout, getStoredUser, setStoredUser } from '@/lib/api-client';
 import { formatBytes } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -18,6 +19,21 @@ export default function Settings() {
   const [prefs, setPrefs] = useState({ product: true, community: true, favorites: true, marketing: false });
   const [emailVerified, setEmailVerified] = useState(false);
   const [resending, setResending] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDeleteAccount() {
+    setDeleting(true);
+    try {
+      await apiFetch('/auth/delete-account', { method: 'POST' });
+      toast.success('Your account and all your data have been permanently deleted.');
+      logout();
+    } catch (e) {
+      toast.error(e?.message || 'Failed to delete account');
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
 
   async function refresh() {
     const me = await apiFetch('/auth/me'); setUser(me.user); setStoredUser(me.user);
@@ -130,10 +146,36 @@ export default function Settings() {
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
         <div className="text-sm font-medium mb-3">Account actions</div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           <button onClick={logout} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm"><LogOut className="h-4 w-4"/> Sign out</button>
-          <button onClick={() => toast('Account export coming soon')} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm">Export my data</button>
-          <button onClick={() => toast('Account deletion coming soon')} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm">Delete account</button>
+          <Link href="/downloads" className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm">Export my data</Link>
+          
+          {!confirmDelete ? (
+            <button 
+              onClick={() => setConfirmDelete(true)} 
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm hover:bg-rose-500/20 transition"
+            >
+              Delete account
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 bg-rose-950/30 border border-rose-500/30 rounded-2xl p-3 w-full sm:w-auto">
+              <span className="text-xs text-rose-200 font-medium">Are you sure? This deletes ALL media files and data.</span>
+              <button 
+                onClick={handleDeleteAccount} 
+                disabled={deleting}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-60 transition"
+              >
+                {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null} Yes, delete everything
+              </button>
+              <button 
+                onClick={() => setConfirmDelete(false)} 
+                disabled={deleting}
+                className="px-3 py-1.5 rounded-full bg-white/10 text-white text-xs font-medium hover:bg-white/20 disabled:opacity-60 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       </section>
     </div>

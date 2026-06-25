@@ -120,6 +120,39 @@ async function handle(request, ctx) {
       return json({ user });
     }
 
+    if (route === '/auth/delete-account' && method === 'POST') {
+      const user = await requireUser(request);
+      if (!user) return json({ error: 'Unauthorized' }, 401);
+
+      // 1. Delete all media and their files from storage
+      const mediaDocs = await db.collection('media').find({ userId: user.id }).toArray();
+      for (const doc of mediaDocs) {
+        try {
+          await storage.delete({ provider: doc.provider || 'local', storageKey: doc.storageKey });
+        } catch (e) {
+          console.error('[delete-account] failed to delete storage file', doc.storageKey, e?.message);
+        }
+      }
+      await db.collection('media').deleteMany({ userId: user.id });
+
+      // 2. Delete shared, favorites, albums and album members associated with this user
+      await db.collection('shared_photos').deleteMany({ $or: [{ userId: user.id }, { ownerId: user.id }] });
+      await db.collection('favorites').deleteMany({ $or: [{ userId: user.id }, { otherId: user.id }] });
+      await db.collection('favorite_permissions').deleteMany({ $or: [{ ownerUserId: user.id }, { favoriteUserId: user.id }] });
+      await db.collection('shared_albums').deleteMany({ ownerId: user.id });
+      await db.collection('shared_album_members').deleteMany({ favoriteUserId: user.id });
+      await db.collection('shared_memories').deleteMany({ ownerId: user.id });
+      await db.collection('exports').deleteMany({ userId: user.id });
+      await db.collection('email_prefs').deleteMany({ userId: user.id });
+      await db.collection('notifications').deleteMany({ userId: user.id });
+      await db.collection('billing_status').deleteMany({ userId: user.id });
+
+      // 3. Delete user record
+      await db.collection('users').deleteOne({ id: user.id });
+
+      return json({ ok: true, message: 'Account and all data deleted successfully.' });
+    }
+
     if (route === '/auth/forgot' && method === 'POST') {
       // Generic, do not reveal whether an account exists.
       const { email } = await request.json().catch(() => ({}));
