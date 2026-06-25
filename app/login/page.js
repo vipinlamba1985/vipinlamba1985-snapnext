@@ -23,7 +23,7 @@ export default function LoginPage() {
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
-        throw new Error(`Server returned an invalid response (status ${res.status}). Please verify MONGO_URL/MONGODB_URI is correctly configured.`);
+        throw new Error(`Server returned an invalid response (status ${res.status}). Please try again or contact support.`);
       }
       if (!res.ok) throw new Error(data.error || 'Login failed');
       if (!data.token) throw new Error('Login failed: no app session was returned.');
