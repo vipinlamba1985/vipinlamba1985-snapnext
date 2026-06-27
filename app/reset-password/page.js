@@ -35,7 +35,9 @@ export default function ResetPasswordPage() {
 function ResetPasswordInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const token = params.get('token') || '';
+  const token = params.get('token_hash') || params.get('token') || '';
+  const accessToken = params.get('access_token') || '';
+  const refreshToken = params.get('refresh_token') || '';
 
   const [checking, setChecking] = useState(true);
   const [tokenState, setTokenState] = useState({ ok: false, reason: '' });
@@ -46,13 +48,14 @@ function ResetPasswordInner() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!token) { setTokenState({ ok: false, reason: 'missing' }); setChecking(false); return; }
-    fetch(`/api/auth/reset/verify?token=${encodeURIComponent(token)}`)
+    if (!token && !accessToken) { setTokenState({ ok: false, reason: 'missing' }); setChecking(false); return; }
+    if (accessToken && refreshToken) { setTokenState({ ok: true, reason: '' }); setChecking(false); return; }
+    fetch(`/api/auth/reset/verify?token_hash=${encodeURIComponent(token)}`)
       .then((r) => r.json())
       .then((d) => setTokenState({ ok: !!d.ok, reason: d.reason || '' }))
       .catch(() => setTokenState({ ok: false, reason: 'invalid' }))
       .finally(() => setChecking(false));
-  }, [token]);
+  }, [token, accessToken, refreshToken]);
 
   const strength = useMemo(() => scorePassword(password), [password]);
   const tooShort = password.length > 0 && password.length < 6;
@@ -68,7 +71,7 @@ function ResetPasswordInner() {
       const res = await fetch('/api/auth/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({ token, accessToken, refreshToken, password }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -173,7 +176,7 @@ function ResetPasswordInner() {
                       onChange={(e) => setConfirm(e.target.value)}
                     />
                   </div>
-                  {mismatch && <p className="mt-1 text-xs text-rose-300">Passwords don't match.</p>}
+                  {mismatch && <p className="mt-1 text-xs text-rose-300">Passwords do not match.</p>}
                 </div>
                 {error && <div className="text-sm text-rose-300">{error}</div>}
                 <button

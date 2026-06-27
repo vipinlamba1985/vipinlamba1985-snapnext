@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { getDb } from '@/lib/db';
-import { signToken, hashPassword, verifyPassword, getUserFromRequest } from '@/lib/auth';
+import { getUserFromRequest, syncSupabaseUserToAppUser } from '@/lib/auth';
+import { supabaseServer, supabaseAdmin, isSupabaseConfigured, hasSupabaseServiceRole } from '@/lib/supabase';
 import { PLANS, getPlan, isSuper } from '@/lib/plans';
 import { storage } from '@/lib/storage';
 import { generateCaption, generateHashtags, generateEmojis, generatePostIdeas, generateMemorySummary, generateStory } from '@/lib/llm';
@@ -48,15 +49,7 @@ async function getAiUsageToday(db, userId) {
 }
 
 async function issueVerification(db, user) {
-  const raw = crypto.randomBytes(32).toString('hex');
-  const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
-  await db.collection('email_verifications').insertOne({
-    id: uuidv4(), userId: user.id, tokenHash, expiresAt,
-    usedAt: null, createdAt: new Date(),
-  });
-  const base = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || '';
-  return { url: `${base}/verify-email?token=${raw}`, raw };
+  return { url: '', raw: '' };
 }
 
 async function handle(request, ctx) {
@@ -71,47 +64,73 @@ async function handle(request, ctx) {
     const db = await getDb();
 
     // ---------- AUTH ----------
+    if (route === '/auth/config' && method === 'GET') {
+      return json({ supabase: isSupabaseConfigured, serviceRole: hasSupabaseServiceRole });
+    }
+
     if (route === '/auth/signup' && method === 'POST') {
-      const { email, password, name } = await request.json();
-      if (!email || !password) return json({ error: 'Email & password required' }, 400);
-      const exists = await db.collection('users').findOne({ email: email.toLowerCase() });
-      if (exists) return json({ error: 'Email already in use' }, 409);
-      const user = {
-        id: uuidv4(),
-        email: email.toLowerCase(),
-        name: name || email.split('@')[0],
-        passwordHash: hashPassword(password),
-        plan: 'free',
-        role: 'user',
-        emailVerified: false,
-        emailPrefs: { product: true, community: true, favorites: true, marketing: false },
-        avatarColor: ['#a855f7','#ec4899','#6366f1','#10b981','#f59e0b'][Math.floor(Math.random()*5)],
-        createdAt: new Date(),
-      };
-      await db.collection('users').insertOne(user);
-      const token = signToken({ userId: user.id });
+      if (!isSupabaseConfigured || !supabaseServer) return json({ error: 'Supabase authentication is not configured' }, 503);
+      const { email, password, name } = await request.json().catch(() => ({}));
+      const normalizedEmail = (email || '').toLowerCase().trim();
+      if (!normalizedEmail || !password) return json({ error: 'Email & password required' }, 400);
+      if (password.length < 6) return json({ error: 'Password must be at least 6 characters' }, 400);
 
-      // Create verification token and send verify email.
-      const verifyResult = await issueVerification(db, user);
-      try {
-        await sendEmail({
-          template: 'verify_email', to: user.email, userId: user.id,
-          data: { name: user.name, verifyUrl: verifyResult.url },
-          meta: { event: 'signup' },
-        });
-      } catch (e) { console.error('[signup] verify email send failed', e?.message); }
+      const { data, error } = await supabaseServer.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: { data: { name: name || normalizedEmail.split('@')[0], plan: 'free', role: 'user' } },
+      });
 
-      const resp = { token, user: clean(user) };
-      if (!isProduction()) resp._devVerifyUrl = verifyResult.url; // dev convenience only
-      return json(resp);
+      if (error) {
+        const status = /already|registered|exists/i.test(error.message || '') ? 409 : 400;
+        return json({ error: status === 409 ? 'Email already in use' : error.message || 'Signup failed' }, status);
+      }
+      if (!data?.user) return json({ error: 'Signup failed' }, 400);
+
+      const user = await syncSupabaseUserToAppUser(db, data.user);
+      return json({
+        token: data.session?.access_token || null,
+        refreshToken: data.session?.refresh_token || null,
+        expiresAt: data.session?.expires_at || null,
+        user: clean(user),
+        needsEmailConfirmation: !data.session,
+      });
     }
 
     if (route === '/auth/login' && method === 'POST') {
-      const { email, password } = await request.json();
-      const user = await db.collection('users').findOne({ email: (email||'').toLowerCase() });
-      if (!user || !verifyPassword(password, user.passwordHash)) return json({ error: 'Invalid credentials' }, 401);
-      const token = signToken({ userId: user.id });
-      return json({ token, user: clean(user) });
+      if (!isSupabaseConfigured || !supabaseServer) return json({ error: 'Supabase authentication is not configured' }, 503);
+      const { email, password } = await request.json().catch(() => ({}));
+      const normalizedEmail = (email || '').toLowerCase().trim();
+      if (!normalizedEmail || !password) return json({ error: 'Email & password required' }, 400);
+
+      const { data, error } = await supabaseServer.auth.signInWithPassword({ email: normalizedEmail, password });
+      if (error || !data?.session?.access_token || !data?.user) return json({ error: 'Invalid credentials' }, 401);
+      const user = await syncSupabaseUserToAppUser(db, data.user);
+      return json({
+        token: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        expiresAt: data.session.expires_at,
+        user: clean(user),
+      });
+    }
+
+    if (route === '/auth/logout' && method === 'POST') {
+      return json({ ok: true });
+    }
+
+    if (route === '/auth/refresh' && method === 'POST') {
+      if (!isSupabaseConfigured || !supabaseServer) return json({ error: 'Supabase authentication is not configured' }, 503);
+      const { refreshToken } = await request.json().catch(() => ({}));
+      if (!refreshToken) return json({ error: 'Refresh token required' }, 400);
+      const { data, error } = await supabaseServer.auth.refreshSession({ refresh_token: refreshToken });
+      if (error || !data?.session?.access_token || !data?.user) return json({ error: 'Session expired' }, 401);
+      const user = await syncSupabaseUserToAppUser(db, data.user);
+      return json({
+        token: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        expiresAt: data.session.expires_at,
+        user: clean(user),
+      });
     }
 
     if (route === '/auth/me' && method === 'GET') {
@@ -147,79 +166,54 @@ async function handle(request, ctx) {
       await db.collection('notifications').deleteMany({ userId: user.id });
       await db.collection('billing_status').deleteMany({ userId: user.id });
 
-      // 3. Delete user record
+      // 3. Delete user record and Supabase auth user when possible
       await db.collection('users').deleteOne({ id: user.id });
+      if (supabaseAdmin && user.supabaseUserId) {
+        try { await supabaseAdmin.auth.admin.deleteUser(user.supabaseUserId); } catch (e) { console.error('[delete-account] Supabase user delete failed', e?.message); }
+      }
 
       return json({ ok: true, message: 'Account and all data deleted successfully.' });
     }
 
     if (route === '/auth/forgot' && method === 'POST') {
-      // Generic, do not reveal whether an account exists.
       const { email } = await request.json().catch(() => ({}));
       const result = { ok: true, message: 'If an account exists for this email, a password reset link has been sent.' };
       if (!email) return json(result);
-      const user = await db.collection('users').findOne({ email: email.toLowerCase() });
-      if (user) {
-        const raw = crypto.randomBytes(32).toString('hex');
-        const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-        await db.collection('password_resets').insertOne({
-          id: uuidv4(), userId: user.id, tokenHash, expiresAt,
-          usedAt: null, createdAt: new Date(),
-        });
-        const base = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || '';
-        const resetUrl = `${base}/reset-password?token=${raw}`;
-        try {
-          await sendEmail({
-            template: 'forgot_password', to: user.email, userId: user.id,
-            data: { name: user.name, resetUrl },
-            meta: { event: 'forgot_password' },
-          });
-        } catch (e) { console.error('[forgot] email send failed', e?.message); }
-        if (!isProduction()) result._devUrl = resetUrl; // dev only
-      }
+      if (!isSupabaseConfigured || !supabaseServer) return json({ error: 'Supabase authentication is not configured' }, 503);
+      const base = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || '';
+      const redirectTo = `${base}/reset-password`;
+      const { error } = await supabaseServer.auth.resetPasswordForEmail(email.toLowerCase().trim(), { redirectTo });
+      if (error) console.error('[forgot] Supabase reset email failed:', error?.message);
       return json(result);
     }
 
     if (route === '/auth/reset/verify' && method === 'GET') {
       const url = new URL(request.url);
-      const raw = url.searchParams.get('token') || '';
-      if (!raw) return json({ ok: false, reason: 'missing' }, 400);
-      const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
-      const rec = await db.collection('password_resets').findOne({ tokenHash });
-      if (!rec) return json({ ok: false, reason: 'invalid' }, 400);
-      if (rec.usedAt) return json({ ok: false, reason: 'used' }, 400);
-      if (new Date(rec.expiresAt) < new Date()) return json({ ok: false, reason: 'expired' }, 400);
+      const tokenHash = url.searchParams.get('token_hash') || url.searchParams.get('token') || '';
+      if (!tokenHash) return json({ ok: false, reason: 'missing' }, 400);
       return json({ ok: true });
     }
 
     if (route === '/auth/reset' && method === 'POST') {
-      const { token: raw, password } = await request.json().catch(() => ({}));
-      if (!raw || !password) return json({ error: 'Token and password required' }, 400);
+      const { token, token_hash: tokenHashFromBody, accessToken, refreshToken, password } = await request.json().catch(() => ({}));
+      const tokenHash = tokenHashFromBody || token;
+      if (!password) return json({ error: 'Password required' }, 400);
       if (password.length < 6) return json({ error: 'Password must be at least 6 characters' }, 400);
-      const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
-      const rec = await db.collection('password_resets').findOne({ tokenHash });
-      if (!rec) return json({ error: 'Invalid reset link' }, 400);
-      if (rec.usedAt) return json({ error: 'This reset link has already been used' }, 400);
-      if (new Date(rec.expiresAt) < new Date()) return json({ error: 'This reset link has expired' }, 400);
-      const newHash = hashPassword(password);
-      await db.collection('users').updateOne({ id: rec.userId }, { $set: { passwordHash: newHash } });
-      await db.collection('password_resets').updateOne({ id: rec.id }, { $set: { usedAt: new Date() } });
-      // Invalidate any other outstanding tokens for this user.
-      await db.collection('password_resets').updateMany(
-        { userId: rec.userId, usedAt: null, id: { $ne: rec.id } },
-        { $set: { usedAt: new Date(), invalidated: true } },
-      );
-      // Send password-changed security email.
-      try {
-        const u = await db.collection('users').findOne({ id: rec.userId });
-        if (u) {
-          await sendEmail({
-            template: 'password_changed', to: u.email, userId: u.id,
-            data: { name: u.name }, meta: { event: 'password_changed' },
-          });
-        }
-      } catch (e) { console.error('[reset] confirmation email failed', e?.message); }
+      if (!isSupabaseConfigured || !supabaseServer) return json({ error: 'Supabase authentication is not configured' }, 503);
+
+      let client = supabaseServer;
+      if (accessToken && refreshToken) {
+        const sessionResult = await supabaseServer.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+        if (sessionResult.error) return json({ error: 'Invalid reset session' }, 400);
+      } else if (tokenHash) {
+        const verify = await supabaseServer.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
+        if (verify.error) return json({ error: 'Invalid or expired reset link' }, 400);
+      } else {
+        return json({ error: 'Reset token required' }, 400);
+      }
+
+      const { error } = await client.auth.updateUser({ password });
+      if (error) return json({ error: error.message || 'Could not reset password' }, 400);
       return json({ ok: true });
     }
 
@@ -230,11 +224,11 @@ async function handle(request, ctx) {
       if (user.emailVerified) return json({ ok: true, alreadyVerified: true });
       const v = await issueVerification(db, user);
       try {
-        await sendEmail({
-          template: 'verify_email', to: user.email, userId: user.id,
-          data: { name: user.name, verifyUrl: v.url }, meta: { event: 'verify_resend' },
-        });
-      } catch (e) { console.error('[verify/send] failed', e?.message); }
+        if (supabaseServer) {
+          const base = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || '';
+          await supabaseServer.auth.resend({ type: 'signup', email: user.email, options: { emailRedirectTo: `${base}/login` } });
+        }
+      } catch (e) { console.error('[verify/send] Supabase resend failed', e?.message); }
       const resp = { ok: true };
       if (!isProduction()) resp._devVerifyUrl = v.url;
       return json(resp);
@@ -242,26 +236,14 @@ async function handle(request, ctx) {
 
     if (route === '/auth/verify' && method === 'GET') {
       const url = new URL(request.url);
-      const raw = url.searchParams.get('token') || '';
-      if (!raw) return json({ ok: false, reason: 'missing' }, 400);
-      const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
-      const rec = await db.collection('email_verifications').findOne({ tokenHash });
-      if (!rec) return json({ ok: false, reason: 'invalid' }, 400);
-      if (rec.usedAt) return json({ ok: true, alreadyVerified: true });
-      if (new Date(rec.expiresAt) < new Date()) return json({ ok: false, reason: 'expired' }, 400);
-      const u = await db.collection('users').findOne({ id: rec.userId });
-      if (!u) return json({ ok: false, reason: 'invalid' }, 400);
-      await db.collection('email_verifications').updateOne({ id: rec.id }, { $set: { usedAt: new Date() } });
-      const wasAlready = !!u.emailVerified;
-      await db.collection('users').updateOne({ id: u.id }, { $set: { emailVerified: true, emailVerifiedAt: new Date() } });
-      if (!wasAlready) {
-        try {
-          await sendEmail({
-            template: 'welcome', to: u.email, userId: u.id,
-            data: { name: u.name }, meta: { event: 'welcome' },
-          });
-        } catch (e) { console.error('[verify] welcome failed', e?.message); }
-      }
+      const tokenHash = url.searchParams.get('token_hash') || url.searchParams.get('token') || '';
+      if (!tokenHash) return json({ ok: false, reason: 'missing' }, 400);
+      if (!supabaseServer) return json({ ok: false, reason: 'not_configured' }, 503);
+      let verify = await supabaseServer.auth.verifyOtp({ token_hash: tokenHash, type: 'email' });
+      if (verify.error) verify = await supabaseServer.auth.verifyOtp({ token_hash: tokenHash, type: 'signup' });
+      if (verify.error || !verify.data?.user) return json({ ok: false, reason: 'invalid' }, 400);
+      const synced = await syncSupabaseUserToAppUser(db, verify.data.user);
+      await db.collection('users').updateOne({ id: synced.id }, { $set: { emailVerified: true, emailVerifiedAt: new Date() } });
       return json({ ok: true });
     }
 

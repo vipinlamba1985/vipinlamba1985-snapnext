@@ -33,7 +33,8 @@ function LoginContent() {
       });
       
       if (data?.token && data?.user) {
-        setToken(data.token);
+        setToken(data.token, data.refreshToken, data.expiresAt);
+        document.cookie = `sb-access-token=${encodeURIComponent(data.token)}; path=/; max-age=604800; SameSite=Lax`;
         setStoredUser(data.user);
         toast.success('Successfully signed in!');
         router.push('/dashboard');

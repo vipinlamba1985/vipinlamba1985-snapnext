@@ -26,13 +26,14 @@ export default function SignupPage() {
       });
       
       if (data?.token && data?.user) {
-        setToken(data.token);
+        setToken(data.token, data.refreshToken, data.expiresAt);
+        document.cookie = `sb-access-token=${encodeURIComponent(data.token)}; path=/; max-age=604800; SameSite=Lax`;
         setStoredUser(data.user);
         toast.success('Successfully created account and signed in!');
-        if (data._devVerifyUrl) {
-          toast.info('Development verification link is available.', { duration: 6000 });
-        }
         router.push('/dashboard');
+      } else if (data?.needsEmailConfirmation) {
+        toast.success('Account created. Please check your email to confirm before signing in.');
+        router.push('/login');
       } else {
         throw new Error('Invalid registration response');
       }
