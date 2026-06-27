@@ -13,7 +13,7 @@ import string
 from io import BytesIO
 
 # Configuration
-BASE_URL = "https://social-share-next.preview.emergentagent.com/api"
+BASE_URL = "https://snapnext-auth-fix.preview.emergentagent.com/api"
 JWT_SECRET = "snapnext-dev-secret-change-in-prod-2025"
 EXISTING_USER_EMAIL = "test@snapnext.ai"
 EXISTING_USER_PASSWORD = "test1234"
