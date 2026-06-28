@@ -354,55 +354,141 @@ export default function Dashboard() {
   const textCount = media.filter(m => m.kind === 'text').length;
   const favoriteCount = media.filter(m => m.favorite).length;
 
+  const latestMemory = media[0];
+  const recentMedia = media.slice(0, 4);
+  const onThisDay = memories?.onThisDay || [];
+  const timelineGroups = memories?.groups || [];
+  const latestTimeline = timelineGroups[0];
+  const weeklyUploads = media.filter((m) => {
+    const created = new Date(m.createdAt || Date.now()).getTime();
+    return Date.now() - created < 7 * 24 * 60 * 60 * 1000;
+  }).length;
+  const usagePercent = usage && !usage.isSuper && usage.plan?.storageBytes
+    ? Math.min(100, Math.round(((usage.usage?.bytes || 0) / usage.plan.storageBytes) * 100))
+    : 0;
+  const aiKnownSignals = [
+    { label: 'People & favorites', value: favoriteCount || 'Learning', hint: favoriteCount ? 'favorite memories marked' : 'mark favorites to teach AI' },
+    { label: 'Trips detected', value: latestTimeline?.items?.length || timelineGroups.length || 'Soon', hint: latestTimeline?.label || 'timeline builds as you add media' },
+    { label: 'Stories ready', value: textCount || aiHighlights.length || 'Start', hint: textCount ? 'captured thoughts and notes' : 'generate your first memory story' },
+  ];
+  const recommendedActions = [
+    { title: 'Continue protecting memories', detail: weeklyUploads ? `${weeklyUploads} new item${weeklyUploads === 1 ? '' : 's'} this week` : 'Add photos, videos, or notes', href: '/upload', icon: Upload },
+    { title: 'Create a memory story', detail: 'Turn moments into a private journal', href: '/journal', icon: BookOpen },
+    { title: 'Make a ready-to-post moment', detail: 'Captions and creative drafts', href: '/ready-to-post', icon: Send },
+    { title: 'Clean duplicates', detail: insights?.duplicates?.extraCopies ? `${insights.duplicates.extraCopies} duplicates found` : 'Keep your vault healthy', href: '/health', icon: CheckCircle2 },
+    { title: 'Share with family', detail: favoriteCount ? `${favoriteCount} favorite memories ready` : 'Invite loved ones privately', href: '/favorites', icon: Users },
+  ];
+  const searchSuggestions = ['Show beach photos', 'Find Sarika', 'Birthday memories', 'Dubai trip', 'Rainy evenings', 'Videos from last Christmas'];
+
+
   return (
     <div className="space-y-8 pb-12">
-      {/* Header Banner */}
-      <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-pink-500/10 via-fuchsia-500/5 to-indigo-500/15 p-6 md:p-8">
-        <div className="absolute -top-16 -right-16 h-64 w-64 rounded-full bg-pink-500/15 blur-3xl" />
-        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-pink-300">
-              <Sparkle className="h-3.5 w-3.5 text-pink-400 animate-pulse" /> SnapNext Vault
+      {/* Digital Life Command Center */}
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-pink-500/15 via-purple-600/10 to-cyan-400/10 p-5 shadow-2xl shadow-purple-950/30 md:p-8">
+        <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-pink-500/20 blur-3xl" />
+        <div className="absolute -bottom-24 left-1/3 h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="relative grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
+          <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-6">
+            <div className="inline-flex items-center gap-2 rounded-full border border-pink-300/20 bg-pink-300/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-pink-100">
+              <Sparkles className="h-3.5 w-3.5" /> Digital Life Command Center
             </div>
-            <h1 className="text-3xl md:text-4xl font-black text-white leading-none">
-              Your Memory Sanctum.
-            </h1>
-            <p className="text-sm text-white/70 max-w-xl">
-              Write down instant highlights, back up core high-res media files, and explore smart, beautiful, AI-crafted narratives.
-            </p>
-          </div>
-          {user && (
-            <div className="flex items-center gap-3 bg-white/[0.04] border border-white/10 p-3 rounded-2xl shrink-0">
-              <Avatar className="h-10 w-10 border border-pink-500/30">
-                <AvatarFallback className="bg-gradient-to-br from-pink-500 to-purple-600 font-bold text-white text-sm">
-                  {user.name ? user.name.slice(0, 2).toUpperCase() : 'U'}
-                </AvatarFallback>
-              </Avatar>
-              <div className="text-left">
-                <div className="text-xs font-bold text-white flex items-center gap-1">
-                  {user.name} <Badge variant="secondary" className="px-1.5 py-0 bg-pink-500/20 text-pink-200 text-[10px] border border-pink-500/30">Admin</Badge>
-                </div>
-                <div className="text-[10px] text-white/50">{user.email}</div>
+            <div>
+              <h1 className="max-w-3xl text-3xl font-black leading-tight tracking-tight text-white md:text-5xl">
+                SnapNext remembers your life.
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/68 md:text-base">
+                Your memories, moments, people, stories, and next best actions — organized by AI in one place.
+              </p>
+            </div>
+
+            <div className="relative max-w-2xl">
+              <Search className="absolute left-4 top-3.5 h-5 w-5 text-pink-300" />
+              <Input
+                placeholder="Ask your memory: beach photos, Sarika, Dubai trip..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-13 rounded-2xl border-white/10 bg-black/25 pl-12 pr-4 text-sm text-white shadow-inner shadow-black/30 placeholder:text-white/38 focus:border-pink-400/50"
+              />
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                {searchSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => setSearchQuery(suggestion)}
+                    className="shrink-0 rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-[11px] font-semibold text-white/65 transition hover:border-pink-300/25 hover:bg-white/[0.07] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                { label: 'Protected memories', value: media.length, icon: CheckCircle2 },
+                { label: 'AI-understood items', value: media.filter((m) => m.aiAnalysis).length, icon: Bot },
+                { label: 'Reasons to return', value: onThisDay.length + aiHighlights.length + weeklyUploads || 'Daily', icon: Heart },
+              ].map((item) => (
+                <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-lg shadow-black/20 transition hover:-translate-y-0.5 hover:bg-white/[0.065]">
+                  <item.icon className="h-4 w-4 text-pink-300" />
+                  <div className="mt-4 text-2xl font-black text-white">{item.value}</div>
+                  <div className="text-xs text-white/45">{item.label}</div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.55, delay: 0.08 }} className="rounded-[1.7rem] border border-white/10 bg-black/25 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-white/38">Today in your life</p>
+                <h2 className="mt-1 text-xl font-black text-white">{latestMemory ? latestMemory.name : 'Your first memory is waiting'}</h2>
+              </div>
+              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600">
+                <Sparkle className="h-5 w-5 text-white" />
+              </div>
+            </div>
+            <div className="grid gap-3">
+              {(recentMedia.length ? recentMedia : [{ id: 'empty-1', name: 'Upload photos', kind: 'photo' }, { id: 'empty-2', name: 'Capture a thought', kind: 'text' }, { id: 'empty-3', name: 'Build your timeline', kind: 'video' }]).slice(0, 3).map((item, index) => (
+                <div key={item.id || item.name} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.045] p-3">
+                  <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-purple-500/30 to-pink-500/20">
+                    {item.kind === 'photo' && item.id?.startsWith?.('empty') !== true ? <img src={mediaSrc(item.id)} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-pink-200" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-white">{item.name}</p>
+                    <p className="text-xs text-white/45">{index === 0 ? 'Recently remembered' : item.kind === 'text' ? 'Story fragment' : 'Timeline signal'}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-white/25" />
+                </div>
+              ))}
+            </div>
+          </motion.div>
         </div>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-8">
         {/* Main Column */}
         <div className="space-y-8">
+          <section className="grid gap-4 md:grid-cols-3">
+            {aiKnownSignals.map((signal) => (
+              <motion.div key={signal.label} initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="rounded-3xl border border-white/10 bg-white/[0.025] p-5 shadow-xl shadow-black/15">
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-white/35">AI knows</div>
+                <div className="mt-5 text-2xl font-black text-white">{signal.value}</div>
+                <div className="mt-1 text-sm font-semibold text-white/75">{signal.label}</div>
+                <p className="mt-2 text-xs leading-5 text-white/45">{signal.hint}</p>
+              </motion.div>
+            ))}
+          </section>
           
           {/* Quick Capture Input Field Container using Shadcn Tabs */}
-          <Card className="border border-white/10 bg-white/[0.02] rounded-3xl overflow-hidden shadow-2xl">
+          <Card className="border border-white/10 bg-gradient-to-br from-white/[0.045] to-white/[0.02] rounded-3xl overflow-hidden shadow-2xl shadow-black/20">
             <CardHeader className="pb-4 border-b border-white/5">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <PenTool className="h-4 w-4 text-pink-400" /> Quick Capture
+                    <PenTool className="h-4 w-4 text-pink-400" /> What should I do next?
                   </CardTitle>
                   <CardDescription className="text-xs text-white/50">
-                    Instantly save a thought or upload memory snapshots.
+                    Helpful recommendations, not chores.
                   </CardDescription>
                 </div>
                 <Sparkles className="h-4 w-4 text-pink-300 animate-pulse" />
@@ -689,7 +775,7 @@ export default function Dashboard() {
                               </div>
                               <h3 className="font-bold text-white text-sm line-clamp-1">{m.name}</h3>
                               <p className="text-xs text-white/80 line-clamp-4 leading-relaxed font-serif italic">
-                                "{m.aiAnalysis?.caption || m.aiAnalysis?.description}"
+                                <span>{m.aiAnalysis?.caption || m.aiAnalysis?.description}</span>
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-1 max-h-[44px] overflow-hidden">
@@ -725,6 +811,7 @@ export default function Dashboard() {
                             {/* Top action overlays */}
                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition duration-200">
                               <button 
+
                                 onClick={(e) => toggleFavorite(m.id, e)}
                                 className={`h-7 w-7 rounded-full flex items-center justify-center backdrop-blur border transition ${
                                   m.favorite 
@@ -780,19 +867,39 @@ export default function Dashboard() {
               </div>
             )}
           </section>
+
+          {/* Helpful Next Actions */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="flex items-center gap-2 text-xl font-black text-white">
+                <Sparkles className="h-5 w-5 text-pink-400" /> Recommended for you
+              </h2>
+              <span className="text-xs text-white/40">Changes as your archive grows</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {recommendedActions.slice(0, 5).map((action) => (
+                <Link key={action.title} href={action.href} className="group rounded-2xl border border-white/10 bg-white/[0.025] p-4 transition hover:-translate-y-0.5 hover:border-pink-400/25 hover:bg-white/[0.055]">
+                  <action.icon className="h-5 w-5 text-pink-300" />
+                  <div className="mt-5 text-sm font-bold text-white group-hover:text-pink-100">{action.title}</div>
+                  <p className="mt-1 text-xs leading-5 text-white/45">{action.detail}</p>
+                </Link>
+              ))}
+            </div>
+          </section>
+
         </div>
 
         {/* Sidebar Column */}
         <div className="space-y-8">
           
           {/* AI Insights & Pulse Analysis */}
-          <Card className="border border-white/10 bg-white/[0.02] rounded-3xl overflow-hidden shadow-xl">
+          <Card className="border border-white/10 bg-gradient-to-br from-pink-500/[0.06] to-white/[0.02] rounded-3xl overflow-hidden shadow-xl">
             <CardHeader className="pb-3 border-b border-white/5">
               <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                <Bot className="h-4 w-4 text-pink-400" /> AI Memory Pulse
+                <Bot className="h-4 w-4 text-pink-400" /> What does AI know?
               </CardTitle>
               <CardDescription className="text-[11px] text-white/50">
-                Data intelligence summary of your library.
+                Your daily memory intelligence.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-4 space-y-4">
@@ -810,7 +917,7 @@ export default function Dashboard() {
                   <div className="h-10 w-10 rounded-full bg-pink-500/10 border border-pink-500/20 flex items-center justify-center mx-auto text-pink-400">
                     <Sparkles className="h-4 w-4" />
                   </div>
-                  <div className="text-xs text-white/60">Generate full-library insight highlights with our intelligent engine.</div>
+                  <div className="text-xs text-white/60">Ask SnapNext to summarize people, places, trips, and stories it sees.</div>
                 </div>
               )}
               
@@ -826,10 +933,10 @@ export default function Dashboard() {
           </Card>
 
           {/* Storage & Plan Widget */}
-          <Card className="border border-white/10 bg-white/[0.02] rounded-3xl overflow-hidden">
+          <Card className="border border-white/10 bg-gradient-to-br from-emerald-400/[0.055] to-white/[0.02] rounded-3xl overflow-hidden">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-bold flex items-center justify-between">
-                <span className="flex items-center gap-1.5"><Cloud className="h-4 w-4 text-pink-400" /> Storage State</span>
+                <span className="flex items-center gap-1.5"><Cloud className="h-4 w-4 text-emerald-300" /> Safe & synced</span>
                 {usage?.isSuper && <Crown className="h-4 w-4 text-amber-300" />}
               </CardTitle>
               <CardDescription className="text-[11px] text-white/50">
@@ -889,6 +996,20 @@ export default function Dashboard() {
             </div>
           </section>
 
+          <section className="space-y-3">
+            <h3 className="text-xs uppercase font-bold text-white/40 tracking-wider">Come back tomorrow for</h3>
+            {[
+              ['On This Day', onThisDay.length ? `${onThisDay.length} memory anniversaries` : 'New memory anniversaries'],
+              ['Weekly recap', weeklyUploads ? `${weeklyUploads} recent uploads summarized` : 'A fresh life recap'],
+              ['Favorite person update', favoriteCount ? `${favoriteCount} favorites to revisit` : 'People highlights as AI learns'],
+            ].map(([title, detail]) => (
+              <div key={title} className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                <div className="text-xs font-semibold text-white">{title}</div>
+                <p className="mt-1 text-[10px] text-white/50">{detail}</p>
+              </div>
+            ))}
+          </section>
+
           {/* Prompt Suggestion Cards */}
           <section className="space-y-3">
             <h3 className="text-xs uppercase font-bold text-white/40 tracking-wider">Useful Suggestions</h3>
@@ -930,7 +1051,7 @@ export default function Dashboard() {
                   <div className="p-8 h-full flex flex-col justify-center items-center text-center space-y-4 bg-gradient-to-br from-pink-500/5 via-purple-500/10 to-indigo-500/5">
                     <Quote className="h-10 w-10 text-pink-500/20" />
                     <p className="text-lg md:text-xl font-serif italic leading-relaxed text-pink-100 max-w-md">
-                      "{selectedMemory.aiAnalysis?.caption || selectedMemory.aiAnalysis?.description}"
+                      <span>{selectedMemory.aiAnalysis?.caption || selectedMemory.aiAnalysis?.description}</span>
                     </p>
                     <Badge variant="outline" className="px-3 py-1 border-pink-500/20 bg-pink-500/10 text-pink-300 font-bold rounded-full text-xs">
                       {selectedMemory.aiAnalysis?.autoAlbum || 'Thought Capture'}
@@ -985,7 +1106,7 @@ export default function Dashboard() {
                         
                         {(detailCaption || selectedMemory.aiAnalysis?.caption) && (
                           <p className="text-xs text-pink-100 font-serif leading-relaxed italic">
-                            "{detailCaption || selectedMemory.aiAnalysis?.caption}"
+                            <span>{detailCaption || selectedMemory.aiAnalysis?.caption}</span>
                           </p>
                         )}
                       </div>
