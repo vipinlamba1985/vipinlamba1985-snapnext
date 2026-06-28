@@ -160,7 +160,7 @@ function ProductChrome({ children, compact = false }) {
 
 function HeroPreview() {
   return (
-    <VideoSlot video={demoVideos.hero} title="Digital Life OS Preview" eyebrow="Hero product demo" className="mx-auto mt-12 max-w-6xl">
+    <VideoSlot video={demoVideos.hero} title="Digital Life OS Preview" eyebrow="Hero product demo" className="mx-auto mt-8 max-w-6xl sm:mt-10">
       <ProductChrome>
         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-4">
@@ -492,6 +492,111 @@ function EverywhereSection() {
   );
 }
 
+function SolutionSection() {
+  return (
+    <section id="product" className="relative z-10 px-5 py-20 sm:px-6 lg:py-32">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid items-center gap-10 lg:grid-cols-[0.95fr_1.05fr]">
+          <SectionHeader eyebrow="SnapNext solution" title="Everything together. Finally." text="One private home for every important memory." center={false} />
+          <motion.div {...fadeUp} className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-4 shadow-2xl shadow-purple-950/25 backdrop-blur-xl">
+            <div className="grid gap-4 md:grid-cols-[0.8fr_1fr_0.8fr]">
+              <div className="space-y-3">
+                {['Phone photos', 'Cloud files', 'Family chats'].map((item) => (
+                  <div key={item} className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm font-semibold text-white/70">
+                    {item}
+                  </div>
+                ))}
+              </div>
+              <div className="relative grid min-h-56 place-items-center overflow-hidden rounded-3xl border border-pink-300/20 bg-gradient-to-br from-pink-500/20 via-purple-500/15 to-cyan-400/10 p-6 text-center">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(236,72,153,0.22),transparent_45%)]" />
+                <div className="relative">
+                  <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-pink-500 to-purple-600 shadow-2xl shadow-pink-500/20">
+                    <Brain className="h-8 w-8 text-white" />
+                  </div>
+                  <h3 className="mt-5 text-2xl font-black text-white">SnapNext Life OS</h3>
+                  <p className="mt-2 text-sm text-white/55">Organizes your digital life.</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {['Smart albums', 'Life timeline', 'Share-ready stories'].map((item) => (
+                  <div key={item} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 text-sm font-semibold text-white/75 shadow-lg shadow-black/20">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ReadyToPostSection() {
+  return (
+    <section id="ready" className="relative z-10 px-5 py-20 sm:px-6 lg:py-32">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
+          <motion.div {...fadeUp}>
+            <VideoSlot video={demoVideos.sharing} title="Ready-to-Post Studio" eyebrow="sharing-demo.mp4">
+              <ProductChrome compact>
+                <div className="grid gap-4 md:grid-cols-[1fr_0.9fr]">
+                  <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-500/25 to-pink-500/15 p-4">
+                    <div className="aspect-video rounded-xl bg-black/25 shadow-inner shadow-black/40" />
+                    <div className="mt-4 flex items-center justify-between text-xs text-white/45">
+                      <span>Goa family reel</span>
+                      <span className="text-emerald-300">Ready</span>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {['Caption ready', 'Highlights selected', 'Family version saved'].map((item) => (
+                      <div key={item} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 text-sm font-semibold text-white/70">
+                        <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> {item}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </ProductChrome>
+            </VideoSlot>
+          </motion.div>
+          <SectionHeader eyebrow="Create content" title="Turn memories into something beautiful." text="Captions, reels, and share-ready stories in minutes." center={false} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FAQSection() {
+  const faqs = [
+    ['Is SnapNext just cloud storage?', 'No. SnapNext is an AI Life OS for organizing, finding, reliving, and sharing your digital life.'],
+    ['Can I start free?', 'Yes. Start with the free plan and upgrade when your archive grows.'],
+    ['Are my memories private?', 'Yes. Your archive stays private, and you decide what to share.'],
+    ['Do I need to organize files myself?', 'No. SnapNext is designed to organize memories automatically.'],
+  ];
+
+  return (
+    <section id="faq" className="relative z-10 border-t border-white/10 px-5 py-20 sm:px-6 lg:py-28">
+      <div className="mx-auto max-w-4xl">
+        <SectionHeader eyebrow="FAQ" title="Simple answers." text="Everything you need to start with confidence." />
+        <motion.div {...fadeUp} className="mt-10 space-y-3">
+          {faqs.map(([question, answer]) => (
+            <details key={question} className="group rounded-2xl border border-white/10 bg-white/[0.035] p-5 transition hover:border-pink-300/25 hover:bg-white/[0.05]">
+              <summary className="cursor-pointer list-none text-base font-bold text-white outline-none focus-visible:ring-2 focus-visible:ring-pink-300">
+                <span className="flex items-center justify-between gap-4">
+                  {question}
+                  <ChevronRight className="h-4 w-4 text-white/35 transition group-open:rotate-90" />
+                </span>
+              </summary>
+              <p className="mt-4 text-sm leading-6 text-white/55">{answer}</p>
+            </details>
+          ))}
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+
 function TrustSection() {
   return (
     <section id="trust" className="border-y border-white/10 bg-white/[0.02] px-5 py-20 sm:px-6 lg:py-28">
@@ -567,9 +672,11 @@ export default function MarketingLandingPage() {
             </div>
           </Link>
           <nav className="hidden items-center gap-7 text-sm text-white/60 md:flex" aria-label="Landing navigation">
+            <a href="#product" className="transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300">Product</a>
             <a href="#search" className="transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300">Search</a>
             <a href="#timeline" className="transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300">Timeline</a>
             <a href="#family" className="transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300">Family</a>
+            <a href="#trust" className="transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300">Trust</a>
             <a href="#pricing" className="transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300">Pricing</a>
           </nav>
           <div className="flex items-center gap-2 sm:gap-3">
@@ -579,7 +686,7 @@ export default function MarketingLandingPage() {
         </div>
       </header>
 
-      <section className="relative z-10 px-5 pb-20 pt-14 text-center sm:px-6 lg:pb-28 lg:pt-24">
+      <section className="relative z-10 px-5 pb-16 pt-12 text-center sm:px-6 lg:pb-24 lg:pt-20">
         <div className="mx-auto max-w-5xl">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-pink-300/20 bg-pink-300/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-pink-100">
             <Sparkles className="h-3.5 w-3.5" /> The AI-powered Digital Life Operating System
@@ -608,7 +715,7 @@ export default function MarketingLandingPage() {
         <HeroPreview />
       </section>
 
-      <section className="relative z-10 px-5 py-20 sm:px-6 lg:py-28">
+      <section className="relative z-10 px-5 py-20 sm:px-6 lg:py-32">
         <div className="mx-auto max-w-7xl">
           <SectionHeader eyebrow="The problem" title="Your life is scattered everywhere." text="Photos on phones. Files in clouds. Family moments lost in chats." />
           <motion.div {...fadeUp} className="mt-12 grid gap-4 md:grid-cols-4">
@@ -628,15 +735,20 @@ export default function MarketingLandingPage() {
         </div>
       </section>
 
+      <SolutionSection />
+
       <SearchStory />
       <OrganizationSection />
       <TimelineSection />
+      <ReadyToPostSection />
+
       <FamilySharingSection />
       <AssistantSection />
       <EverywhereSection />
       <TrustSection />
 
       <PricingSection />
+      <FAQSection />
 
       <section className="relative z-10 px-5 py-20 sm:px-6 lg:py-28">
         <motion.div {...fadeUp} className="mx-auto max-w-5xl overflow-hidden rounded-[2.2rem] border border-white/10 bg-gradient-to-br from-pink-500/20 via-purple-600/15 to-cyan-500/10 p-8 text-center shadow-2xl shadow-purple-950/30 sm:p-12">
