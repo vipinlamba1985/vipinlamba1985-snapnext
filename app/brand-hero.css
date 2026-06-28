@@ -1,0 +1,81 @@
+/* SnapNext official landing hero copy update */
+section.relative.pt-12 .inline-flex.items-center.space-x-2 > span {
+    font-size: 0;
+}
+
+section.relative.pt-12 .inline-flex.items-center.space-x-2 > span::after {
+    content: "THE AI-POWERED DIGITAL LIFE OPERATING SYSTEM";
+    font-size: 0.75rem;
+}
+
+section.relative.pt-12 h1 {
+    font-size: 0;
+    line-height: 0;
+}
+
+section.relative.pt-12 h1 br,
+section.relative.pt-12 h1 span {
+    display: none;
+}
+
+section.relative.pt-12 h1::before,
+section.relative.pt-12 h1::after {
+    display: block;
+    font-size: 3rem;
+    line-height: 0.9;
+    letter-spacing: -0.025em;
+}
+
+section.relative.pt-12 h1::before {
+    content: "YOUR DIGITAL LIFE.";
+    color: #ffffff;
+}
+
+section.relative.pt-12 h1::after {
+    content: "ORGANIZED FOREVER.";
+    background: linear-gradient(to right, #c084fc, #ec4899, #22d3ee);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+section.relative.pt-12 h1 + p {
+    font-size: 0;
+    line-height: 0;
+}
+
+section.relative.pt-12 h1 + p::after {
+    content: "Bring every photo, video, memory, document, and life moment into one intelligent home. SnapNext automatically organizes, protects, and helps you rediscover everything with AI.";
+    display: block;
+    font-size: 1.125rem;
+    line-height: 1.625;
+}
+
+section.relative.pt-12 a[href="/signup"] {
+    font-size: 0;
+}
+
+section.relative.pt-12 a[href="/signup"]::before {
+    content: "Start Free — 15 GB Included";
+    font-size: 1rem;
+}
+
+section.relative.pt-12 .mt-6.text-xs {
+    font-size: 0;
+}
+
+section.relative.pt-12 .mt-6.text-xs::after {
+    content: "WORKS WITH GOOGLE PHOTOS • DROPBOX • INSTAGRAM • GMAIL • CAMERA ROLL";
+    font-size: 0.75rem;
+}
+
+@media (min-width: 768px) {
+    section.relative.pt-12 h1::before,
+    section.relative.pt-12 h1::after {
+        font-size: 6rem;
+    }
+
+    section.relative.pt-12 h1 + p::after {
+        font-size: 1.25rem;
+    }
+}
