@@ -126,8 +126,8 @@ function VideoSlot({ video, title, eyebrow, children, className = '' }) {
       <div className="absolute -right-20 bottom-0 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl transition duration-700 group-hover:scale-125" />
       <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:38px_38px] opacity-20" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(236,72,153,0.22),transparent_35%),linear-gradient(to_bottom,rgba(7,2,15,0.22),rgba(7,2,15,0.95))]" />
-      <div className="relative z-10 p-4 sm:p-6 lg:p-8">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+      <div className="relative z-10 p-4 sm:p-5 lg:p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.28em] text-pink-300">{eyebrow}</p>
             <h3 className="mt-1 text-base font-bold text-white sm:text-lg">{title}</h3>
@@ -153,20 +153,20 @@ function ProductChrome({ children, compact = false }) {
         </div>
         <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/35">SnapNext</span>
       </div>
-      <div className={`rounded-[1.15rem] border border-white/10 bg-[#090512]/90 shadow-inner shadow-purple-950/30 ${compact ? 'p-3' : 'p-4 sm:p-5'}`}>{children}</div>
+      <div className={`rounded-[1.15rem] border border-white/10 bg-[#090512]/90 shadow-inner shadow-purple-950/30 ${compact ? 'p-3' : 'p-3 sm:p-4'}`}>{children}</div>
     </div>
   );
 }
 
 function HeroPreview() {
   return (
-    <VideoSlot video={demoVideos.hero} title="Digital Life OS Preview" eyebrow="Hero product demo" className="mx-auto mt-8 max-w-6xl sm:mt-10">
+    <VideoSlot video={demoVideos.hero} title="Digital Life OS Preview" eyebrow="Hero product demo" className="mx-auto mt-5 max-w-6xl sm:mt-7">
       <ProductChrome>
         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-4">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
               <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600">
+                <div className="grid h-9 w-9 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600">
                   <Brain className="h-5 w-5 text-white" />
                 </div>
                 <div>
@@ -174,13 +174,13 @@ function HeroPreview() {
                   <p className="text-xs text-white/50">Sorting, finding, and protecting your memories.</p>
                 </div>
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 {[
                   ['34,218', 'memories indexed'],
                   ['12 GB', 'duplicates found'],
                   ['8', 'family vaults'],
                 ].map(([value, label]) => (
-                  <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-lg shadow-black/20 transition duration-300 hover:-translate-y-0.5 hover:bg-white/[0.07]">
+                  <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.045] p-3 shadow-lg shadow-black/20 transition duration-300 hover:-translate-y-0.5 hover:bg-white/[0.07]">
                     <div className="text-2xl font-black text-white">{value}</div>
                     <div className="text-xs text-white/45">{label}</div>
                   </div>
@@ -231,8 +231,8 @@ function SectionHeader({ eyebrow, title, text, center = true }) {
   return (
     <motion.div {...fadeUp} className={`${center ? 'mx-auto text-center' : ''} max-w-3xl`}>
       <p className="text-xs font-black uppercase tracking-[0.28em] text-pink-300">{eyebrow}</p>
-      <h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">{title}</h2>
-      {text && <p className="mt-5 text-base leading-7 text-white/62 sm:text-lg">{text}</p>}
+      <h2 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">{title}</h2>
+      {text && <p className="mt-3 text-sm leading-6 text-white/62 sm:text-base">{text}</p>}
     </motion.div>
   );
 }
@@ -246,12 +246,12 @@ function SearchStory() {
   };
 
   return (
-    <section id="search" className="px-5 py-20 sm:px-6 lg:py-28">
+    <section id="search" className="px-5 py-8 sm:px-6 lg:py-14">
       <div className="mx-auto max-w-7xl">
         <div className="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
           <SectionHeader eyebrow="AI search" title="Find anything in seconds." text="Type what you remember. SnapNext finds the moment." center={false} />
           <motion.div {...fadeUp}>
-            <VideoSlot video={demoVideos.search} title="Search Demo" eyebrow="search-demo.mp4">
+            <VideoSlot video={demoVideos.search} title="Search Demo" eyebrow="search-demo.mp4" className="-mt-3 lg:mt-0">
               <ProductChrome compact>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
                   <div className="flex items-center gap-3 rounded-2xl bg-black/30 px-4 py-3 ring-1 ring-white/10">
@@ -291,16 +291,16 @@ function SearchStory() {
 
 function OrganizationSection() {
   return (
-    <section id="organize" className="border-y border-white/10 bg-white/[0.02] px-5 py-20 sm:px-6 lg:py-28">
+    <section id="organize" className="border-y border-white/10 bg-white/[0.02] px-5 py-8 sm:px-6 lg:py-14">
       <div className="mx-auto max-w-7xl">
         <SectionHeader eyebrow="Automatic organization" title="Your photos organize themselves." text="Trips, people, documents, screenshots, and family moments fall into place." />
-        <motion.div {...fadeUp} className="mt-12 grid gap-4 md:grid-cols-3">
+        <motion.div {...fadeUp} className="mt-6 grid gap-3 md:grid-cols-3">
           {[
             { icon: Wand2, title: 'Albums appear', text: 'Goa trip. Passport. Baby milestones.' },
             { icon: RefreshCw, title: 'Duplicates fade', text: 'Keep the best. Clear the clutter.' },
             { icon: ShieldCheck, title: 'Important files surface', text: 'Documents stay easy to find.' },
           ].map((item) => (
-            <div key={item.title} className="group rounded-[1.7rem] border border-white/10 bg-[#0c0616] p-6 transition hover:-translate-y-1 hover:border-pink-400/30 hover:bg-white/[0.04]">
+            <div key={item.title} className="group rounded-[1.7rem] border border-white/10 bg-[#0c0616] p-5 transition hover:-translate-y-1 hover:border-pink-400/30 hover:bg-white/[0.04]">
               <item.icon className="h-6 w-6 text-pink-300" />
               <h3 className="mt-8 text-xl font-bold text-white">{item.title}</h3>
               <p className="mt-2 text-sm leading-6 text-white/55">{item.text}</p>
@@ -314,20 +314,20 @@ function OrganizationSection() {
 
 function TimelineSection() {
   return (
-    <section id="timeline" className="px-5 py-20 sm:px-6 lg:py-28">
+    <section id="timeline" className="px-5 py-8 sm:px-6 lg:py-14">
       <div className="mx-auto max-w-7xl">
-        <div className="grid items-center gap-10 lg:grid-cols-2">
+        <div className="grid items-center gap-6 lg:grid-cols-2">
           <motion.div {...fadeUp}>
             <VideoSlot video={demoVideos.timeline} title="Life Timeline" eyebrow="timeline-demo.mp4">
               <ProductChrome compact>
-                <div className="relative space-y-5 pl-6 before:absolute before:left-2 before:top-2 before:h-[calc(100%-1rem)] before:w-px before:bg-gradient-to-b before:from-pink-400 before:via-purple-400 before:to-cyan-300">
+                <div className="relative space-y-3 pl-6 before:absolute before:left-2 before:top-2 before:h-[calc(100%-1rem)] before:w-px before:bg-gradient-to-b before:from-pink-400 before:via-purple-400 before:to-cyan-300">
                   {[
                     ['2018', 'First big trip', '112 memories connected'],
                     ['2021', 'New home', 'Photos, bills, notes together'],
                     ['2024', 'Family reunion', 'Shared with favorites'],
                     ['Today', 'Life OS active', 'Everything searchable'],
                   ].map(([year, title, text]) => (
-                    <div key={title} className="relative rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                    <div key={title} className="relative rounded-2xl border border-white/10 bg-white/[0.04] p-3">
                       <span className="absolute -left-[1.85rem] top-5 h-3 w-3 rounded-full bg-pink-300 shadow-lg shadow-pink-400/60" />
                       <p className="text-xs font-black text-pink-200">{year}</p>
                       <h3 className="mt-1 font-bold text-white">{title}</h3>
@@ -347,14 +347,14 @@ function TimelineSection() {
 
 function FamilySharingSection() {
   return (
-    <section id="family" className="border-y border-white/10 bg-gradient-to-b from-purple-950/20 to-transparent px-5 py-20 sm:px-6 lg:py-28">
+    <section id="family" className="border-y border-white/10 bg-gradient-to-b from-purple-950/20 to-transparent px-5 py-8 sm:px-6 lg:py-14">
       <div className="mx-auto max-w-7xl">
         <SectionHeader eyebrow="Family and sharing" title="Keep loved ones connected." text="Share moments privately. Keep originals safe. No messy chat threads." />
-        <div className="mt-12 grid gap-6 lg:grid-cols-2">
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
           <motion.div {...fadeUp}>
-            <VideoSlot video={demoVideos.family} title="Family Vault" eyebrow="family-demo.mp4" className="h-full">
+            <VideoSlot video={demoVideos.family} title="Family Vault" eyebrow="family-demo.mp4" className="h-full -mt-3 lg:mt-0">
               <ProductChrome compact>
-                <div className="grid place-items-center gap-5 py-8">
+                <div className="grid place-items-center gap-4 py-4">
                   <div className="flex items-center gap-4 sm:gap-8">
                     {['Grandparents', 'Parents', 'Children'].map((person, index) => (
                       <div key={person} className="text-center">
@@ -403,7 +403,7 @@ function AssistantSection() {
   const [active, setActive] = useState(prompts[0]);
 
   return (
-    <section id="assistant" className="px-5 py-20 sm:px-6 lg:py-28">
+    <section id="assistant" className="px-5 py-8 sm:px-6 lg:py-14">
       <div className="mx-auto max-w-7xl">
         <div className="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
           <SectionHeader eyebrow="AI assistant" title="Ask your memories anything." text="A private assistant for your life archive." center={false} />
@@ -444,9 +444,9 @@ function AssistantSection() {
 
 function EverywhereSection() {
   return (
-    <section id="everywhere" className="border-y border-white/10 bg-white/[0.02] px-5 py-20 sm:px-6 lg:py-28">
+    <section id="everywhere" className="border-y border-white/10 bg-white/[0.02] px-5 py-8 sm:px-6 lg:py-14">
       <div className="mx-auto max-w-7xl">
-        <div className="grid items-center gap-10 lg:grid-cols-2">
+        <div className="grid items-center gap-6 lg:grid-cols-2">
           <motion.div {...fadeUp}>
             <VideoSlot video={demoVideos.sync} title="Works Everywhere" eyebrow="sync-demo.mp4">
               <ProductChrome compact>
@@ -463,7 +463,7 @@ function EverywhereSection() {
           </motion.div>
           <motion.div {...fadeUp} className="space-y-8">
             <SectionHeader eyebrow="Works everywhere" title="Everything in one place." text="Your devices today. More cloud connections on the roadmap." center={false} />
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div>
                 <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-white/45">Supported today</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm text-white/70 sm:grid-cols-3">
@@ -494,7 +494,7 @@ function EverywhereSection() {
 
 function SolutionSection() {
   return (
-    <section id="product" className="relative z-10 px-5 py-20 sm:px-6 lg:py-32">
+    <section id="product" className="relative z-10 px-5 py-8 sm:px-6 lg:py-16">
       <div className="mx-auto max-w-7xl">
         <div className="grid items-center gap-10 lg:grid-cols-[0.95fr_1.05fr]">
           <SectionHeader eyebrow="SnapNext solution" title="Everything together. Finally." text="One private home for every important memory." center={false} />
@@ -534,7 +534,7 @@ function SolutionSection() {
 
 function ReadyToPostSection() {
   return (
-    <section id="ready" className="relative z-10 px-5 py-20 sm:px-6 lg:py-32">
+    <section id="ready" className="relative z-10 px-5 py-8 sm:px-6 lg:py-16">
       <div className="mx-auto max-w-7xl">
         <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
           <motion.div {...fadeUp}>
@@ -575,10 +575,10 @@ function FAQSection() {
   ];
 
   return (
-    <section id="faq" className="relative z-10 border-t border-white/10 px-5 py-20 sm:px-6 lg:py-28">
+    <section id="faq" className="relative z-10 border-t border-white/10 px-5 py-8 sm:px-6 lg:py-14">
       <div className="mx-auto max-w-4xl">
         <SectionHeader eyebrow="FAQ" title="Simple answers." text="Everything you need to start with confidence." />
-        <motion.div {...fadeUp} className="mt-10 space-y-3">
+        <motion.div {...fadeUp} className="mt-6 space-y-3">
           {faqs.map(([question, answer]) => (
             <details key={question} className="group rounded-2xl border border-white/10 bg-white/[0.035] p-5 transition hover:border-pink-300/25 hover:bg-white/[0.05]">
               <summary className="cursor-pointer list-none text-base font-bold text-white outline-none focus-visible:ring-2 focus-visible:ring-pink-300">
@@ -599,10 +599,10 @@ function FAQSection() {
 
 function TrustSection() {
   return (
-    <section id="trust" className="border-y border-white/10 bg-white/[0.02] px-5 py-20 sm:px-6 lg:py-28">
+    <section id="trust" className="border-y border-white/10 bg-white/[0.02] px-5 py-8 sm:px-6 lg:py-14">
       <div className="mx-auto max-w-7xl">
         <SectionHeader eyebrow="Trust" title="Private by design." text="Your memories stay yours. Protected, organized, and ready when you need them." />
-        <motion.div {...fadeUp} className="mt-12 grid gap-4 md:grid-cols-3">
+        <motion.div {...fadeUp} className="mt-6 grid gap-3 md:grid-cols-3">
           {[
             { icon: Lock, title: 'Private vault', text: 'Personal memories stay protected.' },
             { icon: ShieldCheck, title: 'You control access', text: 'Share only what you choose.' },
@@ -610,7 +610,7 @@ function TrustSection() {
           ].map((item) => (
             <div key={item.title} className="rounded-[1.7rem] border border-white/10 bg-[#0c0616]/80 p-6 shadow-xl shadow-black/20 transition duration-300 hover:-translate-y-1 hover:border-pink-300/25 hover:bg-white/[0.04]">
               <item.icon className="h-5 w-5 text-pink-300" />
-              <h3 className="mt-8 text-lg font-bold text-white">{item.title}</h3>
+              <h3 className="mt-5 text-lg font-bold text-white">{item.title}</h3>
               <p className="mt-2 text-sm leading-6 text-white/55">{item.text}</p>
             </div>
           ))}
@@ -622,10 +622,10 @@ function TrustSection() {
 
 function PricingSection() {
   return (
-    <section id="pricing" className="px-5 py-20 sm:px-6 lg:py-28">
+    <section id="pricing" className="px-5 py-8 sm:px-6 lg:py-14">
       <div className="mx-auto max-w-7xl">
         <SectionHeader eyebrow="Pricing" title="Start free. Grow when ready." text="Simple plans for the memories that matter most." />
-        <motion.div {...fadeUp} className="mt-12 grid gap-5 lg:grid-cols-3">
+        <motion.div {...fadeUp} className="mt-6 grid gap-3 lg:grid-cols-3">
           {pricing.map((plan) => (
             <div key={plan.name} className={`relative rounded-[2rem] border p-6 shadow-xl shadow-black/20 transition duration-300 hover:-translate-y-1 ${plan.featured ? 'border-pink-400/50 bg-gradient-to-b from-pink-500/15 to-purple-950/20 shadow-pink-950/25' : 'border-white/10 bg-white/[0.03] hover:border-pink-300/20 hover:bg-white/[0.045]'}`}>
               {plan.featured && <div className="absolute right-5 top-5 rounded-full bg-pink-400 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-black">Popular</div>}
@@ -686,24 +686,24 @@ export default function MarketingLandingPage() {
         </div>
       </header>
 
-      <section className="relative z-10 px-5 pb-16 pt-12 text-center sm:px-6 lg:pb-24 lg:pt-20">
+      <section className="relative z-10 px-5 pb-8 pt-12 text-center sm:px-6 lg:pb-14 lg:pt-16">
         <div className="mx-auto max-w-5xl">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-pink-300/20 bg-pink-300/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-pink-100">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-pink-300/20 bg-pink-300/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-pink-100">
             <Sparkles className="h-3.5 w-3.5" /> The AI-powered Digital Life Operating System
           </div>
           <h1 className="text-5xl font-black leading-[0.92] tracking-[-0.05em] text-white sm:text-7xl lg:text-8xl">
             Your Digital Life.
             <span className="mt-2 block bg-gradient-to-r from-pink-300 via-purple-300 to-cyan-200 bg-clip-text text-transparent">Organized Forever.</span>
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-white/68 sm:text-xl">
+          <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/68 sm:text-xl">
             An AI home for your photos, videos, documents, stories, and family memories.
           </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm font-semibold text-white/55">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm font-semibold text-white/55">
             <span className="flex items-center gap-2"><Search className="h-4 w-4 text-pink-300" /> Find anything.</span>
             <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /> Never lose memories.</span>
             <span className="flex items-center gap-2"><Users className="h-4 w-4 text-cyan-300" /> Share with family.</span>
           </div>
-          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-5 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link href="/signup" className="group inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-4 font-black text-white shadow-2xl shadow-pink-950/30 transition duration-300 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-pink-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300 sm:w-auto">
               Start Free <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
             </Link>
@@ -715,10 +715,10 @@ export default function MarketingLandingPage() {
         <HeroPreview />
       </section>
 
-      <section className="relative z-10 px-5 py-20 sm:px-6 lg:py-32">
+      <section className="relative z-10 px-5 py-8 sm:px-6 lg:py-14">
         <div className="mx-auto max-w-7xl">
           <SectionHeader eyebrow="The problem" title="Your life is scattered everywhere." text="Photos on phones. Files in clouds. Family moments lost in chats." />
-          <motion.div {...fadeUp} className="mt-12 grid gap-4 md:grid-cols-4">
+          <motion.div {...fadeUp} className="mt-6 grid gap-3 md:grid-cols-4">
             {[
               { icon: ImageIcon, title: 'Photos buried', text: 'Great moments disappear in endless grids.' },
               { icon: Database, title: 'Files scattered', text: 'Documents live across too many places.' },
@@ -727,7 +727,7 @@ export default function MarketingLandingPage() {
             ].map((item) => (
               <div key={item.title} className="rounded-[1.7rem] border border-white/10 bg-white/[0.03] p-5">
                 <item.icon className="h-5 w-5 text-white/45" />
-                <h3 className="mt-8 text-lg font-bold text-white">{item.title}</h3>
+                <h3 className="mt-5 text-lg font-bold text-white">{item.title}</h3>
                 <p className="mt-2 text-sm leading-6 text-white/50">{item.text}</p>
               </div>
             ))}
@@ -738,30 +738,27 @@ export default function MarketingLandingPage() {
       <SolutionSection />
 
       <SearchStory />
+      <PricingSection />
       <OrganizationSection />
       <TimelineSection />
       <ReadyToPostSection />
 
       <FamilySharingSection />
-      <AssistantSection />
-      <EverywhereSection />
       <TrustSection />
-
-      <PricingSection />
       <FAQSection />
 
-      <section className="relative z-10 px-5 py-20 sm:px-6 lg:py-28">
-        <motion.div {...fadeUp} className="mx-auto max-w-5xl overflow-hidden rounded-[2.2rem] border border-white/10 bg-gradient-to-br from-pink-500/20 via-purple-600/15 to-cyan-500/10 p-8 text-center shadow-2xl shadow-purple-950/30 sm:p-12">
+      <section className="relative z-10 px-5 py-8 sm:px-6 lg:py-12">
+        <motion.div {...fadeUp} className="mx-auto max-w-5xl overflow-hidden rounded-[2.2rem] border border-white/10 bg-gradient-to-br from-pink-500/20 via-purple-600/15 to-cyan-500/10 p-6 text-center shadow-2xl shadow-purple-950/30 sm:p-8">
           <Star className="mx-auto h-8 w-8 text-pink-200" />
-          <h2 className="mt-5 text-4xl font-black tracking-tight text-white sm:text-6xl">Start your Life OS today.</h2>
-          <p className="mx-auto mt-5 max-w-xl text-white/65">Never lose your memories. Never search through chaos again.</p>
-          <Link href="/signup" className="mt-8 inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-7 py-4 font-black text-black transition hover:-translate-y-1 hover:bg-pink-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300">
+          <h2 className="mt-4 text-3xl font-black tracking-tight text-white sm:text-5xl">Start your Life OS today.</h2>
+          <p className="mx-auto mt-3 max-w-xl text-white/65">Never lose your memories. Never search through chaos again.</p>
+          <Link href="/signup" className="mt-5 inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-7 py-4 font-black text-black transition hover:-translate-y-1 hover:bg-pink-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-pink-300">
             Start Free <ArrowRight className="h-4 w-4" />
           </Link>
         </motion.div>
       </section>
 
-      <footer className="relative z-10 border-t border-white/10 px-5 py-10 sm:px-6">
+      <footer className="relative z-10 border-t border-white/10 px-5 py-8 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col gap-5 text-sm text-white/45 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-pink-500 to-purple-600"><Brain className="h-4 w-4 text-white" /></div>
