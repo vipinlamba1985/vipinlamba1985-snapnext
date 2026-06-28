@@ -37,7 +37,13 @@ function LoginContent() {
         document.cookie = `sb-access-token=${encodeURIComponent(data.token)}; path=/; max-age=604800; SameSite=Lax`;
         setStoredUser(data.user);
         toast.success('Successfully signed in!');
-        router.push('/dashboard');
+        const requestedNext = searchParams.get('next') || '/dashboard';
+        const nextPath = requestedNext.startsWith('/') && !requestedNext.startsWith('//') ? requestedNext : '/dashboard';
+        router.replace(nextPath);
+        router.refresh();
+        setTimeout(() => {
+          if (window.location.pathname === '/login') window.location.href = nextPath;
+        }, 250);
       } else {
         throw new Error('Invalid authentication response');
       }
