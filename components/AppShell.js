@@ -160,7 +160,7 @@ export default function AppShell({ children }) {
           <NotificationBell />
         </div>
 
-        <main className="px-4 md:px-8 py-6 md:py-8 pb-28 md:pb-10 max-w-6xl">
+        <main className="px-4 md:px-8 py-6 md:py-8 pb-36 md:pb-10 max-w-6xl">
           <VerifyBanner user={user} onVerified={() => {
             apiFetch('/auth/me').then(({ user }) => { setUser(user); setStoredUser(user); }).catch(() => {});
           }} />
@@ -168,20 +168,21 @@ export default function AppShell({ children }) {
         </main>
 
         {/* Mobile bottom nav */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 backdrop-blur bg-[#0b0414]/95 border-t border-white/10">
-          <div className="grid grid-cols-5">
+        <nav className="md:hidden fixed bottom-3 left-3 right-3 z-40 pb-[env(safe-area-inset-bottom)]">
+          <div className="grid grid-cols-5 items-center rounded-[2rem] border border-white/10 bg-[#0b0414]/85 p-2 shadow-2xl shadow-black/50 backdrop-blur-2xl">
             {MOBILE_NAV.map(item => {
               const Active = pathname === item.href;
               const Icon = item.icon;
               const isUpload = item.href === '/upload';
               return (
-                <Link key={item.href} href={item.href} className="flex flex-col items-center justify-center py-2.5 text-[11px] gap-1">
+                <Link key={item.href} href={item.href} className="relative flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[10px] font-semibold transition active:scale-95">
                   {isUpload ? (
-                    <div className="h-10 w-10 -mt-6 rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 grid place-items-center shadow-lg shadow-pink-500/40"><Upload className="h-5 w-5" /></div>
+                    <div className="grid h-12 w-12 -mt-8 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 shadow-2xl shadow-pink-500/40 ring-4 ring-[#0b0414]/90"><Upload className="h-5 w-5 text-white" /></div>
                   ) : (
-                    <Icon className={`h-5 w-5 ${Active ? 'text-pink-400' : 'text-white/60'}`} />
+                    <Icon className={`h-5 w-5 transition ${Active ? 'text-pink-300 drop-shadow-[0_0_10px_rgba(236,72,153,0.65)]' : 'text-white/55'}`} />
                   )}
-                  <span className={Active ? 'text-white' : 'text-white/60'}>{item.label}</span>
+                  {Active && !isUpload && <span className="absolute inset-x-3 top-1 h-8 rounded-2xl bg-white/[0.07] -z-10" />}
+                  <span className={Active ? 'text-white' : 'text-white/55'}>{item.label}</span>
                 </Link>
               );
             })}

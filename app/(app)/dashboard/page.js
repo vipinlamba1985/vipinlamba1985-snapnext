@@ -353,6 +353,11 @@ export default function Dashboard() {
   const videoCount = media.filter(m => m.kind === 'video').length;
   const textCount = media.filter(m => m.kind === 'text').length;
   const favoriteCount = media.filter(m => m.favorite).length;
+  const allTags = media.flatMap((m) => m.aiAnalysis?.tags || []).filter(Boolean);
+  const uniqueTags = [...new Set(allTags.map((tag) => String(tag).toLowerCase()))];
+  const faceSignals = media.flatMap((m) => m.aiAnalysis?.faces || []).filter(Boolean);
+  const placeSignals = uniqueTags.filter((tag) => ['goa', 'dubai', 'beach', 'travel', 'trip', 'vacation', 'wedding', 'birthday', 'family'].some((hint) => tag.includes(hint)));
+  const storySignals = media.filter((m) => m.kind === 'text' || m.aiAnalysis?.caption || m.aiAnalysis?.description).length;
 
   const latestMemory = media[0];
   const recentMedia = media.slice(0, 4);
@@ -367,9 +372,9 @@ export default function Dashboard() {
     ? Math.min(100, Math.round(((usage.usage?.bytes || 0) / usage.plan.storageBytes) * 100))
     : 0;
   const aiKnownSignals = [
-    { label: 'People & favorites', value: favoriteCount || 'Learning', hint: favoriteCount ? 'favorite memories marked' : 'mark favorites to teach AI' },
-    { label: 'Trips detected', value: latestTimeline?.items?.length || timelineGroups.length || 'Soon', hint: latestTimeline?.label || 'timeline builds as you add media' },
-    { label: 'Stories ready', value: textCount || aiHighlights.length || 'Start', hint: textCount ? 'captured thoughts and notes' : 'generate your first memory story' },
+    { label: 'People AI knows', value: `${faceSignals.length || favoriteCount} signals`, hint: faceSignals.length ? 'faces recognized across memories' : 'favorites help AI learn people' },
+    { label: 'Places discovered', value: `${placeSignals.length} places`, hint: placeSignals.length ? placeSignals.slice(0, 2).join(', ') : 'locations appear as memories grow' },
+    { label: 'Stories & events', value: `${storySignals} ready`, hint: storySignals ? 'captions, notes, and events available' : 'your first story starts with one memory' },
   ];
   const recommendedActions = [
     { title: 'Continue protecting memories', detail: weeklyUploads ? `${weeklyUploads} new item${weeklyUploads === 1 ? '' : 's'} this week` : 'Add photos, videos, or notes', href: '/upload', icon: Upload },
@@ -378,7 +383,21 @@ export default function Dashboard() {
     { title: 'Clean duplicates', detail: insights?.duplicates?.extraCopies ? `${insights.duplicates.extraCopies} duplicates found` : 'Keep your vault healthy', href: '/health', icon: CheckCircle2 },
     { title: 'Share with family', detail: favoriteCount ? `${favoriteCount} favorite memories ready` : 'Invite loved ones privately', href: '/favorites', icon: Users },
   ];
-  const searchSuggestions = ['Show beach photos', 'Find Sarika', 'Birthday memories', 'Dubai trip', 'Rainy evenings', 'Videos from last Christmas'];
+  const smartRecommendation = insights?.duplicates?.extraCopies
+    ? recommendedActions[3]
+    : latestTimeline?.items?.length
+      ? { title: `Continue ${latestTimeline.label}`, detail: `${latestTimeline.items.length} connected moments are ready`, href: '/memories', icon: TrendingUp }
+      : favoriteCount
+        ? recommendedActions[4]
+        : media.length
+          ? recommendedActions[1]
+          : recommendedActions[0];
+  const storyRows = [
+    { title: 'Continue your stories', items: recentMedia.length ? recentMedia : media.slice(0, 4), empty: 'Your first story starts with one memory.' },
+    { title: 'People you love', items: media.filter((m) => m.favorite).slice(0, 4), empty: 'Favorite people and moments will appear here.' },
+    { title: 'Trips & places', items: media.filter((m) => (m.aiAnalysis?.tags || []).some((tag) => String(tag).toLowerCase().match(/goa|dubai|trip|travel|beach|vacation|wedding|birthday|family/))).slice(0, 4), empty: 'Trips and places appear as AI learns your archive.' },
+  ];
+  const searchSuggestions = ['Beach photos', 'Sarika', 'Dubai', 'Birthday', 'Goa', 'Family trip', 'Wedding'];
 
 
   return (
@@ -503,7 +522,63 @@ export default function Dashboard() {
             </div>
           </section>
 
-          
+          <section className="space-y-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/35">Continue your stories</p>
+                <h2 className="text-2xl font-black text-white">Rediscover your own life.</h2>
+              </div>
+              <span className="text-xs text-white/40">Browse like discovery, powered by your memories</span>
+            </div>
+            {storyRows.map((row) => (
+              <div key={row.title} className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white/80">{row.title}</h3>
+                  <ChevronRight className="h-4 w-4 text-white/25" />
+                </div>
+                <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
+                  {(row.items.length ? row.items : [{ id: `empty-${row.title}`, name: row.empty, kind: 'text', aiAnalysis: { caption: row.empty } }]).slice(0, 6).map((item) => (
+                    <button
+                      key={item.id || item.name}
+                      onClick={() => !String(item.id || '').startsWith('empty-') && setSelectedMemory(item)}
+                      className="group w-56 shrink-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.025] text-left shadow-xl shadow-black/10 transition hover:-translate-y-1 hover:border-pink-300/25 hover:bg-white/[0.05]"
+                    >
+                      <div className="relative h-32 overflow-hidden bg-gradient-to-br from-purple-500/25 via-pink-500/15 to-cyan-400/10">
+                        {item.kind === 'photo' && !String(item.id || '').startsWith('empty-') ? (
+                          <img src={mediaSrc(item.id)} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+                        ) : (
+                          <div className="grid h-full place-items-center"><Sparkles className="h-7 w-7 text-pink-200/80" /></div>
+                        )}
+                      </div>
+                      <div className="p-4">
+                        <div className="truncate text-sm font-bold text-white">{item.name}</div>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/45">{item.aiAnalysis?.caption || item.aiAnalysis?.description || row.title}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </section>
+
+          <section className="rounded-3xl border border-pink-300/20 bg-gradient-to-br from-pink-500/10 via-purple-500/8 to-white/[0.02] p-5 shadow-xl shadow-purple-950/20">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg shadow-pink-500/20">
+                  <smartRecommendation.icon className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-pink-200">Smart recommendation</p>
+                  <h2 className="mt-1 text-xl font-black text-white">{smartRecommendation.title}</h2>
+                  <p className="mt-1 text-sm text-white/55">{smartRecommendation.detail}</p>
+                </div>
+              </div>
+              <Link href={smartRecommendation.href} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-black transition hover:-translate-y-0.5 hover:bg-pink-100">
+                Continue <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </section>
+
           {/* Quick Capture Input Field Container using Shadcn Tabs */}
           <Card className="border border-white/10 bg-gradient-to-br from-white/[0.045] to-white/[0.02] rounded-3xl overflow-hidden shadow-2xl shadow-black/20">
             <CardHeader className="pb-4 border-b border-white/5">
