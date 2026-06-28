@@ -28,6 +28,76 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false);
   const [currentFilter, setCurrentFilter] = useState('all');
 
+
+const FAILURE_COPY = {
+  duplicate: {
+    label: 'Already backed up',
+    detail: 'This file is already safely stored in SnapNext.',
+    retry: 'No retry needed.',
+    safe: true,
+  },
+  storage_full: {
+    label: 'Storage quota exceeded',
+    detail: 'This file does not fit in your current plan.',
+    retry: 'Upgrade your plan or remove files, then retry.',
+    safe: true,
+  },
+  too_large: {
+    label: 'File too large',
+    detail: 'This file is larger than the single-upload limit.',
+    retry: 'Use a smaller file or wait for resumable upload support.',
+    safe: true,
+  },
+  cloud_storage_unavailable: {
+    label: 'Cloud storage unavailable',
+    detail: 'SnapNext could not connect to the configured cloud storage service.',
+    retry: 'Retry after storage configuration is restored.',
+    safe: true,
+  },
+  storage_permission_denied: {
+    label: 'Cloud permissions blocked upload',
+    detail: 'The storage bucket rejected this upload.',
+    retry: 'Retry will help after bucket permissions are fixed.',
+    safe: true,
+  },
+  authentication_expired: {
+    label: 'Authentication expired',
+    detail: 'Your sign-in session expired before SnapNext could upload this file.',
+    retry: 'Sign in again, then retry the upload.',
+    safe: true,
+  },
+
+  bucket_unavailable: {
+    label: 'Storage bucket unavailable',
+    detail: 'The configured bucket could not be reached.',
+    retry: 'Retry after the bucket is restored or corrected.',
+    safe: true,
+  },
+  connection_lost: {
+    label: 'Connection lost',
+    detail: 'The upload connection dropped before SnapNext could save the file.',
+    retry: 'Retry should help on a stable connection.',
+    safe: true,
+  },
+  storage_unavailable: {
+    label: 'Upload service unavailable',
+    detail: 'SnapNext could not save this file right now.',
+    retry: 'Retry after a moment. If it continues, contact support.',
+    safe: true,
+  },
+  unrecognized_status: {
+    label: 'Upload status unclear',
+    detail: 'SnapNext did not receive a clear saved/failed response.',
+    retry: 'Retry this file.',
+    safe: true,
+  },
+};
+
+function explainFailure(reason, message) {
+  const base = FAILURE_COPY[reason] || FAILURE_COPY.storage_unavailable;
+  return { ...base, detail: message || base.detail };
+}
+
   // Stats
   const [uploadSpeed, setUploadSpeed] = useState(0); // bytes/sec
   const [estimatedTime, setEstimatedTime] = useState(null); // seconds
@@ -70,7 +140,7 @@ export default function UploadPage() {
   useEffect(() => {
     return () => {
       Object.values(previews).forEach(url => {
-        try { URL.revokeObjectURL(url); } catch (e) {}
+        try { URL.revokeObjectURL(url); } catch (e) { console.warn('Preview cleanup failed:', e?.message); }
       });
     };
   }, [previews]);
@@ -241,7 +311,7 @@ export default function UploadPage() {
   function removeItem(id) {
     setQueue(prev => prev.filter(item => item.id !== id));
     if (previews[id]) {
-      try { URL.revokeObjectURL(previews[id]); } catch (e) {}
+      try { URL.revokeObjectURL(previews[id]); } catch (e) { console.warn('Preview cleanup failed:', e?.message); }
       const newPreviews = { ...previews };
       delete newPreviews[id];
       setPreviews(newPreviews);
@@ -251,7 +321,7 @@ export default function UploadPage() {
   function clearQueue() {
     if (uploading) return;
     Object.values(previews).forEach(url => {
-      try { URL.revokeObjectURL(url); } catch (e) {}
+      try { URL.revokeObjectURL(url); } catch (e) { console.warn('Preview cleanup failed:', e?.message); }
     });
     setQueue([]);
     setPreviews({});
@@ -364,15 +434,23 @@ export default function UploadPage() {
 
         const res = response.data;
         const savedNames = new Set((res.saved || []).map(s => s.name));
-        const skippedMap = new Map((res.skipped || []).map(s => [s.name, s.reason]));
+        const skippedMap = new Map((res.skipped || []).map(s => [s.name, s]));
 
         if (savedNames.has(item.name)) {
           updateProgress(item.id, { status: 'done', progress: 100 });
           savedCount++;
           loadedProgressMap[item.id] = item.size;
         } else if (skippedMap.has(item.name)) {
-          const reason = skippedMap.get(item.name);
-          updateProgress(item.id, { status: 'skipped', progress: 100, reason });
+          const failure = skippedMap.get(item.name);
+          const reason = failure?.reason || 'storage_unavailable';
+          updateProgress(item.id, {
+            status: reason === 'duplicate' ? 'skipped' : 'error',
+            progress: 100,
+            reason,
+            message: failure?.message,
+            retryable: failure?.retryable !== false,
+            failedAt: failure?.timestamp || new Date().toISOString(),
+          });
           if (reason === 'duplicate') skippedCount++;
           else if (reason === 'storage_full') quotaExceededCount++;
           else failedCount++;
@@ -384,7 +462,8 @@ export default function UploadPage() {
         }
       } catch (err) {
         const errMsg = err.response?.data?.error || err.message || 'Upload failed';
-        updateProgress(item.id, { status: 'error', progress: 0, reason: errMsg });
+        const reason = err.response?.status === 401 ? 'authentication_expired' : 'storage_unavailable';
+        updateProgress(item.id, { status: 'error', progress: 0, reason, message: errMsg, retryable: err.response?.status !== 401, failedAt: new Date().toISOString() });
         failedCount++;
         loadedProgressMap[item.id] = 0;
       }
@@ -429,7 +508,7 @@ export default function UploadPage() {
   }
 
   function retryFailedUploads() {
-    setQueue(prev => prev.map(item => item.status === 'error' ? { ...item, status: 'queued', checked: true } : item));
+    setQueue(prev => prev.map(item => item.status === 'error' && item.retryable !== false ? { ...item, status: 'queued', checked: true, reason: null, message: null, failedAt: null, progress: 0 } : item));
     setTimeout(() => runBackup(), 200);
   }
 
@@ -444,7 +523,29 @@ export default function UploadPage() {
   });
 
   const checkedCount = queue.filter(q => q.checked && q.status === 'queued').length;
+
+  function retryItem(id) {
+    setQueue(prev => prev.map(item => item.id === id && item.retryable !== false ? {
+      ...item,
+      status: 'queued',
+      checked: true,
+      reason: null,
+      message: null,
+      failedAt: null,
+      progress: 0,
+    } : item));
+  }
+
   const totalQueuedSize = queue.filter(q => q.checked && q.status === 'queued').reduce((a, b) => a + b.size, 0);
+  const failedItems = queue.filter(q => q.status === 'error');
+  const primaryFailure = failedItems[0] ? explainFailure(failedItems[0].reason, failedItems[0].message) : null;
+  const disabledUploadReason = uploading
+    ? 'Upload is already running.'
+    : queue.length === 0
+      ? 'Add files to begin uploading.'
+      : checkedCount === 0
+        ? 'Select at least one queued file to upload.'
+        : null;
 
   return (
     <div className="space-y-6">
@@ -528,7 +629,6 @@ export default function UploadPage() {
             type="file" 
             multiple 
             webkitdirectory="true" 
-            directory="true" 
             onChange={handleFolderSelect} 
             className="hidden" 
           />
@@ -726,6 +826,34 @@ export default function UploadPage() {
             </div>
           </div>
 
+
+      {primaryFailure && (
+        <div className="rounded-3xl border border-rose-500/20 bg-gradient-to-br from-rose-500/10 via-purple-500/10 to-white/[0.02] p-5 shadow-2xl shadow-rose-950/20">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="flex gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-rose-500/15 text-rose-200 border border-rose-400/20">
+                <ShieldAlert className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-rose-200">AI Upload Assistant</div>
+                <h3 className="mt-1 text-lg font-black text-white">{primaryFailure.label}</h3>
+                <p className="mt-2 text-sm leading-6 text-white/65">{primaryFailure.detail}</p>
+                <div className="mt-3 grid gap-2 text-xs text-white/55 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-white/[0.04] p-3"><span className="block font-bold text-white/80">Photo safety</span>{primaryFailure.safe ? 'Your local file is safe. It was not deleted.' : 'Please keep your original file.'}</div>
+                  <div className="rounded-2xl bg-white/[0.04] p-3"><span className="block font-bold text-white/80">Retry</span>{primaryFailure.retry}</div>
+                  <div className="rounded-2xl bg-white/[0.04] p-3"><span className="block font-bold text-white/80">Next step</span>{failedItems[0]?.retryable === false ? 'Configuration needs attention.' : 'Retry this file when ready.'}</div>
+                </div>
+              </div>
+            </div>
+            {failedItems.some(item => item.retryable !== false) && (
+              <button onClick={retryFailedUploads} disabled={uploading} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2 text-xs font-black text-black transition hover:bg-white/90 disabled:opacity-50">
+                <RefreshCw className="h-3.5 w-3.5" /> Retry failed
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 text-center">
               <span className="text-[10px] text-white/40 block font-medium uppercase tracking-wider">Total Evaluated</span>
@@ -879,6 +1007,12 @@ export default function UploadPage() {
               </button>
             </div>
           </div>
+              {disabledUploadReason && (
+                <div className="basis-full text-[11px] text-white/45 text-right">
+                  Upload Selected is disabled because {disabledUploadReason}
+                </div>
+              )}
+
 
           {/* Queue Filter Tabs */}
           <div className="px-6 py-2 bg-white/[0.005] border-b border-white/5 flex gap-2 overflow-x-auto">
@@ -966,19 +1100,26 @@ export default function UploadPage() {
                         </span>
                       )}
                       {item.status === 'skipped' && (
-                        <span className="inline-flex items-center gap-1 text-amber-300 bg-amber-500/5 px-2 py-0.5 rounded-full border border-amber-500/10 text-[10px]">
-                          Skipped · {item.reason === 'duplicate' ? 'duplicate' : item.reason === 'storage_full' ? 'storage full' : item.reason}
-                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="inline-flex items-center gap-1 text-amber-300 bg-amber-500/5 px-2 py-0.5 rounded-full border border-amber-500/10 text-[10px]">
+                            {explainFailure(item.reason, item.message).label}
+                          </span>
+                          {item.failedAt && <span className="text-[9px] text-white/35">{new Date(item.failedAt).toLocaleTimeString()}</span>}
+                        </div>
                       )}
                       {item.status === 'error' && (
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/10 font-semibold text-[10px] uppercase">
-                            Failed
+                        <div className="flex flex-col items-end gap-1 max-w-[210px]">
+                          <span className="text-rose-300 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/10 font-semibold text-[10px]">
+                            {explainFailure(item.reason, item.message).label}
                           </span>
-                          {item.reason && (
-                            <span className="text-[9px] text-rose-400/70 block max-w-[150px] truncate" title={item.reason}>
-                              {item.reason}
-                            </span>
+                          <span className="text-[9px] text-rose-200/70 block text-right" title={item.message || item.reason}>
+                            {explainFailure(item.reason, item.message).detail}
+                          </span>
+                          {item.failedAt && <span className="text-[9px] text-white/35">Failed at {new Date(item.failedAt).toLocaleTimeString()}</span>}
+                          {item.retryable !== false && !uploading && (
+                            <button onClick={() => retryItem(item.id)} className="text-[10px] text-white bg-white/10 hover:bg-white/15 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                              <RefreshCw className="h-2.5 w-2.5" /> Queue retry
+                            </button>
                           )}
                         </div>
                       )}

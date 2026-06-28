@@ -27,6 +27,37 @@ function cors(res) {
 function json(data, status = 200) { return cors(NextResponse.json(data, { status })); }
 function clean(doc) { if (!doc) return doc; const { _id, passwordHash, ...rest } = doc; return rest; }
 
+
+function safeStorageError(error) {
+  const message = error?.message || String(error || 'Unknown storage error');
+  const code = error?.name || error?.Code || error?.code || 'StorageError';
+  const lower = message.toLowerCase();
+  let reason = 'storage_unavailable';
+  let userMessage = 'Upload service temporarily unavailable.';
+  let retryable = true;
+  let component = storage.active() === 's3' ? 'aws_s3' : 'local_storage';
+
+  if (lower.includes('missing') || lower.includes('not configured') || lower.includes('aws s3 not configured')) {
+    reason = 'cloud_storage_unavailable';
+    userMessage = 'Cloud storage is not configured.';
+    retryable = false;
+  } else if (lower.includes('accessdenied') || lower.includes('forbidden') || lower.includes('permission')) {
+    reason = 'storage_permission_denied';
+    userMessage = 'Cloud storage permissions are blocking this upload.';
+    retryable = false;
+  } else if (lower.includes('network') || lower.includes('timeout') || lower.includes('temporarily') || lower.includes('socket')) {
+    reason = 'connection_lost';
+    userMessage = 'Connection lost while saving this file.';
+    retryable = true;
+  } else if (lower.includes('nosuchbucket') || lower.includes('bucket')) {
+    reason = 'bucket_unavailable';
+    userMessage = 'Cloud storage bucket is unavailable.';
+    retryable = false;
+  }
+
+  return { reason, message: userMessage, technical: message, code, component, retryable };
+}
+
 export async function OPTIONS() { return cors(new NextResponse(null, { status: 200 })); }
 
 async function requireUser(request) {
@@ -291,16 +322,16 @@ async function handle(request, ctx) {
 
           // duplicate check
           const dup = await db.collection('media').findOne({ userId: user.id, hash });
-          if (dup) { skipped.push({ name: file.name, reason: 'duplicate' }); continue; }
+          if (dup) { skipped.push({ name: file.name, reason: 'duplicate', message: 'This file is already safely stored.', retryable: false, timestamp: new Date().toISOString() }); continue; }
 
           if (!isSuper(user) && size > runningRemaining) {
-            skipped.push({ name: file.name, reason: 'storage_full' });
+            skipped.push({ name: file.name, reason: 'storage_full', message: 'Storage quota exceeded. Upgrade your plan or free up space.', retryable: false, timestamp: new Date().toISOString() });
             continue;
           }
 
           // hard upper bound per file (single-shot upload). Larger files need multipart.
           if (size > storage.config.maxUploadBytes) {
-            skipped.push({ name: file.name, reason: 'too_large' });
+            skipped.push({ name: file.name, reason: 'too_large', message: `File exceeds the single-upload limit (${Math.round(storage.config.maxUploadBytes / 1024 / 1024)} MB).`, retryable: false, timestamp: new Date().toISOString() });
             continue;
           }
 
@@ -311,8 +342,26 @@ async function handle(request, ctx) {
           try {
             stored = await storage.save({ userId: user.id, fileId: id, buffer, ext, name: file.name, mime: file.type });
           } catch (e) {
-            console.error('[upload] storage error:', e?.message);
-            skipped.push({ name: file.name, reason: 'storage_error' });
+            const storageFailure = safeStorageError(e);
+            console.error('[upload] storage error:', {
+              reason: storageFailure.reason,
+              component: storageFailure.component,
+              code: storageFailure.code,
+              message: storageFailure.technical,
+              provider: storage.active(),
+              fileName: file.name,
+              size,
+              remaining: runningRemaining,
+            });
+            skipped.push({
+              name: file.name,
+              reason: storageFailure.reason,
+              message: storageFailure.message,
+              retryable: storageFailure.retryable,
+              component: storageFailure.component,
+              code: storageFailure.code,
+              timestamp: new Date().toISOString(),
+            });
             continue;
           }
           let aiAnalysis = null;
