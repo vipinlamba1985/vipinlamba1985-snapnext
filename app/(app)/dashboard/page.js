@@ -390,14 +390,14 @@ export default function Dashboard() {
         <div className="relative grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
           <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="space-y-6">
             <div className="inline-flex items-center gap-2 rounded-full border border-pink-300/20 bg-pink-300/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-pink-100">
-              <Sparkles className="h-3.5 w-3.5" /> Digital Life Command Center
+              <Sparkles className="h-3.5 w-3.5" /> AI-powered Digital Life Operating System
             </div>
             <div>
               <h1 className="max-w-3xl text-3xl font-black leading-tight tracking-tight text-white md:text-5xl">
-                SnapNext remembers your life.
+                SnapNext already understands your life.
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/68 md:text-base">
-                Your memories, moments, people, stories, and next best actions — organized by AI in one place.
+                My life today, recent moments, AI understanding, and what to do next — all in one command center.
               </p>
             </div>
 
@@ -478,6 +478,31 @@ export default function Dashboard() {
               </motion.div>
             ))}
           </section>
+
+          {/* What happened recently */}
+          <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.015] p-5 shadow-xl shadow-black/15">
+            <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/35">What happened recently</p>
+                <h2 className="mt-1 text-2xl font-black text-white">Your life, automatically understood.</h2>
+              </div>
+              <Link href="/memories" className="text-xs font-bold text-pink-200 hover:text-white">View timeline <ChevronRight className="inline h-3 w-3" /></Link>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              {[
+                { title: latestMemory?.name || 'First memory waiting', detail: latestMemory ? 'Most recent upload' : 'Add a photo, video, or thought', icon: Calendar },
+                { title: latestTimeline?.label || 'Timeline building', detail: latestTimeline?.items?.length ? `${latestTimeline.items.length} connected moments` : 'Trips and events appear here', icon: TrendingUp },
+                { title: onThisDay.length ? 'Memory anniversary' : 'Come back tomorrow', detail: onThisDay.length ? `${onThisDay.length} moment${onThisDay.length === 1 ? '' : 's'} from the past` : 'Fresh recaps and highlights will appear', icon: Calendar },
+              ].map((item) => (
+                <div key={item.title} className="rounded-2xl border border-white/10 bg-black/20 p-4 transition hover:-translate-y-0.5 hover:bg-white/[0.045]">
+                  <item.icon className="h-4 w-4 text-pink-300" />
+                  <div className="mt-5 text-sm font-bold text-white">{item.title}</div>
+                  <p className="mt-1 text-xs leading-5 text-white/45">{item.detail}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
           
           {/* Quick Capture Input Field Container using Shadcn Tabs */}
           <Card className="border border-white/10 bg-gradient-to-br from-white/[0.045] to-white/[0.02] rounded-3xl overflow-hidden shadow-2xl shadow-black/20">
@@ -485,10 +510,10 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <PenTool className="h-4 w-4 text-pink-400" /> What should I do next?
+                    <PenTool className="h-4 w-4 text-pink-400" /> Capture something new
                   </CardTitle>
                   <CardDescription className="text-xs text-white/50">
-                    Helpful recommendations, not chores.
+                    Add a memory only when you want to. SnapNext does the organizing.
                   </CardDescription>
                 </div>
                 <Sparkles className="h-4 w-4 text-pink-300 animate-pulse" />
