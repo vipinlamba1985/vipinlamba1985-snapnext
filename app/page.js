@@ -549,7 +549,7 @@ export default function MarketingLandingPage() {
       </header>
 
       <section className="relative z-10 px-5 pb-20 pt-14 text-center sm:px-6 lg:pb-28 lg:pt-24">
-        <motion.div {...fadeUp} className="mx-auto max-w-5xl">
+        <div className="mx-auto max-w-5xl">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-pink-300/20 bg-pink-300/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-pink-100">
             <Sparkles className="h-3.5 w-3.5" /> The AI-powered Digital Life Operating System
           </div>
@@ -568,7 +568,7 @@ export default function MarketingLandingPage() {
               Watch the product <Play className="h-4 w-4 fill-pink-300 text-pink-300" />
             </a>
           </div>
-        </motion.div>
+        </div>
         <HeroPreview />
       </section>
 
