@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
-import { Brain, ShieldCheck, Activity, BarChart3, GraduationCap, AlertTriangle, Sparkles, ShieldAlert, LockKeyhole } from 'lucide-react';
+import { Brain, ShieldCheck, Activity, BarChart3, GraduationCap, AlertTriangle, Sparkles, ShieldAlert, LockKeyhole, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function AICommandCenter() {
@@ -13,6 +13,7 @@ export default function AICommandCenter() {
   const [certification, setCertification] = useState(null);
   const [alerts, setAlerts] = useState(null);
   const [governance, setGovernance] = useState(null);
+  const [safety, setSafety] = useState(null);
   const [error, setError] = useState('');
 
   async function load() {
@@ -28,6 +29,7 @@ export default function AICommandCenter() {
       try { setCertification(await apiFetch('/ai-os/certification')); } catch (_) {}
       try { setAlerts(await apiFetch('/ai-os/alerts')); } catch (_) {}
       try { setGovernance(await apiFetch('/ai-os/governance')); } catch (_) {}
+      try { setSafety(await apiFetch('/ai-os/safety')); } catch (_) {}
     } catch (e) {
       setError(e.message || 'Unable to load AI OS status.');
     }
@@ -48,10 +50,24 @@ export default function AICommandCenter() {
     }
   }
 
+  async function applySafety(rec) {
+    try {
+      await apiFetch('/ai-os/safety', {
+        method: 'POST',
+        body: JSON.stringify({ agentId: rec.agentId, recommendedStatus: rec.recommendedStatus, reason: rec.reason }),
+      });
+      toast.success('Safety recommendation applied.');
+      await load();
+    } catch (e) {
+      toast.error(e.message || 'Unable to apply safety recommendation.');
+    }
+  }
+
   const agentList = agents?.agents || status?.agents || [];
   const summary = business?.summary || {};
   const alertList = alerts?.alerts || [];
   const governanceAgents = governance?.agents || [];
+  const recommendations = safety?.recommendations || [];
 
   return (
     <div className="space-y-6">
@@ -78,7 +94,7 @@ export default function AICommandCenter() {
         <Metric icon={Activity} label="Agents" value={String(agentList.length || 0)} />
         <Metric icon={BarChart3} label="30d AI Cost" value={summary.estimatedAiCost != null ? `$${summary.estimatedAiCost}` : 'Admin'} />
         <Metric icon={GraduationCap} label="Learning" value="Shadow Mode" />
-        <Metric icon={ShieldAlert} label="Alerts" value={String(alertList.length)} />
+        <Metric icon={ShieldAlert} label="Alerts" value={String(alertList.length + recommendations.length)} />
       </div>
 
       {alertList.length > 0 && (
@@ -89,6 +105,22 @@ export default function AICommandCenter() {
               <div key={`${alert.code}-${idx}`} className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-amber-50">
                 <div className="font-medium">{alert.code}</div>
                 <div className="mt-1 text-amber-100/70">{alert.message}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {recommendations.length > 0 && (
+        <section className="rounded-3xl border border-red-300/20 bg-red-500/10 p-5">
+          <div className="mb-3 flex items-center gap-2 text-red-100"><RotateCcw className="h-5 w-5"/><h2 className="text-lg font-semibold">Safety Rollback Recommendations</h2></div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {recommendations.map((rec) => (
+              <div key={`${rec.agentId}-${rec.recommendedStatus}`} className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs">
+                <div className="font-medium">{rec.agentName}</div>
+                <div className="mt-1 text-white/50">{rec.currentStatus} → {rec.recommendedStatus}</div>
+                <div className="mt-2 text-white/50">{rec.reason}</div>
+                <button onClick={()=>applySafety(rec)} className="mt-3 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-black">Apply safely</button>
               </div>
             ))}
           </div>
