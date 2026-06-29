@@ -1,4 +1,4 @@
-# SnapNext AI OS — Layers 1, 2, and 3 Self Review
+# SnapNext AI OS — Layers 1, 2, 3, and 4 Self Review
 
 ## Status
 
@@ -7,6 +7,7 @@ SnapNext AI OS now has:
 - Layer 1: orchestration, safety, economy, and shadow logging
 - Layer 2: premium ChatGPT-like specialist agents
 - Layer 3: feedback learning, scorecards, and business intelligence endpoints
+- Layer 4: AI Command Center UI and AI Studio feedback learning hooks
 
 It does not replace the OpenAI/Gemini router. External AI remains the primary user-facing quality engine while SnapNext agents operate in Shadow Mode and learn from production tasks.
 
@@ -78,12 +79,27 @@ It does not replace the OpenAI/Gemini router. External AI remains the primary us
   - Super User-only AI business intelligence endpoint
   - Shows requests, credits, estimated AI cost, failures, most-used feature, and most-expensive feature
 
+### Layer 4
+
+- `app/(app)/ai-command/page.js`
+  - AI Command Center UI
+  - Shows AI OS status
+  - Shows specialist agents
+  - Shows Super User business intelligence when available
+  - Shows Super User scorecards when available
+  - Keeps normal-user display safe and limited
+
+- `app/(app)/ai-studio/page.js`
+  - Adds Good result / Needs work feedback buttons
+  - Sends feedback to `/api/ai-os/feedback`
+  - Helps SnapNext agents learn from real user satisfaction signals
+
 ## Current Architecture
 
 ```text
 User Request
   ↓
-AI Agent API
+AI Studio / AI Agent API
   ↓
 Chief AI
   ↓
@@ -100,11 +116,13 @@ OpenAI / Gemini
 Shadow Learning Logs
   ↓
 Feedback Learning + Scorecards + Business Intelligence
+  ↓
+AI Command Center
 ```
 
 ## Premium Assistant Direction
 
-Layer 2 and Layer 3 are designed to feel like a premium ChatGPT-style assistant experience, but specialized for SnapNext.
+Layer 2, Layer 3, and Layer 4 are designed to feel like a premium ChatGPT-style assistant experience, but specialized for SnapNext.
 
 The user talks to one intelligent assistant. Behind the scenes, Chief AI assigns the best specialist agent, external AI protects quality, and SnapNext agents learn from shadow results and user feedback.
 
@@ -168,22 +186,23 @@ Layer 3 adds business intelligence visibility for:
 15. GET `/api/ai-os/scorecards` as Super User → should return scorecards.
 16. GET `/api/ai-os/business` as normal user → should return 403.
 17. GET `/api/ai-os/business` as Super User → should return AI business snapshot.
-18. Confirm existing AI Studio still loads.
-19. Confirm normal AI caption/post generation still works.
-20. Confirm no provider keys are exposed in responses.
+18. Open `/ai-command` as signed-in user → should show AI Command Center.
+19. Open `/ai-studio`, generate AI output, click Good result / Needs work → should save feedback.
+20. Confirm existing AI Studio still loads.
+21. Confirm normal AI caption/post generation still works.
+22. Confirm no provider keys are exposed in responses.
 
 ## Known Limits
 
-This is Layer 3 foundation. It creates learning data capture, scorecards, and business intelligence snapshots. It does not yet create real trained ML models, autonomous agents, or a visual dashboard.
+This is Layer 4 foundation. It creates the first visual control room and feedback loop. It does not yet create real trained ML models, autonomous agents, advanced video generation, or automated agent promotion.
 
 ## Next Layer
 
-Layer 4 should add:
+Layer 5 should add:
 
-- AI OS admin dashboard UI
 - User-facing expensive-task preview modal
-- Feedback buttons inside AI Studio
 - Video AI provider router
 - Agent promotion/restriction logic
 - Certification workflow
 - Automated alerts for high AI cost or failing agents
+- Dedicated navigation entry for AI Command Center
