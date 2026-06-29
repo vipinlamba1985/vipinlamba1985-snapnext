@@ -21,21 +21,24 @@ export async function POST(request) {
     db,
     user,
     feature: body.feature || 'postIdeas',
-    input: { topic: task, text: task },
+    input: { topic: task, text: task, ...(body.input || {}) },
     prompt: task,
+    media: body.media || null,
     request,
     qualityMode: body.qualityMode || 'balanced',
   });
 
-  if (!result.ok) return Response.json({ error: result.error }, { status: result.status || 400 });
+  if (!result.ok) {
+    return Response.json({ error: result.error, aiOs: result.aiOs || null }, { status: result.status || 400 });
+  }
 
-  const generated = result.result;
+  const generated = result.result || {};
   return Response.json({
     result: {
       title: 'SnapNext AI Draft',
-      summary: 'SnapNext generated a ready-to-review creative draft.',
-      caption: generated?.text || JSON.stringify(generated?.ideas || generated),
-      hashtags: ['#snapnext', '#memories', '#digitalLife'],
+      summary: 'SnapNext Intelligence OS generated a ready-to-review creative draft.',
+      caption: generated?.text || generated?.reply || generated?.caption || JSON.stringify(generated?.ideas || generated),
+      hashtags: generated?.hashtags ? [String(generated.hashtags)] : ['#snapnext', '#memories', '#digitalLife'],
       steps: ['Review the draft', 'Adjust the tone', 'Save or share'],
       draftType: 'Social Post',
     },
