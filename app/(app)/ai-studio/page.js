@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { Sparkles, Hash, Smile, Loader2, Copy, ImageIcon, Wand2, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Sparkles, Hash, Smile, Loader2, Copy, ImageIcon, Wand2, ThumbsUp, ThumbsDown, Gauge } from 'lucide-react';
 
 export default function AIStudio() {
   const [photos, setPhotos] = useState([]);
@@ -17,12 +18,33 @@ export default function AIStudio() {
   const [busy, setBusy] = useState('');
   const [aiStatus, setAiStatus] = useState(null);
   const [lastAiMeta, setLastAiMeta] = useState(null);
+  const [preview, setPreview] = useState(null);
 
   useEffect(() => {
     apiFetch('/ai/status?feature=caption').then(setAiStatus).catch(() => {});
   }, []);
 
   useEffect(() => { apiFetch('/media?filter=photo').then(d=>setPhotos(d.items?.slice(0, 24) || [])).catch(()=>{}); }, []);
+
+  async function previewTask(kind = 'caption') {
+    setBusy('preview');
+    try {
+      const feature = kind === 'ideas' ? 'postIdeas' : kind === 'all' ? 'doAll' : kind;
+      const res = await apiFetch('/ai-os/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          task: topic || caption || 'Create a social media post from my SnapNext memory',
+          feature,
+          qualityMode: mood === 'epic' || mood === 'cinematic' ? 'premium' : 'balanced',
+          input: { topic, mood, platform, mediaId: selected },
+        }),
+      });
+      setPreview(res);
+      toast.success('AI task preview ready.');
+    } catch (e) {
+      toast.error(e.message || 'Unable to preview AI task.');
+    } finally { setBusy(''); }
+  }
 
   async function run(kind) {
     setBusy(kind);
@@ -120,6 +142,7 @@ export default function AIStudio() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2 pt-1">
+              <Btn onClick={()=>previewTask('caption')} busy={busy==='preview'} icon={Gauge}>Preview cost</Btn>
               <Btn onClick={()=>run('caption')} busy={busy==='caption'} icon={Sparkles} grad>Caption</Btn>
               <Btn onClick={()=>run('hashtags')} busy={busy==='hashtags'} icon={Hash}>Hashtags</Btn>
               <Btn onClick={()=>run('emojis')} busy={busy==='emojis'} icon={Smile}>Emojis</Btn>
@@ -127,6 +150,21 @@ export default function AIStudio() {
               <Btn onClick={()=>run('all')} busy={busy==='all'} icon={Sparkles}>Do it all</Btn>
             </div>
           </div>
+
+          {preview && (
+            <div className="rounded-2xl border border-pink-400/20 bg-pink-500/10 p-5">
+              <div className="text-sm font-semibold">AI Task Preview</div>
+              <div className="mt-3 grid gap-2 text-xs text-white/70 sm:grid-cols-2">
+                <div>Agent: <span className="text-white">{preview.selectedAgent?.name}</span></div>
+                <div>Credits: <span className="text-white">{preview.economy?.requiredCredits ?? '—'}</span></div>
+                <div>Quality: <span className="text-white">{preview.qualityMode}</span></div>
+                <div>Choice needed: <span className="text-white">{preview.requiresUserChoice ? 'Yes' : 'No'}</span></div>
+              </div>
+              <p className="mt-3 text-xs text-white/60">{preview.userMessage}</p>
+              {preview.options?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{preview.options.slice(0,3).map(o => <span key={o.label} className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-white/70">{o.label}: {o.credits} credits</span>)}</div>}
+              {!preview.economy?.allowed && <Link href="/billing" className="mt-3 inline-flex rounded-full bg-white px-3 py-1.5 text-xs font-medium text-black">Upgrade / buy credits</Link>}
+            </div>
+          )}
 
           {ideas.length > 0 && (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
