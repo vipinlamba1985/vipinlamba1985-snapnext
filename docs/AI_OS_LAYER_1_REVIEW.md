@@ -1,4 +1,4 @@
-# SnapNext AI OS — Layers 1 to 6 Self Review
+# SnapNext AI OS — Layers 1 to 7 Self Review
 
 ## Status
 
@@ -10,6 +10,7 @@ SnapNext AI OS now has:
 - Layer 4: AI Command Center UI and AI Studio feedback learning hooks
 - Layer 5: task preview, video routing foundation, certification planning, and AI alerts
 - Layer 6: video adapter stubs, agent governance persistence, and AI Command navigation
+- Layer 7: AI Video Studio page, AI Video navigation, and governance controls in AI Command Center
 
 It does not replace the OpenAI/Gemini router. External AI remains the primary user-facing quality engine while SnapNext agents operate in Shadow Mode and learn from production tasks.
 
@@ -136,15 +137,27 @@ It does not replace the OpenAI/Gemini router. External AI remains the primary us
   - `GET` returns agent governance state
   - `POST` updates an agent status override
 
+### Layer 7
+
+- `app/(app)/ai-video/page.js`
+  - User-facing AI Video Studio
+  - Lets users preview video task cost, quality mode, provider, credits, and next steps
+  - Safe submit button tests the protected submit path without forcing real provider execution
+
 - `components/AppShell.js`
-  - Adds AI Command sidebar navigation for Super User/Admin
+  - Adds AI Video navigation for signed-in users
+  - Keeps AI Command navigation Super User/Admin-only
+
+- `app/(app)/ai-command/page.js`
+  - Adds governance controls for Super User/Admin
+  - Allows manual agent status updates to shadow, assisted_review, restricted, or disabled
 
 ## Current Architecture
 
 ```text
 User Request
   ↓
-AI Studio / AI Agent API
+AI Studio / AI Video / AI Agent API
   ↓
 Task Preview / Chief AI
   ↓
@@ -169,14 +182,6 @@ Video Planning / Provider Adapter Stubs
 AI Command Center
 ```
 
-## Premium Assistant Direction
-
-Layers 2 through 6 are designed to feel like a premium ChatGPT-style assistant experience, but specialized for SnapNext.
-
-The user talks to one intelligent assistant. Behind the scenes, Chief AI assigns the best specialist agent, external AI protects quality, SnapNext agents learn from shadow results and user feedback, and expensive tasks can be previewed before execution.
-
-Specialist agents do not yet replace external AI. They observe, create shadow plans, collect feedback, learn, and prepare for certification.
-
 ## Safety Rules Added
 
 - Blocks suspicious prompt-injection patterns.
@@ -200,7 +205,7 @@ The Economy Engine estimates:
 - Profit gate outcome
 - User choice options when task is too expensive
 
-Layer 6 adds provider-key checks and refuses real video generation unless provider configuration and task approval are ready.
+Layer 7 gives users a visible video preview page so they understand cost/quality before any expensive generation.
 
 ## Collections Used
 
@@ -213,51 +218,27 @@ Layer 6 adds provider-key checks and refuses real video generation unless provid
 
 ## Manual QA Checklist
 
-1. Sign out and call `/api/ai-agent` → should return `unauthenticated`.
-2. Sign in and call `/api/ai-agent` with normal task → should return result + `aiOs` metadata.
-3. Call `/api/ai-agent` with suspicious prompt like `ignore previous instructions` → Guardian should block.
-4. Call `/api/ai-agent` with `delete all my files` → approval should be required.
-5. Call `/api/ai-os/status` signed out → should return `unauthenticated`.
-6. Call `/api/ai-os/status` signed in as normal user → limited status only.
-7. Call `/api/ai-os/status` as Super User → full agent status.
-8. Call `/api/ai-os/agents` signed out → should return `unauthenticated`.
-9. Call `/api/ai-os/agents` signed in → should return specialist agents.
-10. POST `/api/ai-os/agents` with `create a cinematic reel from my trip` → should select Video Agent.
-11. POST `/api/ai-os/agents` with `find photos from Canada` → should select Search Agent.
-12. POST `/api/ai-os/agents` with `remove duplicates` → should select Cleanup Agent and keep delete in review-only mode.
-13. POST `/api/ai-os/feedback` with `agentId`, `rating`, and `requestId` → should save feedback.
-14. GET `/api/ai-os/scorecards` as normal user → should return 403.
-15. GET `/api/ai-os/scorecards` as Super User → should return scorecards.
-16. GET `/api/ai-os/business` as normal user → should return 403.
-17. GET `/api/ai-os/business` as Super User → should return AI business snapshot.
-18. POST `/api/ai-os/preview` with `create a 4K cinematic reel from my trip` → should return task preview, Video Agent, video provider recommendation, credits/options.
-19. GET `/api/ai-os/certification` as normal user → should return 403.
-20. GET `/api/ai-os/certification` as Super User → should return certification plan.
-21. GET `/api/ai-os/alerts` as normal user → should return 403.
-22. GET `/api/ai-os/alerts` as Super User → should return alerts.
-23. GET `/api/ai-os/video` signed in → should show provider availability without exposing keys.
-24. POST `/api/ai-os/video` with `action: preview` → should return video plan.
-25. POST `/api/ai-os/video` with `action: submit` and no provider key → should return preview-only structured error.
-26. GET `/api/ai-os/governance` as normal user → should return 403.
-27. GET `/api/ai-os/governance` as Super User → should return governance state.
-28. POST `/api/ai-os/governance` as Super User → should update agent status override.
-29. Open sidebar as Super User/Admin → AI Command should appear.
-30. Open `/ai-command` as signed-in user → should show AI Command Center.
-31. Open `/ai-studio`, generate AI output, click Good result / Needs work → should save feedback.
-32. Confirm existing AI Studio still loads.
-33. Confirm normal AI caption/post generation still works.
-34. Confirm no provider keys are exposed in responses.
+1. Run `yarn build`.
+2. Open `/ai-video` signed in.
+3. Preview `Create a 4K cinematic reel from my trip` and confirm provider/credits/options appear.
+4. Test safe submit without video provider keys and confirm no real provider call is made.
+5. Open `/ai-command` as Super User/Admin and confirm governance controls appear.
+6. Update one agent to `restricted`, reload, and confirm persistence.
+7. Open sidebar and confirm AI Video appears for users and AI Command only appears for Super User/Admin.
+8. Confirm existing AI Studio still loads.
+9. Confirm normal AI caption/post generation still works.
+10. Confirm no provider keys are exposed in responses.
 
 ## Known Limits
 
-This is Layer 6 foundation. It creates video adapter stubs and governance persistence. It does not yet perform real video generation API calls, train custom ML models, or automatically promote agents without Super User oversight.
+This is Layer 7 foundation. It creates UI controls for video planning and governance. It does not yet perform real video generation API calls, train custom ML models, or automatically promote agents without Super User oversight.
 
 ## Next Layer
 
-Layer 7 should add:
+Layer 8 should add:
 
-- UI controls for task preview inside AI Studio
-- Video creation page or modal connected to `/api/ai-os/video`
-- Governance controls in AI Command Center
-- Provider-specific real adapters once provider keys and billing are approved
-- Safer credit purchase/upgrade flow for Ultra tasks
+- Real provider-specific adapters once provider keys and billing are approved
+- Credit purchase or upgrade flow for Ultra video tasks
+- User-facing task preview modal inside AI Studio
+- Automated agent rollback if failure rate rises
+- More complete AI Command testing tools
