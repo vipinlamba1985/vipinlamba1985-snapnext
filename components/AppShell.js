@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Camera, Home, Upload, Image as ImageIcon, Heart, Sparkles, Send, Users, MessageSquare, Download, Trash2, CreditCard, Settings, Shield, LifeBuoy, LogOut, Crown, Menu, X, Mail, Loader2, Network, RefreshCw, BookOpen, ShieldAlert } from 'lucide-react';
+import { Camera, Home, Upload, Image as ImageIcon, Heart, Sparkles, Send, Users, MessageSquare, Download, Trash2, CreditCard, Settings, Shield, LifeBuoy, LogOut, Crown, Menu, X, Mail, Loader2, Network, RefreshCw, BookOpen, ShieldAlert, BrainCircuit } from 'lucide-react';
 import { apiFetch, logout, getStoredUser, setStoredUser, getToken } from '@/lib/api-client';
 import { formatBytes } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -18,6 +18,7 @@ const NAV = [
   { href: '/health', label: 'Memory Health', icon: ShieldAlert },
   { href: '/imports', label: 'Cloud Sync', icon: RefreshCw },
   { href: '/ai-studio', label: 'AI Studio', icon: Sparkles },
+  { href: '/ai-command', label: 'AI Command', icon: BrainCircuit, adminOnly: true },
   { href: '/ready-to-post', label: 'Ready to Post', icon: Send },
   { href: '/favorites', label: 'Favorites', icon: Users },
   { href: '/community', label: 'Community', icon: Users, soon: true },
