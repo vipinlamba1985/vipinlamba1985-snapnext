@@ -1,4 +1,4 @@
-# SnapNext AI OS — Layers 1 to 5 Self Review
+# SnapNext AI OS — Layers 1 to 6 Self Review
 
 ## Status
 
@@ -9,6 +9,7 @@ SnapNext AI OS now has:
 - Layer 3: feedback learning, scorecards, and business intelligence endpoints
 - Layer 4: AI Command Center UI and AI Studio feedback learning hooks
 - Layer 5: task preview, video routing foundation, certification planning, and AI alerts
+- Layer 6: video adapter stubs, agent governance persistence, and AI Command navigation
 
 It does not replace the OpenAI/Gemini router. External AI remains the primary user-facing quality engine while SnapNext agents operate in Shadow Mode and learn from production tasks.
 
@@ -113,6 +114,31 @@ It does not replace the OpenAI/Gemini router. External AI remains the primary us
 - `app/api/ai-os/alerts/route.js`
   - Super User-only endpoint for AI health, cost, and learning alerts
 
+### Layer 6
+
+- `lib/ai-video-adapters.js`
+  - Video provider availability map
+  - Veo / Runway / Kling / Luma / SnapNext Storyboard routing foundation
+  - Safe preview-only behavior when provider keys are missing
+  - Submit stub that refuses real generation until provider keys and credit confirmation are ready
+
+- `app/api/ai-os/video/route.js`
+  - `GET` shows video provider availability
+  - `POST` previews or submits video generation plan safely
+
+- `lib/ai-agent-governance.js`
+  - Super User governance state
+  - Manual agent status override persistence
+  - Supports training, shadow, assisted_review, certified, restricted, disabled
+
+- `app/api/ai-os/governance/route.js`
+  - Super User-only governance endpoint
+  - `GET` returns agent governance state
+  - `POST` updates an agent status override
+
+- `components/AppShell.js`
+  - Adds AI Command sidebar navigation for Super User/Admin
+
 ## Current Architecture
 
 ```text
@@ -136,14 +162,16 @@ Shadow Learning Logs
   ↓
 Feedback Learning + Scorecards + Business Intelligence
   ↓
-Certification + Alerts
+Certification + Governance + Alerts
+  ↓
+Video Planning / Provider Adapter Stubs
   ↓
 AI Command Center
 ```
 
 ## Premium Assistant Direction
 
-Layers 2 through 5 are designed to feel like a premium ChatGPT-style assistant experience, but specialized for SnapNext.
+Layers 2 through 6 are designed to feel like a premium ChatGPT-style assistant experience, but specialized for SnapNext.
 
 The user talks to one intelligent assistant. Behind the scenes, Chief AI assigns the best specialist agent, external AI protects quality, SnapNext agents learn from shadow results and user feedback, and expensive tasks can be previewed before execution.
 
@@ -156,6 +184,8 @@ Specialist agents do not yet replace external AI. They observe, create shadow pl
 - Blocks privacy-leak language.
 - Requires approval for risky delete/share/publish-style tasks.
 - Keeps external AI as the primary quality engine until SnapNext agents are certified.
+- Video generation is preview-only until provider keys and explicit credit confirmation exist.
+- Agent governance can restrict or disable agents if quality drops.
 
 ## Profit / Credit Protection
 
@@ -170,13 +200,14 @@ The Economy Engine estimates:
 - Profit gate outcome
 - User choice options when task is too expensive
 
-Layer 5 adds preview before execution for expensive tasks and recommends video provider strategy without generating costly video automatically.
+Layer 6 adds provider-key checks and refuses real video generation unless provider configuration and task approval are ready.
 
 ## Collections Used
 
 - `ai_os_events`
 - `ai_shadow_results`
 - `ai_agent_feedback`
+- `ai_agent_governance`
 - Existing `ai_usage`
 - Existing `ai_history`
 
@@ -204,22 +235,29 @@ Layer 5 adds preview before execution for expensive tasks and recommends video p
 20. GET `/api/ai-os/certification` as Super User → should return certification plan.
 21. GET `/api/ai-os/alerts` as normal user → should return 403.
 22. GET `/api/ai-os/alerts` as Super User → should return alerts.
-23. Open `/ai-command` as signed-in user → should show AI Command Center.
-24. Open `/ai-studio`, generate AI output, click Good result / Needs work → should save feedback.
-25. Confirm existing AI Studio still loads.
-26. Confirm normal AI caption/post generation still works.
-27. Confirm no provider keys are exposed in responses.
+23. GET `/api/ai-os/video` signed in → should show provider availability without exposing keys.
+24. POST `/api/ai-os/video` with `action: preview` → should return video plan.
+25. POST `/api/ai-os/video` with `action: submit` and no provider key → should return preview-only structured error.
+26. GET `/api/ai-os/governance` as normal user → should return 403.
+27. GET `/api/ai-os/governance` as Super User → should return governance state.
+28. POST `/api/ai-os/governance` as Super User → should update agent status override.
+29. Open sidebar as Super User/Admin → AI Command should appear.
+30. Open `/ai-command` as signed-in user → should show AI Command Center.
+31. Open `/ai-studio`, generate AI output, click Good result / Needs work → should save feedback.
+32. Confirm existing AI Studio still loads.
+33. Confirm normal AI caption/post generation still works.
+34. Confirm no provider keys are exposed in responses.
 
 ## Known Limits
 
-This is Layer 5 foundation. It creates preview, certification planning, and alerts. It does not yet create real trained ML models, autonomous agents, actual video generation provider API calls, or automatic certification updates.
+This is Layer 6 foundation. It creates video adapter stubs and governance persistence. It does not yet perform real video generation API calls, train custom ML models, or automatically promote agents without Super User oversight.
 
 ## Next Layer
 
-Layer 6 should add:
+Layer 7 should add:
 
-- User-facing preview modal connected into AI Studio / AI Agent UX
-- Real video generation provider adapters behind safe credit gates
-- Agent promotion/restriction persistence
-- Navigation entry for AI Command Center
-- Automated alerts surface in admin UI
+- UI controls for task preview inside AI Studio
+- Video creation page or modal connected to `/api/ai-os/video`
+- Governance controls in AI Command Center
+- Provider-specific real adapters once provider keys and billing are approved
+- Safer credit purchase/upgrade flow for Ultra tasks
