@@ -10,7 +10,7 @@ import os
 import sys
 
 # Get base URL from environment
-BASE_URL = os.getenv('NEXT_PUBLIC_BASE_URL', 'https://snapnext-auth-fix.preview.emergentagent.com')
+BASE_URL = os.getenv('NEXT_PUBLIC_BASE_URL', 'https://aios-preview.preview.emergentagent.com')
 API_BASE = f"{BASE_URL}/api"
 
 # Test user token (preview-demo-token for super user)
