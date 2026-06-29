@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { Sparkles, Hash, Smile, Loader2, Copy, ImageIcon, Wand2 } from 'lucide-react';
+import { Sparkles, Hash, Smile, Loader2, Copy, ImageIcon, Wand2, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 export default function AIStudio() {
   const [photos, setPhotos] = useState([]);
@@ -16,6 +16,7 @@ export default function AIStudio() {
   const [ideas, setIdeas] = useState([]);
   const [busy, setBusy] = useState('');
   const [aiStatus, setAiStatus] = useState(null);
+  const [lastAiMeta, setLastAiMeta] = useState(null);
 
   useEffect(() => {
     apiFetch('/ai/status?feature=caption').then(setAiStatus).catch(() => {});
@@ -27,17 +28,21 @@ export default function AIStudio() {
     setBusy(kind);
     try {
       if (kind === 'caption') {
-        const { caption } = await apiFetch('/ai/caption', { method:'POST', body: JSON.stringify({ topic, mood, platform, mediaId: selected }) });
-        setCaption(caption);
+        const res = await apiFetch('/ai/caption', { method:'POST', body: JSON.stringify({ topic, mood, platform, mediaId: selected }) });
+        setCaption(res.caption);
+        setLastAiMeta({ agentId: 'creator', feature: 'caption', requestId: res.meta?.requestId || null });
       } else if (kind === 'hashtags') {
-        const { hashtags } = await apiFetch('/ai/hashtags', { method:'POST', body: JSON.stringify({ text: caption || topic || 'photo memory' }) });
-        setHashtags(hashtags);
+        const res = await apiFetch('/ai/hashtags', { method:'POST', body: JSON.stringify({ text: caption || topic || 'photo memory' }) });
+        setHashtags(res.hashtags);
+        setLastAiMeta({ agentId: 'creator', feature: 'hashtags', requestId: res.meta?.requestId || null });
       } else if (kind === 'emojis') {
-        const { emojis } = await apiFetch('/ai/emojis', { method:'POST', body: JSON.stringify({ text: caption || topic || 'photo memory' }) });
-        setEmojis(emojis);
+        const res = await apiFetch('/ai/emojis', { method:'POST', body: JSON.stringify({ text: caption || topic || 'photo memory' }) });
+        setEmojis(res.emojis);
+        setLastAiMeta({ agentId: 'creator', feature: 'emojis', requestId: res.meta?.requestId || null });
       } else if (kind === 'ideas') {
-        const { ideas } = await apiFetch('/ai/post-ideas', { method:'POST', body: JSON.stringify({ topic: topic || 'recent memories' }) });
-        setIdeas(ideas || []);
+        const res = await apiFetch('/ai/post-ideas', { method:'POST', body: JSON.stringify({ topic: topic || 'recent memories' }) });
+        setIdeas(res.ideas || []);
+        setLastAiMeta({ agentId: 'creator', feature: 'postIdeas', requestId: res.meta?.requestId || null });
       } else if (kind === 'all') {
         await run('caption'); await run('hashtags'); await run('emojis');
       }
@@ -45,6 +50,23 @@ export default function AIStudio() {
     finally { setBusy(''); }
   }
   function copy(s) { navigator.clipboard.writeText(s); toast.success('Copied'); }
+
+  async function sendFeedback(rating) {
+    try {
+      await apiFetch('/ai-os/feedback', {
+        method: 'POST',
+        body: JSON.stringify({
+          agentId: lastAiMeta?.agentId || 'creator',
+          feature: lastAiMeta?.feature || 'caption',
+          requestId: lastAiMeta?.requestId || null,
+          rating,
+        }),
+      });
+      toast.success('Thanks — SnapNext AI will learn from this.');
+    } catch (e) {
+      toast.error(e.message || 'Unable to save feedback.');
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -121,6 +143,15 @@ export default function AIStudio() {
           <ResultCard label="Caption" value={caption} onCopy={()=>copy(caption)} />
           <ResultCard label="Hashtags" value={hashtags} onCopy={()=>copy(hashtags)} />
           <ResultCard label="Emojis" value={emojis} onCopy={()=>copy(emojis)} mono />
+          {(caption || hashtags || emojis || ideas.length > 0) && (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="text-xs text-white/60">Help SnapNext AI learn</div>
+              <div className="mt-3 flex gap-2">
+                <button onClick={()=>sendFeedback('accepted')} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-xs hover:bg-white/15"><ThumbsUp className="h-3.5 w-3.5"/> Good result</button>
+                <button onClick={()=>sendFeedback('rejected')} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-xs hover:bg-white/15"><ThumbsDown className="h-3.5 w-3.5"/> Needs work</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
