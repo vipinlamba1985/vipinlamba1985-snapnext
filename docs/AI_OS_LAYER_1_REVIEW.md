@@ -1,4 +1,4 @@
-# SnapNext AI OS — Layers 1 to 7 Self Review
+# SnapNext AI OS — Layers 1 to 8 Self Review
 
 ## Status
 
@@ -11,6 +11,7 @@ SnapNext AI OS now has:
 - Layer 5: task preview, video routing foundation, certification planning, and AI alerts
 - Layer 6: video adapter stubs, agent governance persistence, and AI Command navigation
 - Layer 7: AI Video Studio page, AI Video navigation, and governance controls in AI Command Center
+- Layer 8: AI Studio task preview, credit/upgrade guidance, and safety rollback recommendations
 
 It does not replace the OpenAI/Gemini router. External AI remains the primary user-facing quality engine while SnapNext agents operate in Shadow Mode and learn from production tasks.
 
@@ -152,93 +153,43 @@ It does not replace the OpenAI/Gemini router. External AI remains the primary us
   - Adds governance controls for Super User/Admin
   - Allows manual agent status updates to shadow, assisted_review, restricted, or disabled
 
-## Current Architecture
+### Layer 8
 
-```text
-User Request
-  ↓
-AI Studio / AI Video / AI Agent API
-  ↓
-Task Preview / Chief AI
-  ↓
-Guardian AI
-  ↓
-AI Economy Engine
-  ↓
-Specialist Agent Shadow Plan
-  ↓
-Existing AI Router
-  ↓
-OpenAI / Gemini
-  ↓
-Shadow Learning Logs
-  ↓
-Feedback Learning + Scorecards + Business Intelligence
-  ↓
-Certification + Governance + Alerts
-  ↓
-Video Planning / Provider Adapter Stubs
-  ↓
-AI Command Center
-```
+- `lib/ai-safety-automation.js`
+  - Generates rollback recommendations from readiness/alert signals
+  - Applies Super User-approved rollback recommendation through governance
+  - Builds credit/upgrade guidance for premium tasks
 
-## Safety Rules Added
+- `app/api/ai-os/safety/route.js`
+  - Super User-only endpoint for safety recommendations
+  - `GET` returns rollback recommendations
+  - `POST` applies approved rollback action
 
-- Blocks suspicious prompt-injection patterns.
-- Blocks permission-bypass language.
-- Blocks privacy-leak language.
-- Requires approval for risky delete/share/publish-style tasks.
-- Keeps external AI as the primary quality engine until SnapNext agents are certified.
-- Video generation is preview-only until provider keys and explicit credit confirmation exist.
-- Agent governance can restrict or disable agents if quality drops.
+- `app/(app)/ai-studio/page.js`
+  - Adds `Preview cost` button
+  - Shows agent, credits, quality, options, and upgrade link when task is too expensive
 
-## Profit / Credit Protection
-
-The Economy Engine estimates:
-
-- Plan
-- Feature
-- Required credits
-- Quality mode
-- Estimated AI cost
-- Remaining daily/monthly credits
-- Profit gate outcome
-- User choice options when task is too expensive
-
-Layer 7 gives users a visible video preview page so they understand cost/quality before any expensive generation.
-
-## Collections Used
-
-- `ai_os_events`
-- `ai_shadow_results`
-- `ai_agent_feedback`
-- `ai_agent_governance`
-- Existing `ai_usage`
-- Existing `ai_history`
+- `app/(app)/ai-command/page.js`
+  - Shows safety rollback recommendations
+  - Lets Super User apply recommendation safely
 
 ## Manual QA Checklist
 
 1. Run `yarn build`.
-2. Open `/ai-video` signed in.
-3. Preview `Create a 4K cinematic reel from my trip` and confirm provider/credits/options appear.
-4. Test safe submit without video provider keys and confirm no real provider call is made.
-5. Open `/ai-command` as Super User/Admin and confirm governance controls appear.
-6. Update one agent to `restricted`, reload, and confirm persistence.
-7. Open sidebar and confirm AI Video appears for users and AI Command only appears for Super User/Admin.
-8. Confirm existing AI Studio still loads.
-9. Confirm normal AI caption/post generation still works.
-10. Confirm no provider keys are exposed in responses.
+2. Open `/ai-studio`, enter a topic, click `Preview cost`, and confirm credits/options appear.
+3. Confirm upgrade link appears when preview says credits are insufficient.
+4. Open `/ai-video` signed in and preview a cinematic video task.
+5. Open `/ai-command` as Super User/Admin and confirm safety rollback recommendations section works.
+6. GET `/api/ai-os/safety` as normal user → should return 403.
+7. GET `/api/ai-os/safety` as Super User → should return recommendations.
+8. POST `/api/ai-os/safety` as Super User with a recommendation → should update governance.
+9. Confirm existing AI caption/post generation still works.
+10. Confirm no provider keys are exposed.
 
 ## Known Limits
 
-This is Layer 7 foundation. It creates UI controls for video planning and governance. It does not yet perform real video generation API calls, train custom ML models, or automatically promote agents without Super User oversight.
+This is Layer 8 foundation. It adds preview and safety automation UI, but does not yet connect real video provider APIs, train custom ML models, or run autonomous rollback without Super User approval.
 
 ## Next Layer
 
-Layer 8 should add:
-
-- Real provider-specific adapters once provider keys and billing are approved
-- Credit purchase or upgrade flow for Ultra video tasks
-- User-facing task preview modal inside AI Studio
-- Automated agent rollback if failure rate rises
-- More complete AI Command testing tools
+Layer 9 should add real provider adapter contracts, stronger build-time tests, and a controlled rollout flag so AI OS features can be enabled/disabled safely per environment.
