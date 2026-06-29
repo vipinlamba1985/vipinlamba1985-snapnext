@@ -1,25 +1,25 @@
-# SnapNext AI OS Layer 1 — Self Review
+# SnapNext AI OS — Layer 1 and Layer 2 Self Review
 
 ## Status
 
-Layer 1 is added as a safe orchestration layer on top of the existing dual-provider AI Router.
+SnapNext AI OS now has Layer 1 orchestration plus Layer 2 premium specialist agents.
 
-It does not replace the OpenAI/Gemini router. External AI remains the primary user-facing quality engine.
+It does not replace the OpenAI/Gemini router. External AI remains the primary user-facing quality engine while SnapNext agents operate in Shadow Mode and learn from production tasks.
 
 ## Implemented
+
+### Layer 1
 
 - `lib/ai-os.js`
   - SnapNext AI Constitution
   - Chief AI task wrapper
   - Guardian AI safety checks
   - AI Economy Engine estimate gate
-  - Agent registry
-  - Feature-to-agent assignment
   - Shadow learning records
   - AI OS status export
 
 - `app/api/ai-agent/route.js`
-  - Now calls `runChiefAiTask`
+  - Calls `runChiefAiTask`
   - Preserves authenticated access
   - Preserves structured errors
   - Returns `aiOs` metadata for review/debugging
@@ -28,6 +28,28 @@ It does not replace the OpenAI/Gemini router. External AI remains the primary us
   - Authenticated AI OS status endpoint
   - Super User can view full agent details
   - Normal users receive limited safe status details
+
+### Layer 2
+
+- `lib/ai-specialist-agents.js`
+  - ChatGPT-like SnapNext premium assistant style
+  - Specialist Agent catalog
+  - Upload Agent
+  - Memory Agent
+  - Search Agent
+  - Creator Agent
+  - Cleanup Agent
+  - Sharing Agent
+  - Video Agent
+  - Agent selection by task intent
+  - Shadow plans per agent
+  - Certification thresholds
+
+- `app/api/ai-os/agents/route.js`
+  - `GET` returns specialist agent status
+  - `POST` previews which specialist agent would handle a task
+  - Normal users see safe limited details
+  - Super User sees full agent details
 
 ## Current Architecture
 
@@ -42,12 +64,22 @@ Guardian AI
   ↓
 AI Economy Engine
   ↓
+Specialist Agent Shadow Plan
+  ↓
 Existing AI Router
   ↓
 OpenAI / Gemini
   ↓
 Shadow Learning Logs
 ```
+
+## Premium Assistant Direction
+
+Layer 2 is designed to feel like a premium ChatGPT-style assistant experience, but specialized for SnapNext.
+
+The user talks to one intelligent assistant. Behind the scenes, Chief AI assigns the best specialist agent.
+
+Specialist agents do not yet replace external AI. They observe, create shadow plans, learn, and prepare for certification.
 
 ## Safety Rules Added
 
@@ -86,17 +118,22 @@ The Economy Engine estimates:
 5. Call `/api/ai-os/status` signed out → should return `unauthenticated`.
 6. Call `/api/ai-os/status` signed in as normal user → limited status only.
 7. Call `/api/ai-os/status` as Super User → full agent status.
-8. Confirm existing AI Studio still loads.
-9. Confirm normal AI caption/post generation still works.
-10. Confirm no provider keys are exposed in responses.
+8. Call `/api/ai-os/agents` signed out → should return `unauthenticated`.
+9. Call `/api/ai-os/agents` signed in → should return specialist agents.
+10. POST `/api/ai-os/agents` with `create a cinematic reel from my trip` → should select Video Agent.
+11. POST `/api/ai-os/agents` with `find photos from Canada` → should select Search Agent.
+12. POST `/api/ai-os/agents` with `remove duplicates` → should select Cleanup Agent and keep delete in review-only mode.
+13. Confirm existing AI Studio still loads.
+14. Confirm normal AI caption/post generation still works.
+15. Confirm no provider keys are exposed in responses.
 
 ## Known Limits
 
-This is Layer 1 foundation only. It creates orchestration, safety, economy, and shadow learning. It does not yet create real trained ML models or certified autonomous agents.
+This is Layer 2 foundation. It creates premium specialist-agent behavior, routing, and shadow plans. It does not yet create real trained ML models or certified autonomous agents.
 
 ## Next Layer
 
-Layer 2 should add:
+Layer 3 should add:
 
 - AI OS admin dashboard
 - User-facing expensive-task preview modal
@@ -104,4 +141,5 @@ Layer 2 should add:
 - Learning feedback buttons
 - Business Intelligence AI dashboard
 - Video AI provider router
-- Agent certification thresholds
+- Agent certification data model
+- Agent promotion/restriction logic
