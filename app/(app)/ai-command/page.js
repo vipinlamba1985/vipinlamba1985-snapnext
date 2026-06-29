@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
-import { Brain, ShieldCheck, Activity, BarChart3, GraduationCap, AlertTriangle, Sparkles, ShieldAlert } from 'lucide-react';
+import { Brain, ShieldCheck, Activity, BarChart3, GraduationCap, AlertTriangle, Sparkles, ShieldAlert, LockKeyhole } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function AICommandCenter() {
   const [status, setStatus] = useState(null);
@@ -11,34 +12,46 @@ export default function AICommandCenter() {
   const [business, setBusiness] = useState(null);
   const [certification, setCertification] = useState(null);
   const [alerts, setAlerts] = useState(null);
+  const [governance, setGovernance] = useState(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    let mounted = true;
-    async function load() {
-      try {
-        const [statusData, agentsData] = await Promise.all([
-          apiFetch('/ai-os/status'),
-          apiFetch('/ai-os/agents'),
-        ]);
-        if (!mounted) return;
-        setStatus(statusData);
-        setAgents(agentsData);
-        try { setScorecards(await apiFetch('/ai-os/scorecards')); } catch (_) {}
-        try { setBusiness(await apiFetch('/ai-os/business')); } catch (_) {}
-        try { setCertification(await apiFetch('/ai-os/certification')); } catch (_) {}
-        try { setAlerts(await apiFetch('/ai-os/alerts')); } catch (_) {}
-      } catch (e) {
-        if (mounted) setError(e.message || 'Unable to load AI OS status.');
-      }
+  async function load() {
+    try {
+      const [statusData, agentsData] = await Promise.all([
+        apiFetch('/ai-os/status'),
+        apiFetch('/ai-os/agents'),
+      ]);
+      setStatus(statusData);
+      setAgents(agentsData);
+      try { setScorecards(await apiFetch('/ai-os/scorecards')); } catch (_) {}
+      try { setBusiness(await apiFetch('/ai-os/business')); } catch (_) {}
+      try { setCertification(await apiFetch('/ai-os/certification')); } catch (_) {}
+      try { setAlerts(await apiFetch('/ai-os/alerts')); } catch (_) {}
+      try { setGovernance(await apiFetch('/ai-os/governance')); } catch (_) {}
+    } catch (e) {
+      setError(e.message || 'Unable to load AI OS status.');
     }
-    load();
-    return () => { mounted = false; };
-  }, []);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function updateGovernance(agentId, status) {
+    try {
+      await apiFetch('/ai-os/governance', {
+        method: 'POST',
+        body: JSON.stringify({ agentId, status, reason: `manual_${status}_from_command_center` }),
+      });
+      toast.success('Agent governance updated.');
+      await load();
+    } catch (e) {
+      toast.error(e.message || 'Unable to update governance.');
+    }
+  }
 
   const agentList = agents?.agents || status?.agents || [];
   const summary = business?.summary || {};
   const alertList = alerts?.alerts || [];
+  const governanceAgents = governance?.agents || [];
 
   return (
     <div className="space-y-6">
@@ -49,7 +62,7 @@ export default function AICommandCenter() {
               <Brain className="h-3.5 w-3.5 text-pink-300" /> SnapNext Intelligence OS
             </div>
             <h1 className="mt-4 text-3xl font-bold">AI Command Center</h1>
-            <p className="mt-2 max-w-2xl text-sm text-white/60">Monitor Chief AI, Guardian AI, specialist agents, feedback learning, cost signals, certification, and business intelligence from one premium control room.</p>
+            <p className="mt-2 max-w-2xl text-sm text-white/60">Monitor Chief AI, Guardian AI, specialist agents, feedback learning, cost signals, certification, governance, and business intelligence from one premium control room.</p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-right">
             <div className="text-xs text-white/50">Version</div>
@@ -139,6 +152,23 @@ export default function AICommandCenter() {
           </div>
         </section>
       </div>
+
+      {governanceAgents.length > 0 && (
+        <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="mb-4 flex items-center gap-2"><LockKeyhole className="h-5 w-5 text-pink-300"/><h2 className="text-lg font-semibold">Agent Governance</h2></div>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {governanceAgents.map((item) => (
+              <div key={item.agentId} className="rounded-2xl border border-white/10 bg-black/20 p-4 text-xs">
+                <div className="font-medium">{item.agentName}</div>
+                <div className="mt-1 text-white/40">Current: {item.governance?.status || item.currentStatus}</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {['shadow','assisted_review','restricted','disabled'].map((next) => <button key={next} onClick={()=>updateGovernance(item.agentId, next)} className="rounded-full bg-white/10 px-2.5 py-1 hover:bg-white/15">{next}</button>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
