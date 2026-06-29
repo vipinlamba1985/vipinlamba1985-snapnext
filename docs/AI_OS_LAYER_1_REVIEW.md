@@ -1,4 +1,4 @@
-# SnapNext AI OS — Layers 1, 2, 3, and 4 Self Review
+# SnapNext AI OS — Layers 1 to 5 Self Review
 
 ## Status
 
@@ -8,6 +8,7 @@ SnapNext AI OS now has:
 - Layer 2: premium ChatGPT-like specialist agents
 - Layer 3: feedback learning, scorecards, and business intelligence endpoints
 - Layer 4: AI Command Center UI and AI Studio feedback learning hooks
+- Layer 5: task preview, video routing foundation, certification planning, and AI alerts
 
 It does not replace the OpenAI/Gemini router. External AI remains the primary user-facing quality engine while SnapNext agents operate in Shadow Mode and learn from production tasks.
 
@@ -87,12 +88,30 @@ It does not replace the OpenAI/Gemini router. External AI remains the primary us
   - Shows specialist agents
   - Shows Super User business intelligence when available
   - Shows Super User scorecards when available
+  - Shows AI alerts and certification readiness when available
   - Keeps normal-user display safe and limited
 
 - `app/(app)/ai-studio/page.js`
   - Adds Good result / Needs work feedback buttons
   - Sends feedback to `/api/ai-os/feedback`
   - Helps SnapNext agents learn from real user satisfaction signals
+
+### Layer 5
+
+- `lib/ai-task-preview.js`
+  - Expensive task preview engine
+  - Video provider recommendation foundation
+  - Certification plan generator
+  - AI alert rules for cost, failure rate, and low agent readiness
+
+- `app/api/ai-os/preview/route.js`
+  - Authenticated endpoint that previews task cost, agent, quality mode, and user options before execution
+
+- `app/api/ai-os/certification/route.js`
+  - Super User-only endpoint for certification readiness and promotion blockers
+
+- `app/api/ai-os/alerts/route.js`
+  - Super User-only endpoint for AI health, cost, and learning alerts
 
 ## Current Architecture
 
@@ -101,7 +120,7 @@ User Request
   ↓
 AI Studio / AI Agent API
   ↓
-Chief AI
+Task Preview / Chief AI
   ↓
 Guardian AI
   ↓
@@ -117,14 +136,16 @@ Shadow Learning Logs
   ↓
 Feedback Learning + Scorecards + Business Intelligence
   ↓
+Certification + Alerts
+  ↓
 AI Command Center
 ```
 
 ## Premium Assistant Direction
 
-Layer 2, Layer 3, and Layer 4 are designed to feel like a premium ChatGPT-style assistant experience, but specialized for SnapNext.
+Layers 2 through 5 are designed to feel like a premium ChatGPT-style assistant experience, but specialized for SnapNext.
 
-The user talks to one intelligent assistant. Behind the scenes, Chief AI assigns the best specialist agent, external AI protects quality, and SnapNext agents learn from shadow results and user feedback.
+The user talks to one intelligent assistant. Behind the scenes, Chief AI assigns the best specialist agent, external AI protects quality, SnapNext agents learn from shadow results and user feedback, and expensive tasks can be previewed before execution.
 
 Specialist agents do not yet replace external AI. They observe, create shadow plans, collect feedback, learn, and prepare for certification.
 
@@ -149,15 +170,7 @@ The Economy Engine estimates:
 - Profit gate outcome
 - User choice options when task is too expensive
 
-Layer 3 adds business intelligence visibility for:
-
-- Total AI requests
-- Credits consumed
-- Estimated AI cost
-- Failure rate
-- Most-used AI feature
-- Most-expensive AI feature
-- Cost optimization recommendation
+Layer 5 adds preview before execution for expensive tasks and recommends video provider strategy without generating costly video automatically.
 
 ## Collections Used
 
@@ -186,23 +199,27 @@ Layer 3 adds business intelligence visibility for:
 15. GET `/api/ai-os/scorecards` as Super User → should return scorecards.
 16. GET `/api/ai-os/business` as normal user → should return 403.
 17. GET `/api/ai-os/business` as Super User → should return AI business snapshot.
-18. Open `/ai-command` as signed-in user → should show AI Command Center.
-19. Open `/ai-studio`, generate AI output, click Good result / Needs work → should save feedback.
-20. Confirm existing AI Studio still loads.
-21. Confirm normal AI caption/post generation still works.
-22. Confirm no provider keys are exposed in responses.
+18. POST `/api/ai-os/preview` with `create a 4K cinematic reel from my trip` → should return task preview, Video Agent, video provider recommendation, credits/options.
+19. GET `/api/ai-os/certification` as normal user → should return 403.
+20. GET `/api/ai-os/certification` as Super User → should return certification plan.
+21. GET `/api/ai-os/alerts` as normal user → should return 403.
+22. GET `/api/ai-os/alerts` as Super User → should return alerts.
+23. Open `/ai-command` as signed-in user → should show AI Command Center.
+24. Open `/ai-studio`, generate AI output, click Good result / Needs work → should save feedback.
+25. Confirm existing AI Studio still loads.
+26. Confirm normal AI caption/post generation still works.
+27. Confirm no provider keys are exposed in responses.
 
 ## Known Limits
 
-This is Layer 4 foundation. It creates the first visual control room and feedback loop. It does not yet create real trained ML models, autonomous agents, advanced video generation, or automated agent promotion.
+This is Layer 5 foundation. It creates preview, certification planning, and alerts. It does not yet create real trained ML models, autonomous agents, actual video generation provider API calls, or automatic certification updates.
 
 ## Next Layer
 
-Layer 5 should add:
+Layer 6 should add:
 
-- User-facing expensive-task preview modal
-- Video AI provider router
-- Agent promotion/restriction logic
-- Certification workflow
-- Automated alerts for high AI cost or failing agents
-- Dedicated navigation entry for AI Command Center
+- User-facing preview modal connected into AI Studio / AI Agent UX
+- Real video generation provider adapters behind safe credit gates
+- Agent promotion/restriction persistence
+- Navigation entry for AI Command Center
+- Automated alerts surface in admin UI
