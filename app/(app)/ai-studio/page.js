@@ -15,6 +15,11 @@ export default function AIStudio() {
   const [emojis, setEmojis] = useState('');
   const [ideas, setIdeas] = useState([]);
   const [busy, setBusy] = useState('');
+  const [aiStatus, setAiStatus] = useState(null);
+
+  useEffect(() => {
+    apiFetch('/ai/status?feature=caption').then(setAiStatus).catch(() => {});
+  }, []);
 
   useEffect(() => { apiFetch('/media?filter=photo').then(d=>setPhotos(d.items?.slice(0, 24) || [])).catch(()=>{}); }, []);
 
@@ -46,6 +51,15 @@ export default function AIStudio() {
       <div>
         <h1 className="text-3xl font-bold">AI Studio</h1>
         <p className="text-white/60 mt-1">Captions, hashtags, emojis, and post ideas powered by SnapNext AI.</p>
+        {aiStatus && (
+          <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/70">
+            <span>{aiStatus.plan} Plan</span>
+            <span className="text-white/30">•</span>
+            <span>{aiStatus.monthlyCredits} monthly AI credits</span>
+            <span className="text-white/30">•</span>
+            <span>Caption uses {aiStatus.creditsRequired} credit</span>
+          </div>
+        )}
       </div>
 
       <div className="grid lg:grid-cols-[1fr_360px] gap-6">

@@ -6,8 +6,8 @@ import { getUserFromRequest, syncSupabaseUserToAppUser } from '@/lib/auth';
 import { supabaseServer, supabaseAdmin, isSupabaseConfigured, hasSupabaseServiceRole } from '@/lib/supabase';
 import { PLANS, getPlan, isSuper } from '@/lib/plans';
 import { storage } from '@/lib/storage';
-import { generateCaption, generateHashtags, generateEmojis, generatePostIdeas, generateMemorySummary, generateStory } from '@/lib/llm';
-import { analyzeImage, analyzeVideo, transcribeAudio, askMemoryAssistant } from '@/lib/gemini';
+import { analyzeImage, analyzeVideo, transcribeAudio } from '@/lib/gemini';
+import { runAiTask, getAiEntitlement, getAiUsageSummary, preflightAiRequest } from '@/lib/ai-router';
 import { sendEmail, recordWebhookEvent, hasRealProvider, isProduction } from '@/lib/email';
 import { verifyUnsubToken } from '@/lib/email/tokens';
 import { billing } from '@/lib/billing';
@@ -26,6 +26,16 @@ function cors(res) {
 }
 function json(data, status = 200) { return cors(NextResponse.json(data, { status })); }
 function clean(doc) { if (!doc) return doc; const { _id, passwordHash, ...rest } = doc; return rest; }
+function aiJson(result) {
+  if (!result.ok) return json({ error: result.error }, result.status || 400);
+  return json(result);
+}
+
+function readAiResult(result, key) {
+  return result?.result?.[key] ?? result?.result ?? null;
+}
+
+
 
 
 function safeStorageError(error) {
@@ -559,76 +569,86 @@ async function handle(request, ctx) {
     }
 
     // ---------- AI ----------
-    async function checkAiQuota(user) {
-      if (isSuper(user)) return { ok: true };
-      const plan = getPlan(user.plan);
-      const used = await getAiUsageToday(db, user.id);
-      if (used >= plan.aiPerDay) return { ok: false, msg: 'Daily AI limit reached. Upgrade to continue.' };
-      return { ok: true };
+    if (route === '/ai/status' && method === 'GET') {
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
+      const feature = new URL(request.url).searchParams.get('feature') || 'chat';
+      const entitlement = getAiEntitlement(user, feature);
+      if (!entitlement.ok) return json({ error: entitlement.error }, entitlement.status || 400);
+      return json({
+        plan: entitlement.plan,
+        feature,
+        creditsRequired: entitlement.credits,
+        monthlyCredits: entitlement.limits.monthlyCredits,
+        dailyCredits: entitlement.limits.dailyCredits,
+        superUser: isSuper(user),
+      });
     }
-    async function logAi(user, type) {
-      await db.collection('ai_generations').insertOne({ id: uuidv4(), userId: user.id, type, createdAt: new Date() });
+
+    if (route === '/ai/analytics' && method === 'GET') {
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to view AI analytics.' } }, 401);
+      const result = await getAiUsageSummary({ db, user });
+      return aiJson(result);
+    }
+
+    if (route === '/ai/history' && method === 'GET') {
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to view AI history.' } }, 401);
+      const items = await db.collection('ai_history').find({ userId: user.id, deleted: { $ne: true } }).sort({ createdAt: -1 }).limit(100).toArray();
+      return json({ items: items.map(clean) });
     }
 
     if (route === '/ai/caption' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
-      const { topic, mood, platform, mediaId } = await request.json();
-      let imageBase64 = null;
-      if (mediaId) {
-        const doc = await db.collection('media').findOne({ id: mediaId, userId: user.id });
-        if (doc && doc.kind === 'photo') {
-          try { const buf = await storage.read({ provider: doc.provider || 'local', storageKey: doc.storageKey }); imageBase64 = buf.toString('base64'); } catch {}
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
+      const body = await request.json().catch(() => ({}));
+      let media = null;
+      if (body.mediaId) {
+        const doc = await db.collection('media').findOne({ id: body.mediaId, userId: user.id });
+        if (doc?.kind === 'photo') {
+          try { const buf = await storage.read({ provider: doc.provider || 'local', storageKey: doc.storageKey }); media = { imageBase64: buf.toString('base64'), mimeType: doc.mime, size: doc.size }; } catch {}
         }
       }
-      const caption = await generateCaption({ topic, mood, platform, imageBase64 });
-      await logAi(user, 'caption');
-      return json({ caption });
+      const result = await runAiTask({ db, user, feature: 'caption', input: body, prompt: body.topic || body.text || 'Caption this memory', media, request });
+      if (!result.ok) return aiJson(result);
+      return json({ caption: readAiResult(result, 'caption'), meta: result.meta });
     }
 
     if (route === '/ai/hashtags' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
-      const { text } = await request.json();
-      const out = await generateHashtags({ text });
-      await logAi(user, 'hashtags');
-      return json({ hashtags: out });
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
+      const body = await request.json().catch(() => ({}));
+      const result = await runAiTask({ db, user, feature: 'hashtags', input: body, prompt: body.text || 'Generate hashtags', request });
+      if (!result.ok) return aiJson(result);
+      return json({ hashtags: readAiResult(result, 'hashtags'), meta: result.meta });
     }
 
     if (route === '/ai/emojis' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
-      const { text } = await request.json();
-      const out = await generateEmojis({ text });
-      await logAi(user, 'emojis');
-      return json({ emojis: out });
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
+      const body = await request.json().catch(() => ({}));
+      const result = await runAiTask({ db, user, feature: 'emojis', input: body, prompt: body.text || 'Suggest emojis', request });
+      if (!result.ok) return aiJson(result);
+      return json({ emojis: readAiResult(result, 'emojis'), meta: result.meta });
     }
 
     if (route === '/ai/post-ideas' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
-      const { topic } = await request.json();
-      const ideas = await generatePostIdeas({ topic });
-      await logAi(user, 'post-ideas');
-      return json({ ideas });
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
+      const body = await request.json().catch(() => ({}));
+      const result = await runAiTask({ db, user, feature: 'postIdeas', input: body, prompt: body.topic || body.text || 'Create post ideas', request });
+      if (!result.ok) return aiJson(result);
+      return json({ ideas: readAiResult(result, 'ideas'), meta: result.meta });
     }
 
     if (route === '/ai/memory-summary' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
-      const { titles, dateLabel } = await request.json();
-      const summary = await generateMemorySummary({ titles, dateLabel });
-      await logAi(user, 'memory-summary');
-      return json({ summary });
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
+      const body = await request.json().catch(() => ({}));
+      const result = await runAiTask({ db, user, feature: 'memorySummary', input: body, prompt: `${body.dateLabel || ''} ${(body.titles || []).join(', ')}`.trim() || 'Summarize memories', request });
+      if (!result.ok) return aiJson(result);
+      return json({ summary: readAiResult(result, 'summary'), meta: result.meta });
     }
 
     if (route === '/ai/story' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
-      const { theme, count } = await request.json();
-      const cards = await generateStory({ theme, count });
-      await logAi(user, 'story');
-      return json({ cards });
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
+      const body = await request.json().catch(() => ({}));
+      const result = await runAiTask({ db, user, feature: 'story', input: body, prompt: body.theme || 'Create a memory story', request });
+      if (!result.ok) return aiJson(result);
+      return json({ cards: readAiResult(result, 'cards'), meta: result.meta });
     }
 
     // ---------- CORE AI BRAIN & MEMORIES TIMELINE ----------
@@ -739,8 +759,7 @@ async function handle(request, ctx) {
 
     // ---------- SNAPNEXT AI CHAT ASSISTANT & VOICE ASSISTANT ----------
     if (route === '/ai/chat' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
       
       const { query, voiceResponse = false } = await request.json();
       if (!query) return json({ error: 'Query is required' }, 400);
@@ -757,14 +776,16 @@ async function handle(request, ctx) {
         description: m.aiAnalysis?.description || ''
       }));
 
-      const replyText = await askMemoryAssistant({ user, query, libraryContext });
-      await logAi(user, 'chat');
+      const result = await runAiTask({ db, user, feature: 'chat', input: { query }, prompt: `User: ${query}\nLibrary context JSON: ${JSON.stringify(libraryContext).slice(0, 8000)}`, request });
+      if (!result.ok) return aiJson(result);
+      const replyText = readAiResult(result, 'reply');
 
       let audioBase64 = null;
       if (voiceResponse && process.env.GEMINI_API_KEY) {
         try {
-          const { Modality } = await import('@google/genai');
-          const ttsResponse = await ai.models.generateContent({
+          const { GoogleGenAI, Modality } = await import('@google/genai');
+          const voiceAi = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const ttsResponse = await voiceAi.models.generateContent({
             model: "gemini-3.1-flash-tts-preview",
             contents: [{ parts: [{ text: replyText.slice(0, 300) }] }],
             config: {
@@ -785,8 +806,8 @@ async function handle(request, ctx) {
 
     // ---------- AUDIO TRANSCRIPTION ----------
     if (route === '/ai/audio-transcribe' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
+      const q = await preflightAiRequest({ db, user, feature: 'audioTranscribe', prompt: 'Transcribe audio', request }); if (!q.ok) return aiJson(q);
 
       const { mediaId } = await request.json();
       if (!mediaId) return json({ error: 'mediaId is required' }, 400);
@@ -803,51 +824,27 @@ async function handle(request, ctx) {
         console.error('[transcription] error:', err?.message);
       }
 
-      await logAi(user, 'transcribe');
-      return json({ transcript: text });
+      return json({ transcript: text, meta: { creditsUsed: q.credits, plan: q.plan, requestId: q.requestId } });
     }
 
     // ---------- AI REEL CREATOR ----------
     if (route === '/ai/generate-reel' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
 
       const { theme, mediaIds = [] } = await request.json();
       
-      const suggestedMusic = [
-        { title: 'Golden Hour Memories', artist: 'SnapNext Cinematic', duration: '30s', genre: 'Uplifting Ambient' },
-        { title: 'Summer Beats', artist: 'Lofi Life', duration: '15s', genre: 'Lofi Hip Hop' },
-        { title: 'Adrenaline Rush', artist: 'Veo Sound', duration: '30s', genre: 'Electronic Cinematic' }
-      ];
-
-      const transitions = ['Smooth cross-fade', 'Dynamic whipping zoom', 'Elegant film burn', 'Fast cut rhythm'];
-
-      const scenes = mediaIds.length > 0 
-        ? mediaIds.map((id, index) => ({
-            mediaId: id,
-            start: index * 4,
-            duration: 4,
-            caption: `Beautiful scene highlighting emotional moment #${index + 1}`
-          }))
-        : [
-            { mediaId: 'placeholder-1', start: 0, duration: 5, caption: 'Sunset silhouettes over the beach' },
-            { mediaId: 'placeholder-2', start: 5, duration: 5, caption: 'Joyful family laughter around the table' }
-          ];
-
-      await logAi(user, 'reel');
+      const result = await runAiTask({ db, user, feature: 'videoScript', input: { topic: theme || 'Memory reel', mediaIds }, prompt: theme || 'Create a short video script', request });
+      if (!result.ok) return aiJson(result);
       return json({
         title: theme ? `${theme} Reel` : "My Lifetime Highlights Reel",
-        music: suggestedMusic,
-        transitions,
-        scenes,
-        caption: `Bringing memories back to life! #SnapNextAI #MemoriesReel #LivingOperatingSystem`
+        script: readAiResult(result, 'script'),
+        meta: result.meta,
       });
     }
 
     // ---------- IMAGE TO VIDEO (PREMIUM VEO LITE) ----------
     if (route === '/ai/image-to-video' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
 
       const { mediaId } = await request.json();
       if (!mediaId) return json({ error: 'mediaId is required' }, 400);
@@ -855,20 +852,23 @@ async function handle(request, ctx) {
       const doc = await db.collection('media').findOne({ id: mediaId, userId: user.id });
       if (!doc) return json({ error: 'Media not found' }, 404);
 
+      const result = await runAiTask({ db, user, feature: 'videoScript', input: { topic: doc.name }, prompt: `Create an image-to-video motion plan for ${doc.name}`, request });
+      if (!result.ok) return aiJson(result);
       const motionEffect = {
         zoom: 'Ken Burns pan-and-zoom in',
         framerate: '60fps',
         vibe: 'Warm light leaks & vintage emotional film overlays',
         duration: '6 seconds',
+        prompt: readAiResult(result, 'script'),
         cinematicMotionUrl: `/api/media/${mediaId}/file`
       };
 
-      await logAi(user, 'image-to-video');
       return json({
         success: true,
         mediaId,
         motionEffect,
-        message: "Premium cinematic motion successfully generated using Veo Lite!"
+        meta: result.meta,
+        message: "Premium cinematic motion prompt generated."
       });
     }
 
@@ -1482,10 +1482,8 @@ async function handle(request, ctx) {
       return json(insights);
     }
     if (route === '/insights/ai-summary' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const q = await checkAiQuota(user); if (!q.ok) return json({ error: q.msg }, 429);
+      const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
       const insights = await computeInsights(db, user);
-      // Compose a structured prompt and ask the LLM to phrase friendly headlines.
       const facts = [
         `Total memories: ${insights.totals.count}`,
         insights.mostPhotographed ? `Most photographed: ${insights.mostPhotographed.label} (${insights.mostPhotographed.count} items)` : null,
@@ -1493,19 +1491,11 @@ async function handle(request, ctx) {
         insights.thisYear?.count ? `${insights.thisYear.label} so far: ${insights.thisYear.count}` : null,
         insights.duplicates.extraCopies ? `Duplicates: ${insights.duplicates.extraCopies} extra copies` : null,
         insights.largeVideos.count ? `${insights.largeVideos.count} large video(s)` : null,
-        insights.sharing.neverSharedFavorites.length ? `Favorites you haven't shared with: ${insights.sharing.neverSharedFavorites.map(f => f.name).join(', ')}` : null,
         insights.forecast.monthsLeft != null ? `Storage forecast: ~${insights.forecast.monthsLeft} months until full at current pace` : null,
       ].filter(Boolean);
-      let highlights = [];
-      try {
-        const { generatePostIdeas } = await import('@/lib/llm');
-        const out = await generatePostIdeas({ topic: `Write 4 short, warm, encouraging one-line insights for a SnapNext AI user based on these facts: ${facts.join(' | ')}` });
-        highlights = Array.isArray(out) ? out.slice(0, 4) : [];
-        await db.collection('ai_generations').insertOne({ id: uuidv4(), userId: user.id, type: 'insights', createdAt: new Date() });
-      } catch (e) {
-        highlights = facts.slice(0, 4);
-      }
-      return json({ highlights, insights });
+      const result = await runAiTask({ db, user, feature: 'memorySummary', input: { topic: facts.join(' | ') }, prompt: facts.join(' | ') || 'Summarize my SnapNext library', request });
+      if (!result.ok) return aiJson(result);
+      return json({ highlights: [readAiResult(result, 'summary')].filter(Boolean), insights, meta: result.meta });
     }
 
     return json({ error: `Route ${route} not found` }, 404);
