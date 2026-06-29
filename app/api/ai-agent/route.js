@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { runAiTask } from '@/lib/ai-router';
+import { runChiefAiTask } from '@/lib/ai-os';
 
 export async function POST(request) {
   const user = await getUserFromRequest(request);
@@ -17,13 +17,14 @@ export async function POST(request) {
   }
 
   const db = await getDb();
-  const result = await runAiTask({
+  const result = await runChiefAiTask({
     db,
     user,
-    feature: 'postIdeas',
-    input: { topic: task },
+    feature: body.feature || 'postIdeas',
+    input: { topic: task, text: task },
     prompt: task,
     request,
+    qualityMode: body.qualityMode || 'balanced',
   });
 
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status || 400 });
@@ -39,5 +40,6 @@ export async function POST(request) {
       draftType: 'Social Post',
     },
     meta: result.meta,
+    aiOs: result.aiOs,
   });
 }
