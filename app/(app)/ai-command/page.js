@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
-import { Brain, ShieldCheck, Activity, BarChart3, GraduationCap, AlertTriangle, Sparkles } from 'lucide-react';
+import { Brain, ShieldCheck, Activity, BarChart3, GraduationCap, AlertTriangle, Sparkles, ShieldAlert } from 'lucide-react';
 
 export default function AICommandCenter() {
   const [status, setStatus] = useState(null);
   const [agents, setAgents] = useState(null);
   const [scorecards, setScorecards] = useState(null);
   const [business, setBusiness] = useState(null);
+  const [certification, setCertification] = useState(null);
+  const [alerts, setAlerts] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -24,6 +26,8 @@ export default function AICommandCenter() {
         setAgents(agentsData);
         try { setScorecards(await apiFetch('/ai-os/scorecards')); } catch (_) {}
         try { setBusiness(await apiFetch('/ai-os/business')); } catch (_) {}
+        try { setCertification(await apiFetch('/ai-os/certification')); } catch (_) {}
+        try { setAlerts(await apiFetch('/ai-os/alerts')); } catch (_) {}
       } catch (e) {
         if (mounted) setError(e.message || 'Unable to load AI OS status.');
       }
@@ -34,6 +38,7 @@ export default function AICommandCenter() {
 
   const agentList = agents?.agents || status?.agents || [];
   const summary = business?.summary || {};
+  const alertList = alerts?.alerts || [];
 
   return (
     <div className="space-y-6">
@@ -44,7 +49,7 @@ export default function AICommandCenter() {
               <Brain className="h-3.5 w-3.5 text-pink-300" /> SnapNext Intelligence OS
             </div>
             <h1 className="mt-4 text-3xl font-bold">AI Command Center</h1>
-            <p className="mt-2 max-w-2xl text-sm text-white/60">Monitor Chief AI, Guardian AI, specialist agents, feedback learning, cost signals, and business intelligence from one premium control room.</p>
+            <p className="mt-2 max-w-2xl text-sm text-white/60">Monitor Chief AI, Guardian AI, specialist agents, feedback learning, cost signals, certification, and business intelligence from one premium control room.</p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-right">
             <div className="text-xs text-white/50">Version</div>
@@ -55,12 +60,27 @@ export default function AICommandCenter() {
 
       {error && <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-100">{error}</div>}
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Metric icon={ShieldCheck} label="Guardian" value={status ? 'Active' : '—'} />
         <Metric icon={Activity} label="Agents" value={String(agentList.length || 0)} />
         <Metric icon={BarChart3} label="30d AI Cost" value={summary.estimatedAiCost != null ? `$${summary.estimatedAiCost}` : 'Admin'} />
         <Metric icon={GraduationCap} label="Learning" value="Shadow Mode" />
+        <Metric icon={ShieldAlert} label="Alerts" value={String(alertList.length)} />
       </div>
+
+      {alertList.length > 0 && (
+        <section className="rounded-3xl border border-amber-300/20 bg-amber-300/10 p-5">
+          <h2 className="text-lg font-semibold text-amber-100">AI Alerts</h2>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {alertList.map((alert, idx) => (
+              <div key={`${alert.code}-${idx}`} className="rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-amber-50">
+                <div className="font-medium">{alert.code}</div>
+                <div className="mt-1 text-amber-100/70">{alert.message}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]">
         <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
@@ -105,15 +125,16 @@ export default function AICommandCenter() {
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-            <h2 className="text-lg font-semibold">Scorecards</h2>
+            <h2 className="text-lg font-semibold">Certification</h2>
             <div className="mt-4 space-y-3">
-              {(scorecards?.scorecards || []).slice(0, 5).map((card) => (
-                <div key={card.agent.id} className="rounded-2xl bg-black/20 p-3 text-xs">
-                  <div className="flex items-center justify-between"><span>{card.agent.name}</span><span>{Math.round((card.scores.readinessScore || 0) * 100)}%</span></div>
-                  <div className="mt-2 h-1.5 rounded-full bg-white/10"><div className="h-1.5 rounded-full bg-white/60" style={{ width: `${Math.round((card.scores.readinessScore || 0) * 100)}%` }} /></div>
+              {(certification?.scorecards || scorecards?.scorecards || []).slice(0, 5).map((card) => (
+                <div key={card.agentId || card.agent.id} className="rounded-2xl bg-black/20 p-3 text-xs">
+                  <div className="flex items-center justify-between"><span>{card.agentName || card.agent.name}</span><span>{Math.round(((card.readinessScore ?? card.scores?.readinessScore) || 0) * 100)}%</span></div>
+                  <div className="mt-2 h-1.5 rounded-full bg-white/10"><div className="h-1.5 rounded-full bg-white/60" style={{ width: `${Math.round(((card.readinessScore ?? card.scores?.readinessScore) || 0) * 100)}%` }} /></div>
+                  {card.blockers?.length > 0 && <div className="mt-2 text-[11px] text-white/40">Blockers: {card.blockers.slice(0, 2).join(', ')}</div>}
                 </div>
               ))}
-              {!scorecards && <div className="text-xs text-white/50">Super User-only scorecards.</div>}
+              {!certification && !scorecards && <div className="text-xs text-white/50">Super User-only certification scorecards.</div>}
             </div>
           </div>
         </section>
