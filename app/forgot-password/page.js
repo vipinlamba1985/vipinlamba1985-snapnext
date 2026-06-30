@@ -44,7 +44,7 @@ export default function ForgotPassword() {
           {!sent ? (
             <>
               <h1 className="text-2xl font-bold">Forgot password?</h1>
-              <p className="text-sm text-white/60 mt-1">Enter your email and we'll send you a reset link.</p>
+              <p className="text-sm text-white/60 mt-1">Enter your email and we will send you a reset link.</p>
               <form onSubmit={submit} className="mt-6 space-y-4" suppressHydrationWarning>
                 <div>
                   <label htmlFor="forgot-email" className="text-xs text-white/60">Email</label>
