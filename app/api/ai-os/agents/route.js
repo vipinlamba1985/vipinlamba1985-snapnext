@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { getUserFromRequest } from '@/lib/auth';
-import { isSuper } from '@/lib/plans';
+import { isSuperUser } from '@/lib/entitlements';
 import { getSpecialistAgentStatus, chooseSpecialistAgent, runSpecialistShadowPlan } from '@/lib/ai-specialist-agents';
 
 export async function GET(request) {
@@ -15,8 +15,8 @@ export async function GET(request) {
     ok: true,
     version: status.version,
     style: status.style,
-    visibleMode: isSuper(user) ? 'admin' : 'user',
-    agents: isSuper(user)
+    visibleMode: isSuperUser(user) ? 'admin' : 'user',
+    agents: isSuperUser(user)
       ? status.agents
       : status.agents.map((agent) => ({
           id: agent.id,

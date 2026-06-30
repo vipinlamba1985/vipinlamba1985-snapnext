@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { getUserFromRequest } from '@/lib/auth';
 import { getAiOsStatus } from '@/lib/ai-os';
-import { isSuper } from '@/lib/plans';
+import { isSuperUser } from '@/lib/entitlements';
 
 export async function GET(request) {
   const user = await getUserFromRequest(request);
@@ -13,8 +13,8 @@ export async function GET(request) {
   const status = getAiOsStatus();
   return Response.json({
     ...status,
-    visibleMode: isSuper(user) ? 'admin' : 'user',
-    agents: isSuper(user)
+    visibleMode: isSuperUser(user) ? 'admin' : 'user',
+    agents: isSuperUser(user)
       ? status.agents
       : status.agents.map((agent) => ({ id: agent.id, name: agent.name, status: agent.status })),
   });

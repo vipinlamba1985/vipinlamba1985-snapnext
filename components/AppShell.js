@@ -6,6 +6,7 @@ import { Home, Upload, Image as ImageIcon, Heart, Sparkles, Send, Users, Message
 import { apiFetch, logout, getStoredUser, setStoredUser, getToken } from '@/lib/api-client';
 import BrandLogo from '@/components/BrandLogo';
 import { formatBytes } from '@/lib/utils';
+import { entitlementForUser } from '@/lib/entitlements';
 import { toast } from 'sonner';
 import NotificationBell from '@/components/NotificationBell';
 
@@ -59,7 +60,8 @@ export default function AppShell({ children }) {
 
   const activeRoute = NAV.find(item => pathname === item.href || pathname.startsWith(`${item.href}/`));
   const isAdminRoute = !!activeRoute?.adminOnly;
-  const isSuper = user?.plan === 'super_user' || user?.role === 'admin';
+  const entitlement = entitlementForUser(user);
+  const isSuper = entitlement.isSuper;
   const filteredNav = NAV.filter(n => !n.adminOnly || isSuper);
 
   useEffect(() => {
@@ -129,7 +131,7 @@ export default function AppShell({ children }) {
             <div className="min-w-0">
               <div className="text-sm font-medium truncate">{user?.name}</div>
               <div className="text-xs text-white/50 flex items-center gap-1">
-                {isSuper ? <><Crown className="h-3 w-3 text-amber-400" /> Super User · Family Access</> : (user?.plan?.toUpperCase() || 'FREE')}
+                {isSuper ? <><Crown className="h-3 w-3 text-amber-400" /> {entitlement.badge}</> : entitlement.badge}
               </div>
             </div>
           </div>

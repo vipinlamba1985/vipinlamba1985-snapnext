@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest, syncSupabaseUserToAppUser } from '@/lib/auth';
 import { supabaseServer, supabaseAdmin, isSupabaseConfigured, hasSupabaseServiceRole } from '@/lib/supabase';
-import { PLANS, getPlan, isSuper } from '@/lib/plans';
+import { PLANS, effectivePlan, isSuperUser } from '@/lib/entitlements';
 import { storage } from '@/lib/storage';
 import { analyzeImage, analyzeVideo, transcribeAudio } from '@/lib/gemini';
 import { runAiTask, getAiEntitlement, getAiUsageSummary, preflightAiRequest } from '@/lib/ai-router';
@@ -297,13 +297,16 @@ async function handle(request, ctx) {
     if (route === '/storage/usage' && method === 'GET') {
       const user = await requireUser(request);
       if (!user) return json({ error: 'Unauthorized' }, 401);
-      const plan = getPlan(user.plan);
+      const plan = effectivePlan(user);
       const usage = await getStorageUsage(db, user.id);
       const aiUsed = await getAiUsageToday(db, user.id);
       return json({
         usage,
         plan: { id: plan.id, name: plan.name, storageBytes: plan.storageBytes, aiPerDay: plan.aiPerDay },
-        isSuper: isSuper(user),
+        rawPlan: user.plan || 'free',
+        role: user.role || 'user',
+        effectivePlan: plan.id,
+        isSuper: isSuperUser(user),
         aiUsedToday: aiUsed,
       });
     }
@@ -312,9 +315,9 @@ async function handle(request, ctx) {
     if (route === '/media/upload' && method === 'POST') {
       const user = await requireUser(request);
       if (!user) return json({ error: 'Unauthorized' }, 401);
-      const plan = getPlan(user.plan);
+      const plan = effectivePlan(user);
       const usage = await getStorageUsage(db, user.id);
-      const remaining = isSuper(user) ? Number.MAX_SAFE_INTEGER : (plan.storageBytes - usage.bytes);
+      const remaining = isSuperUser(user) ? Number.MAX_SAFE_INTEGER : (plan.storageBytes - usage.bytes);
 
       const formData = await request.formData();
       const files = formData.getAll('files');
@@ -334,7 +337,7 @@ async function handle(request, ctx) {
           const dup = await db.collection('media').findOne({ userId: user.id, hash });
           if (dup) { skipped.push({ name: file.name, reason: 'duplicate', message: 'This file is already safely stored.', retryable: false, timestamp: new Date().toISOString() }); continue; }
 
-          if (!isSuper(user) && size > runningRemaining) {
+          if (!isSuperUser(user) && size > runningRemaining) {
             skipped.push({ name: file.name, reason: 'storage_full', message: 'Storage quota exceeded. Upgrade your plan or free up space.', retryable: false, timestamp: new Date().toISOString() });
             continue;
           }
@@ -580,7 +583,7 @@ async function handle(request, ctx) {
         creditsRequired: entitlement.credits,
         monthlyCredits: entitlement.limits.monthlyCredits,
         dailyCredits: entitlement.limits.dailyCredits,
-        superUser: isSuper(user),
+        superUser: isSuperUser(user),
       });
     }
 
@@ -896,8 +899,8 @@ async function handle(request, ctx) {
     if (route === '/billing/status' && method === 'GET') {
       const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
       const status = await billing.getBillingStatus({ user });
-      const plan = getPlan(user.plan);
-      return json({ ...status, plan, isSuper: isSuper(user) });
+      const plan = effectivePlan(user);
+      return json({ ...status, plan: plan.id, planDetails: plan, isSuper: isSuperUser(user) });
     }
 
     if (route === '/webhooks/stripe' && method === 'POST') {
@@ -918,7 +921,7 @@ async function handle(request, ctx) {
 
     if (route === '/admin/billing/health' && method === 'GET') {
       const user = await requireUser(request);
-      if (!user || !isSuper(user)) return json({ error: 'Forbidden' }, 403);
+      if (!user || !isSuperUser(user)) return json({ error: 'Forbidden' }, 403);
       const health = await billing.health();
       const counts = await db.collection('subscriptions').aggregate([
         { $group: { _id: { plan: '$plan', status: '$status' }, count: { $sum: 1 } } },
@@ -929,12 +932,12 @@ async function handle(request, ctx) {
 
     // ---------- ADMIN ----------
     if (route === '/admin/users' && method === 'GET') {
-      const user = await requireUser(request); if (!user || !isSuper(user)) return json({ error: 'Forbidden' }, 403);
+      const user = await requireUser(request); if (!user || !isSuperUser(user)) return json({ error: 'Forbidden' }, 403);
       const users = await db.collection('users').find({}).limit(500).toArray();
       return json({ users: users.map(clean) });
     }
     if (route === '/admin/grant-super' && method === 'POST') {
-      const user = await requireUser(request); if (!user || !isSuper(user)) return json({ error: 'Forbidden' }, 403);
+      const user = await requireUser(request); if (!user || !isSuperUser(user)) return json({ error: 'Forbidden' }, 403);
       const { userId } = await request.json();
       await db.collection('users').updateOne({ id: userId }, { $set: { plan: 'super_user', role: 'admin' } });
       return json({ ok: true });
@@ -999,7 +1002,7 @@ async function handle(request, ctx) {
     // ---------- ADMIN: EMAIL EVENTS ----------
     if (route === '/admin/emails' && method === 'GET') {
       const user = await requireUser(request);
-      if (!user || !isSuper(user)) return json({ error: 'Forbidden' }, 403);
+      if (!user || !isSuperUser(user)) return json({ error: 'Forbidden' }, 403);
       const url = new URL(request.url);
       const template = url.searchParams.get('template');
       const status = url.searchParams.get('status');
@@ -1056,7 +1059,7 @@ async function handle(request, ctx) {
     // ---------- ADMIN: STORAGE HEALTH ----------
     if (route === '/admin/storage/health' && method === 'GET') {
       const user = await requireUser(request);
-      if (!user || !isSuper(user)) return json({ error: 'Forbidden' }, 403);
+      if (!user || !isSuperUser(user)) return json({ error: 'Forbidden' }, 403);
       const health = await storage.health();
       // Recent upload errors from logs are not persisted; we surface per-media-provider counts instead.
       const counts = await db.collection('media').aggregate([
@@ -1406,8 +1409,8 @@ async function handle(request, ctx) {
       if (!ids.length) return json({ error: 'No media to export' }, 400);
 
       // Plan limit: max items per export (super bypasses).
-      const plan = getPlan(user.plan);
-      if (!isSuper(user) && ids.length > plan.downloadsPerDay) {
+      const plan = effectivePlan(user);
+      if (!isSuperUser(user) && ids.length > plan.downloadsPerDay) {
         return json({ error: `Export exceeds your daily limit of ${plan.downloadsPerDay} items. Upgrade for more.` }, 429);
       }
 

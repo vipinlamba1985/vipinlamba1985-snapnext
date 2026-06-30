@@ -157,7 +157,7 @@ function explainFailure(reason, message) {
     }
   }, [uploading]);
 
-  const isSuper = usage?.isSuper || usage?.plan?.id === 'super_user' || usage?.plan?.id === 'admin';
+  const isSuper = !!usage?.isSuper;
 
   // Helper to add files to the queue
   function addFilesToQueue(filesList) {

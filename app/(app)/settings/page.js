@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch, logout, getStoredUser, setStoredUser } from '@/lib/api-client';
 import { formatBytes } from '@/lib/utils';
+import { entitlementForUser } from '@/lib/entitlements';
 import { toast } from 'sonner';
 import { Crown, LogOut, Mail, CheckCircle2, Loader2 } from 'lucide-react';
 
@@ -66,7 +67,8 @@ export default function Settings() {
     finally { setResending(false); }
   }
 
-  const isSuper = user?.plan === 'super_user' || user?.role === 'admin';
+  const entitlement = entitlementForUser(user);
+  const isSuper = entitlement.isSuper;
 
   return (
     <div className="space-y-6">
@@ -83,7 +85,7 @@ export default function Settings() {
             <div className="font-medium">{user?.name}</div>
             <div className="text-sm text-white/60">{user?.email}</div>
             <div className="text-xs mt-1 inline-flex items-center gap-1 text-white/60">
-              {isSuper ? <><Crown className="h-3 w-3 text-amber-400"/> Super User · Family Access</> : (user?.plan?.toUpperCase() || 'FREE')}
+              {isSuper ? <><Crown className="h-3 w-3 text-amber-400"/> {entitlement.badge}</> : entitlement.badge}
             </div>
           </div>
         </div>

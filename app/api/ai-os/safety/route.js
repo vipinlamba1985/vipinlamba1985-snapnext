@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { isSuper } from '@/lib/plans';
+import { isSuperUser } from '@/lib/entitlements';
 import { applyRollbackRecommendation, getRollbackRecommendations } from '@/lib/ai-safety-automation';
 
 export async function GET(request) {
@@ -10,7 +10,7 @@ export async function GET(request) {
   if (!user) {
     return Response.json({ error: { code: 'unauthenticated', message: 'Please sign in to view AI safety automation.' } }, { status: 401 });
   }
-  if (!isSuper(user)) {
+  if (!isSuperUser(user)) {
     return Response.json({ error: { code: 'feature_not_available', message: 'AI safety automation is available to Super User only.' } }, { status: 403 });
   }
   const db = await getDb();
@@ -22,7 +22,7 @@ export async function POST(request) {
   if (!user) {
     return Response.json({ error: { code: 'unauthenticated', message: 'Please sign in to apply AI safety automation.' } }, { status: 401 });
   }
-  if (!isSuper(user)) {
+  if (!isSuperUser(user)) {
     return Response.json({ error: { code: 'feature_not_available', message: 'AI safety automation is available to Super User only.' } }, { status: 403 });
   }
   const body = await request.json().catch(() => ({}));

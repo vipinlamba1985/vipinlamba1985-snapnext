@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { isSuper } from '@/lib/plans';
+import { isSuperUser } from '@/lib/entitlements';
 import { getBusinessIntelligenceSnapshot } from '@/lib/ai-learning-engine';
 
 export async function GET(request) {
@@ -10,7 +10,7 @@ export async function GET(request) {
   if (!user) {
     return Response.json({ error: { code: 'unauthenticated', message: 'Please sign in to view AI business intelligence.' } }, { status: 401 });
   }
-  if (!isSuper(user)) {
+  if (!isSuperUser(user)) {
     return Response.json({ error: { code: 'feature_not_available', message: 'AI business intelligence is available to Super User only.' } }, { status: 403 });
   }
 
