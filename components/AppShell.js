@@ -2,8 +2,9 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Camera, Home, Upload, Image as ImageIcon, Heart, Sparkles, Send, Users, MessageSquare, Download, Trash2, CreditCard, Settings, Shield, LifeBuoy, LogOut, Crown, Menu, X, Mail, Loader2, Network, RefreshCw, BookOpen, ShieldAlert, BrainCircuit, Film } from 'lucide-react';
+import { Home, Upload, Image as ImageIcon, Heart, Sparkles, Send, Users, MessageSquare, Download, Trash2, CreditCard, Settings, Shield, LifeBuoy, LogOut, Crown, Menu, X, Mail, Loader2, Network, RefreshCw, BookOpen, ShieldAlert, BrainCircuit, Film } from 'lucide-react';
 import { apiFetch, logout, getStoredUser, setStoredUser, getToken } from '@/lib/api-client';
+import BrandLogo from '@/components/BrandLogo';
 import { formatBytes } from '@/lib/utils';
 import { toast } from 'sonner';
 import NotificationBell from '@/components/NotificationBell';
@@ -17,8 +18,8 @@ const NAV = [
   { href: '/journal', label: 'Life Journal', icon: BookOpen },
   { href: '/health', label: 'Memory Health', icon: ShieldAlert },
   { href: '/imports', label: 'Cloud Sync', icon: RefreshCw },
-  { href: '/ai-studio', label: 'AI Studio', icon: Sparkles },
-  { href: '/ai-video', label: 'AI Video', icon: Film },
+  { href: '/ai-studio', label: 'AI Studio', icon: Sparkles, adminOnly: true },
+  { href: '/ai-video', label: 'AI Video', icon: Film, adminOnly: true },
   { href: '/ai-command', label: 'AI Command', icon: BrainCircuit, adminOnly: true },
   { href: '/ready-to-post', label: 'Ready to Post', icon: Send },
   { href: '/favorites', label: 'Favorites', icon: Users },
@@ -56,11 +57,27 @@ export default function AppShell({ children }) {
     apiFetch('/storage/usage').then(setUsage).catch(()=>{});
   }, [pathname]);
 
+  const activeRoute = NAV.find(item => pathname === item.href || pathname.startsWith(`${item.href}/`));
+  const isAdminRoute = !!activeRoute?.adminOnly;
   const isSuper = user?.plan === 'super_user' || user?.role === 'admin';
   const filteredNav = NAV.filter(n => !n.adminOnly || isSuper);
 
-  if (!ready) {
-    return <div className="min-h-screen grid place-items-center text-white/50">Loading…</div>;
+  useEffect(() => {
+    if (ready && isAdminRoute && !isSuper) {
+      router.replace('/dashboard');
+    }
+  }, [ready, isAdminRoute, isSuper, router]);
+
+  if (!ready || (isAdminRoute && !isSuper)) {
+    return (
+      <div className="min-h-screen grid place-items-center text-white/50">
+        <div className="text-center">
+          <BrandLogo size={56} className="mx-auto mb-4" priority />
+          <Loader2 className="mx-auto h-5 w-5 animate-spin text-pink-300" />
+          <div className="mt-3 text-sm">{isAdminRoute ? 'Checking Super User access…' : 'Loading…'}</div>
+        </div>
+      </div>
+    );
   }
 
   function VerifyBanner({ user, onVerified }) {
@@ -99,7 +116,7 @@ export default function AppShell({ children }) {
       <aside className={`fixed md:static z-50 inset-y-0 left-0 w-72 md:w-auto bg-[#0b0414]/95 md:bg-white/[0.02] backdrop-blur border-r border-white/5 transform ${open ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform`}>
         <div className="p-5 flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 grid place-items-center"><Camera className="h-5 w-5" /></div>
+            <BrandLogo size={32} priority />
             <span className="font-semibold">SnapNext AI</span>
           </Link>
           <button className="md:hidden" onClick={()=>setOpen(false)}><X className="h-5 w-5" /></button>
@@ -151,7 +168,7 @@ export default function AppShell({ children }) {
         <header className="md:hidden sticky top-0 z-30 backdrop-blur bg-[#0b0414]/80 border-b border-white/5 px-4 h-14 flex items-center justify-between">
           <button onClick={()=>setOpen(true)}><Menu className="h-5 w-5" /></button>
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600" />
+            <BrandLogo size={28} priority />
             <span className="font-semibold text-sm">SnapNext AI</span>
           </Link>
           <NotificationBell />

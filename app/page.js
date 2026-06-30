@@ -28,6 +28,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import BrandLogo from '@/components/BrandLogo';
 
 const fadeUp = {
   initial: { opacity: 0, y: 26 },
@@ -663,9 +664,7 @@ export default function MarketingLandingPage() {
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07020F]/75 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-6">
           <Link href="/" className="flex items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-pink-300" aria-label="SnapNext home">
-            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg shadow-pink-950/30">
-              <Brain className="h-5 w-5" />
-            </div>
+            <BrandLogo size={32} priority />
             <div className="leading-tight">
               <div className="font-black tracking-tight">SnapNext AI</div>
               <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-white/40">Life OS</div>
@@ -761,7 +760,7 @@ export default function MarketingLandingPage() {
       <footer className="relative z-10 border-t border-white/10 px-5 py-8 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col gap-5 text-sm text-white/45 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-pink-500 to-purple-600"><Brain className="h-4 w-4 text-white" /></div>
+            <BrandLogo size={32} />
             <span className="font-bold text-white">SnapNext AI</span>
           </div>
           <div className="flex flex-wrap gap-5">

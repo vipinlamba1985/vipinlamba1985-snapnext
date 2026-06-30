@@ -3,7 +3,8 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Camera, Loader2, Database, Shield, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Loader2, Database, Shield, Sparkles, CheckCircle2 } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
 import { setToken, setStoredUser, apiFetch } from '@/lib/api-client';
 import PasswordInput from '@/components/PasswordInput';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -61,9 +62,7 @@ function LoginContent() {
       </div>
       <div className="w-full max-w-md">
         <Link href="/" className="flex items-center justify-center gap-2 mb-8">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 grid place-items-center">
-            <Camera className="h-5 w-5" />
-          </div>
+          <BrandLogo size={48} priority />
           <span className="font-semibold text-lg">SnapNext AI</span>
         </Link>
         

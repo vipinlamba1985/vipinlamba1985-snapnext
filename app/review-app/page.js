@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   Lock,
 } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
 
 const tabs = [
   { id: 'home', label: 'Home', icon: Home },
@@ -99,7 +100,7 @@ export default function ReviewAppPage() {
     <div className="min-h-screen bg-slate-50 text-slate-900 md:flex">
       <aside className="hidden md:flex w-72 flex-col border-r border-slate-200 bg-white/90 p-6 shadow-sm">
         <div className="mb-8 flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 via-indigo-500 to-emerald-500 text-white shadow-lg"><Camera className="h-6 w-6" /></div>
+          <BrandLogo size={48} />
           <div><div className="text-xl font-black tracking-tight">SnapNext <span className="text-indigo-600">AI</span></div><div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Public review mode</div></div>
         </div>
         <nav className="flex-1 space-y-2">{tabs.map((item) => { const Icon = item.icon; const selected = active === item.id; return <button key={item.id} onClick={() => setActive(item.id)} className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${selected ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}><Icon className="h-4 w-4" />{item.label}</button>; })}</nav>

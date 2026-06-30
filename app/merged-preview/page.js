@@ -17,6 +17,7 @@ import {
   ChevronRight,
   CheckCircle2,
 } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
 
 const navItems = [
   { id: 'home', label: 'Home', icon: Home },
@@ -47,9 +48,7 @@ export default function MergedPreviewPage() {
     <div className="min-h-screen bg-slate-50 text-slate-900 md:flex">
       <aside className="hidden md:flex w-72 flex-col border-r border-slate-200 bg-white/90 p-6 shadow-sm">
         <Link href="/" className="mb-8 flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 via-indigo-500 to-emerald-500 text-white shadow-lg">
-            <Camera className="h-6 w-6" />
-          </div>
+          <BrandLogo size={48} />
           <div>
             <div className="text-xl font-black tracking-tight">SnapNext <span className="text-indigo-600">AI</span></div>
             <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Every memory. One safe place.</div>
@@ -93,9 +92,7 @@ export default function MergedPreviewPage() {
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur md:hidden">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-pink-500 to-indigo-600 text-white">
-                <Camera className="h-5 w-5" />
-              </div>
+              <BrandLogo size={40} />
               <div>
                 <div className="font-black">SnapNext</div>
                 <div className="text-[9px] font-bold uppercase tracking-widest text-indigo-600">Merged build</div>

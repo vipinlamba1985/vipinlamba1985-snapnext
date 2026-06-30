@@ -1,464 +1,363 @@
 #!/usr/bin/env python3
 """
-SnapNext AI Backend API Testing - Track A (Admin/Super User) and Track B (Normal User)
-Tests all backend endpoints with proper authentication and authorization checks.
+SnapNext AI - Security & Authorization Backend Test
+Tests isSuper authorization, preview/admin token access, anonymous request blocking,
+middleware redirects, and public branding assets.
 """
 
 import requests
 import json
 import sys
-from typing import Dict, Any, List, Tuple
 
-# Configuration
-BASE_URL = "http://localhost:3000/api"
-PREVIEW_TOKEN = "preview-demo-token"  # Admin/Super User token
+BASE_URL = "http://localhost:3000"
+API_URL = f"{BASE_URL}/api"
+PREVIEW_TOKEN = "preview-demo-token"
 
-# Test results tracking
-passed_tests = []
-failed_tests = []
-api_errors = []
-security_issues = []
-missing_endpoints = []
+# Test counters
+passed = 0
+failed = 0
+test_results = []
 
-def log_result(test_name: str, passed: bool, message: str = ""):
-    """Log test result"""
-    if passed:
-        passed_tests.append(f"✅ {test_name}")
-        print(f"✅ PASS: {test_name}")
-        if message:
-            print(f"   {message}")
+def test(name, condition, details=""):
+    global passed, failed
+    if condition:
+        passed += 1
+        print(f"✅ {name}")
+        test_results.append({"name": name, "status": "PASS", "details": details})
     else:
-        failed_tests.append(f"❌ {test_name}: {message}")
-        print(f"❌ FAIL: {test_name}")
-        if message:
-            print(f"   {message}")
+        failed += 1
+        print(f"❌ {name}")
+        if details:
+            print(f"   Details: {details}")
+        test_results.append({"name": name, "status": "FAIL", "details": details})
 
-def log_api_error(endpoint: str, error: str):
-    """Log API error"""
-    api_errors.append(f"{endpoint}: {error}")
-    print(f"⚠️  API ERROR: {endpoint} - {error}")
+def get_json(url, headers=None):
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        return r.status_code, r.json() if r.headers.get('content-type', '').startswith('application/json') else None
+    except Exception as e:
+        return None, str(e)
 
-def log_security_issue(issue: str):
-    """Log security issue"""
-    security_issues.append(issue)
-    print(f"🔒 SECURITY ISSUE: {issue}")
+def post_json(url, data=None, headers=None):
+    try:
+        r = requests.post(url, json=data, headers=headers, timeout=10)
+        return r.status_code, r.json() if r.headers.get('content-type', '').startswith('application/json') else None
+    except Exception as e:
+        return None, str(e)
 
-def log_missing_endpoint(endpoint: str):
-    """Log missing endpoint"""
-    missing_endpoints.append(endpoint)
-    print(f"❌ MISSING ENDPOINT: {endpoint}")
+print("=" * 80)
+print("SNAPNEXT AI - SECURITY & AUTHORIZATION BACKEND TEST")
+print("=" * 80)
+print()
 
-def make_request(method: str, endpoint: str, token: str = None, data: Dict = None, expect_json: bool = True) -> Tuple[int, Any]:
-    """Make HTTP request and return status code and response"""
-    url = f"{BASE_URL}{endpoint}"
-    headers = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+# ============================================================================
+# TEST 1: isSuper Authorization - Preview/Admin Token Works
+# ============================================================================
+print("TEST 1: isSuper Authorization - Preview/Admin Token Access")
+print("-" * 80)
+
+headers_with_token = {"Authorization": f"Bearer {PREVIEW_TOKEN}"}
+
+# 1.1 /api/auth/me with preview-demo-token
+status, data = get_json(f"{API_URL}/auth/me", headers_with_token)
+test(
+    "1.1 /api/auth/me with preview-demo-token returns 200",
+    status == 200,
+    f"Status: {status}, Data: {json.dumps(data) if data else 'None'}"
+)
+if status == 200 and data:
+    test(
+        "1.2 /api/auth/me returns user with admin role",
+        data.get('user', {}).get('role') == 'admin',
+        f"Role: {data.get('user', {}).get('role')}"
+    )
+    test(
+        "1.3 /api/auth/me returns user with admin plan",
+        data.get('user', {}).get('plan') == 'admin',
+        f"Plan: {data.get('user', {}).get('plan')}"
+    )
+else:
+    test("1.2 /api/auth/me returns user with admin role", False, "No user data")
+    test("1.3 /api/auth/me returns user with admin plan", False, "No user data")
+
+# 1.4 /api/admin/users with preview-demo-token
+status, data = get_json(f"{API_URL}/admin/users", headers_with_token)
+test(
+    "1.4 /api/admin/users with preview-demo-token returns 200",
+    status == 200,
+    f"Status: {status}"
+)
+
+# 1.5 /api/ai/analytics with preview-demo-token
+status, data = get_json(f"{API_URL}/ai/analytics", headers_with_token)
+test(
+    "1.5 /api/ai/analytics with preview-demo-token returns 200",
+    status == 200,
+    f"Status: {status}"
+)
+
+print()
+
+# ============================================================================
+# TEST 2: AI OS Routes - Preview/Admin Token Access
+# ============================================================================
+print("TEST 2: AI OS Routes - Preview/Admin Token Access")
+print("-" * 80)
+
+ai_os_routes = [
+    ("status", "GET", None),
+    ("agents", "GET", None),
+    ("preview", "POST", {"task": "test task", "feature": "chat"}),
+    ("video", "GET", None),
+    ("governance", "GET", None),
+    ("safety", "GET", None),
+    ("business", "GET", None),
+    ("scorecards", "GET", None),
+    ("certification", "GET", None),
+    ("alerts", "GET", None),
+]
+
+for idx, (route, method, payload) in enumerate(ai_os_routes, start=1):
+    url = f"{API_URL}/ai-os/{route}"
+    if method == "GET":
+        status, data = get_json(url, headers_with_token)
+    else:
+        status, data = post_json(url, payload, headers_with_token)
+    
+    test(
+        f"2.{idx} /api/ai-os/{route} with preview-demo-token returns 200",
+        status == 200,
+        f"Status: {status}, Method: {method}"
+    )
+
+print()
+
+# ============================================================================
+# TEST 3: Anonymous Requests - Should Return 401/403
+# ============================================================================
+print("TEST 3: Anonymous Requests to Admin/Super User APIs - Should Return 401/403")
+print("-" * 80)
+
+anonymous_tests = [
+    ("/api/auth/me", "GET", None, 401),
+    ("/api/admin/users", "GET", None, [401, 403]),
+    ("/api/admin/grant-super", "POST", {"userId": "test"}, [401, 403]),
+    ("/api/admin/seed-super", "POST", {"email": "test@test.com", "secret": "wrong"}, 403),
+    ("/api/ai/analytics", "GET", None, 401),
+    ("/api/ai-os/status", "GET", None, 401),
+    ("/api/ai-os/agents", "GET", None, 401),
+    ("/api/ai-os/preview", "POST", {"task": "test"}, 401),
+    ("/api/ai-os/governance", "GET", None, 401),
+    ("/api/ai-os/safety", "GET", None, 401),
+]
+
+for idx, (endpoint, method, payload, expected_status) in enumerate(anonymous_tests, start=1):
+    if method == "GET":
+        status, data = get_json(f"{BASE_URL}{endpoint}")
+    else:
+        status, data = post_json(f"{BASE_URL}{endpoint}", payload)
+    
+    if isinstance(expected_status, list):
+        condition = status in expected_status
+        expected_str = f"{expected_status[0]} or {expected_status[1]}"
+    else:
+        condition = status == expected_status
+        expected_str = str(expected_status)
+    
+    test(
+        f"3.{idx} {endpoint} without auth returns {expected_str}",
+        condition,
+        f"Status: {status}, Expected: {expected_str}"
+    )
+
+print()
+
+# ============================================================================
+# TEST 4: Middleware Redirects for Protected Frontend Routes
+# ============================================================================
+print("TEST 4: Middleware Redirects for Protected Frontend Routes (No Auth)")
+print("-" * 80)
+
+protected_routes = [
+    "/admin",
+    "/ai-command",
+    "/ai-video",
+    "/ai-studio",
+]
+
+for idx, route in enumerate(protected_routes, start=1):
+    try:
+        r = requests.get(f"{BASE_URL}{route}", allow_redirects=False, timeout=10)
+        is_redirect = r.status_code in [301, 302, 303, 307, 308]
+        redirect_to_login = False
+        if is_redirect:
+            location = r.headers.get('Location', '')
+            redirect_to_login = '/login' in location
+        
+        test(
+            f"4.{idx} {route} without auth redirects to /login",
+            is_redirect and redirect_to_login,
+            f"Status: {r.status_code}, Location: {r.headers.get('Location', 'None')}"
+        )
+    except Exception as e:
+        test(f"4.{idx} {route} without auth redirects to /login", False, str(e))
+
+print()
+
+# ============================================================================
+# TEST 5: App Shell Route Metadata - adminOnly Flags
+# ============================================================================
+print("TEST 5: App Shell Route Metadata - adminOnly Flags (Code Inspection)")
+print("-" * 80)
+
+# Read AppShell.js and verify adminOnly flags
+try:
+    with open('/app/components/AppShell.js', 'r') as f:
+        content = f.read()
+    
+    admin_routes = [
+        ("'/ai-studio'", "adminOnly: true"),
+        ("'/ai-video'", "adminOnly: true"),
+        ("'/ai-command'", "adminOnly: true"),
+        ("'/admin'", "adminOnly: true"),
+    ]
+    
+    for idx, (route, flag) in enumerate(admin_routes, start=1):
+        # Check if route exists with adminOnly flag
+        route_found = route in content
+        flag_found = False
+        if route_found:
+            # Find the line with the route and check nearby lines for adminOnly
+            lines = content.split('\n')
+            for i, line in enumerate(lines):
+                if route in line:
+                    # Check current line and next 2 lines for adminOnly
+                    check_lines = '\n'.join(lines[i:i+3])
+                    flag_found = 'adminOnly: true' in check_lines
+                    break
+        
+        test(
+            f"5.{idx} {route} has adminOnly: true in AppShell.js",
+            route_found and flag_found,
+            f"Route found: {route_found}, Flag found: {flag_found}"
+        )
+except Exception as e:
+    test("5.1 AppShell.js code inspection", False, str(e))
+
+print()
+
+# ============================================================================
+# TEST 6: Public Branding Assets - Existence and Content Type
+# ============================================================================
+print("TEST 6: Public Branding Assets - Existence and Content Type")
+print("-" * 80)
+
+branding_assets = [
+    ("/logo.svg", "image/svg+xml"),
+    ("/logo.png", "image/png"),
+    ("/logo-light.png", "image/png"),
+    ("/logo-dark.png", "image/png"),
+    ("/logo-white.png", "image/png"),
+    ("/favicon.ico", ["image/x-icon", "image/vnd.microsoft.icon"]),
+    ("/favicon-16x16.png", "image/png"),
+    ("/favicon-32x32.png", "image/png"),
+    ("/apple-touch-icon.png", "image/png"),
+    ("/android-chrome-192x192.png", "image/png"),
+    ("/android-chrome-512x512.png", "image/png"),
+    ("/maskable-icon-512x512.png", "image/png"),
+    ("/og-image.png", "image/png"),
+    ("/twitter-image.png", "image/png"),
+    ("/manifest.json", "application/json"),
+]
+
+for idx, asset_info in enumerate(branding_assets, start=1):
+    asset_path = asset_info[0]
+    expected_type = asset_info[1]
     
     try:
-        if method == "GET":
-            response = requests.get(url, headers=headers, timeout=10)
-        elif method == "POST":
-            headers["Content-Type"] = "application/json"
-            response = requests.post(url, headers=headers, json=data or {}, timeout=10)
-        elif method == "PUT":
-            headers["Content-Type"] = "application/json"
-            response = requests.put(url, headers=headers, json=data or {}, timeout=10)
-        elif method == "DELETE":
-            response = requests.delete(url, headers=headers, timeout=10)
-        else:
-            return 0, {"error": f"Unsupported method: {method}"}
+        r = requests.get(f"{BASE_URL}{asset_path}", timeout=10)
+        status_ok = r.status_code == 200
+        content_type = r.headers.get('content-type', '').split(';')[0].strip()
         
-        if expect_json:
-            try:
-                return response.status_code, response.json()
-            except:
-                return response.status_code, {"error": "Non-JSON response", "text": response.text[:200]}
+        if isinstance(expected_type, list):
+            type_ok = content_type in expected_type
+            expected_str = " or ".join(expected_type)
         else:
-            return response.status_code, response.text
-    except requests.exceptions.Timeout:
-        return 0, {"error": "Request timeout"}
-    except requests.exceptions.ConnectionError:
-        return 0, {"error": "Connection error"}
+            type_ok = content_type == expected_type
+            expected_str = expected_type
+        
+        test(
+            f"6.{idx} {asset_path} returns 200 with correct content-type",
+            status_ok and type_ok,
+            f"Status: {r.status_code}, Content-Type: {content_type}, Expected: {expected_str}"
+        )
     except Exception as e:
-        return 0, {"error": str(e)}
+        test(f"6.{idx} {asset_path} returns 200 with correct content-type", False, str(e))
 
-print("=" * 80)
-print("SNAPNEXT AI BACKEND API TESTING")
-print("=" * 80)
 print()
 
 # ============================================================================
-# TRACK A: ADMIN/SUPER USER TESTING (with preview-demo-token)
+# TEST 7: Additional Security Checks
 # ============================================================================
-print("=" * 80)
-print("TRACK A: ADMIN/SUPER USER TESTING")
-print("=" * 80)
-print()
+print("TEST 7: Additional Security Checks")
+print("-" * 80)
 
-# Test 1: /api/auth/me - Verify admin role and Super User access
-print("Test 1: /api/auth/me - Verify admin role and Super User access")
-status, data = make_request("GET", "/auth/me", token=PREVIEW_TOKEN)
-if status == 200:
-    user = data.get("user", {})
-    email = user.get("email", "")
-    role = user.get("role", "")
-    plan = user.get("plan", "")
-    
-    if email == "vipin.lamba1985@gmail.com":
-        log_result("auth/me - email verification", True, f"Email: {email}")
-    else:
-        log_result("auth/me - email verification", False, f"Expected vipin.lamba1985@gmail.com, got {email}")
-    
-    if role == "admin":
-        log_result("auth/me - admin role", True, f"Role: {role}")
-    else:
-        log_result("auth/me - admin role", False, f"Expected role 'admin', got '{role}'")
-    
-    # Check if user is treated as super user (plan should be 'admin' or 'super_user')
-    if plan in ["admin", "super_user"]:
-        log_result("auth/me - Super User access", True, f"Plan: {plan}")
-    else:
-        log_result("auth/me - Super User access", False, f"Expected plan 'admin' or 'super_user', got '{plan}'")
+# 7.1 Verify isSuper logic works for both plan and role
+status, data = get_json(f"{API_URL}/auth/me", headers_with_token)
+if status == 200 and data:
+    user = data.get('user', {})
+    is_super_by_role = user.get('role') == 'admin'
+    is_super_by_plan = user.get('plan') in ['super_user', 'admin']
+    test(
+        "7.1 isSuper authorization works (role=admin OR plan=super_user/admin)",
+        is_super_by_role or is_super_by_plan,
+        f"Role: {user.get('role')}, Plan: {user.get('plan')}"
+    )
 else:
-    log_result("auth/me", False, f"Status {status}: {data}")
-    log_api_error("/auth/me", f"Status {status}")
+    test("7.1 isSuper authorization works", False, "Could not verify user")
 
-print()
+# 7.2 Verify non-super user cannot access admin endpoints (using wrong token)
+wrong_headers = {"Authorization": "Bearer wrong-token"}
+status, data = get_json(f"{API_URL}/admin/users", wrong_headers)
+test(
+    "7.2 Invalid token cannot access /api/admin/users",
+    status in [401, 403],
+    f"Status: {status}"
+)
 
-# Test 2: /api/admin/users - Admin endpoint
-print("Test 2: /api/admin/users - Admin endpoint")
-status, data = make_request("GET", "/admin/users", token=PREVIEW_TOKEN)
-if status == 200:
-    users = data.get("users", [])
-    log_result("admin/users - access granted", True, f"Retrieved {len(users)} users")
-elif status == 403:
-    log_result("admin/users - access granted", False, "Admin user denied access (403)")
-    log_security_issue("/admin/users returns 403 for admin user")
-else:
-    log_result("admin/users", False, f"Status {status}: {data}")
-    log_api_error("/admin/users", f"Status {status}")
-
-print()
-
-# Test 3: /api/ai/analytics - AI analytics endpoint
-print("Test 3: /api/ai/analytics - AI analytics endpoint")
-status, data = make_request("GET", "/ai/analytics", token=PREVIEW_TOKEN)
-if status == 200:
-    log_result("ai/analytics - access granted", True, "Analytics data retrieved")
-elif status == 403:
-    log_result("ai/analytics - access granted", False, "Admin user denied access (403)")
-elif status == 503:
-    log_result("ai/analytics - access granted", True, "503 ai_service_unavailable (expected if no AI keys)")
-    print(f"   Note: {data.get('error', {}).get('message', 'AI service unavailable')}")
-else:
-    log_result("ai/analytics", False, f"Status {status}: {data}")
-
-print()
-
-# Test 4: /api/ai/status - AI status endpoint
-print("Test 4: /api/ai/status - AI status endpoint")
-status, data = make_request("GET", "/ai/status?feature=caption", token=PREVIEW_TOKEN)
-if status == 200:
-    log_result("ai/status - access granted", True, "AI status retrieved")
-    print(f"   Plan: {data.get('plan', 'N/A')}, Super User: {data.get('superUser', False)}")
-elif status == 503:
-    log_result("ai/status - access granted", True, "503 ai_service_unavailable (expected if no AI keys)")
-else:
-    log_result("ai/status", False, f"Status {status}: {data}")
-
-print()
-
-# Test 5-13: /api/ai-os/* endpoints - These should be tested but may not exist
-print("Test 5-13: /api/ai-os/* endpoints")
-ai_os_endpoints = [
-    ("/ai-os/status", "GET", None),
-    ("/ai-os/agents", "GET", None),
-    ("/ai-os/agents", "POST", {"task": "test task", "safe": True}),
-    ("/ai-os/preview", "POST", {"data": "test preview"}),
-    ("/ai-os/video", "GET", None),
-    ("/ai-os/video", "POST", {"preview": True}),
-    ("/ai-os/governance", "GET", None),
-    ("/ai-os/safety", "GET", None),
-    ("/ai-os/business", "GET", None),
-    ("/ai-os/scorecards", "GET", None),
-    ("/ai-os/certification", "GET", None),
-    ("/ai-os/alerts", "GET", None),
-]
-
-for endpoint, method, payload in ai_os_endpoints:
-    status, data = make_request(method, endpoint, token=PREVIEW_TOKEN, data=payload)
-    if status == 404:
-        log_missing_endpoint(f"{method} {endpoint}")
-    elif status == 200:
-        log_result(f"{endpoint} - {method}", True, "Endpoint accessible")
-    elif status == 403:
-        log_result(f"{endpoint} - {method}", False, "Admin user denied access (403)")
-        log_security_issue(f"{endpoint} returns 403 for admin user")
-    elif status == 503:
-        log_result(f"{endpoint} - {method}", True, "503 service unavailable (may be expected)")
-    else:
-        log_api_error(f"{method} {endpoint}", f"Status {status}")
-
-print()
-
-# Test 14: Anonymous access rejection for admin endpoints
-print("Test 14: Anonymous access rejection for admin/Super User APIs")
-admin_endpoints = [
-    "/admin/users",
-    "/admin/grant-super",
-    "/admin/storage/health",
-    "/admin/billing/health",
-    "/admin/emails",
-]
-
-for endpoint in admin_endpoints:
-    status, data = make_request("GET", endpoint, token=None)
-    if status == 401:
-        log_result(f"Anonymous access blocked - {endpoint}", True, "Correctly returns 401")
-    elif status == 403:
-        log_result(f"Anonymous access blocked - {endpoint}", True, "Correctly returns 403")
-    else:
-        log_result(f"Anonymous access blocked - {endpoint}", False, f"Expected 401/403, got {status}")
-        log_security_issue(f"{endpoint} allows anonymous access (status {status})")
+# 7.3 Verify AI OS routes require authentication
+status, data = get_json(f"{API_URL}/ai-os/status")
+test(
+    "7.3 /api/ai-os/status without auth returns 401",
+    status == 401,
+    f"Status: {status}"
+)
 
 print()
 
 # ============================================================================
-# TRACK B: NORMAL USER TESTING
+# SUMMARY
 # ============================================================================
 print("=" * 80)
-print("TRACK B: NORMAL USER TESTING")
+print("TEST SUMMARY")
 print("=" * 80)
+print(f"Total Tests: {passed + failed}")
+print(f"✅ Passed: {passed}")
+print(f"❌ Failed: {failed}")
+print(f"Success Rate: {(passed / (passed + failed) * 100):.1f}%")
 print()
 
-# Check if test credentials exist
-print("Checking for test credentials...")
-import os
-test_creds_path = "/app/memory/test_credentials.md"
-if not os.path.exists(test_creds_path):
-    print("❌ /app/memory/test_credentials.md NOT FOUND")
-    print()
-    
-    # Check if Supabase is configured
-    print("Checking Supabase configuration...")
-    status, data = make_request("GET", "/auth/config")
-    if status == 200:
-        supabase_configured = data.get("supabase", False)
-        if not supabase_configured:
-            print("❌ Supabase authentication is NOT configured")
-            print("   Missing environment variables: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY")
-            print()
-            print("🚫 TRACK B BLOCKED: No valid normal user credentials available")
-            print("   - /app/memory/test_credentials.md does not exist")
-            print("   - Supabase signup/login not configured (missing env vars)")
-            print("   - Cannot create or test with normal user account")
-            print()
-            log_result("Track B - Normal User Testing", False, "BLOCKED: Missing credentials and Supabase not configured")
-        else:
-            print("✅ Supabase is configured")
-            print("   Attempting to create test user via signup...")
-            
-            # Try to create a test user
-            test_email = "test-normal-user@snapnext.test"
-            test_password = "TestPass123!"
-            status, data = make_request("POST", "/auth/signup", data={
-                "email": test_email,
-                "password": test_password,
-                "name": "Test Normal User"
-            })
-            
-            if status == 200 or status == 409:  # 409 means user already exists
-                if status == 409:
-                    print("   User already exists, attempting login...")
-                    status, data = make_request("POST", "/auth/login", data={
-                        "email": test_email,
-                        "password": test_password
-                    })
-                
-                if status == 200:
-                    normal_token = data.get("token")
-                    print(f"   ✅ Normal user authenticated: {test_email}")
-                    print()
-                    
-                    # Run Track B tests with normal user
-                    print("Running Track B tests with normal user...")
-                    print()
-                    
-                    # Test 1: /api/auth/me shows role user plan free
-                    print("Test B1: /api/auth/me - Verify role user and plan free")
-                    status, data = make_request("GET", "/auth/me", token=normal_token)
-                    if status == 200:
-                        user = data.get("user", {})
-                        role = user.get("role", "")
-                        plan = user.get("plan", "")
-                        
-                        if role == "user":
-                            log_result("Normal user - role verification", True, f"Role: {role}")
-                        else:
-                            log_result("Normal user - role verification", False, f"Expected 'user', got '{role}'")
-                        
-                        if plan == "free":
-                            log_result("Normal user - plan verification", True, f"Plan: {plan}")
-                        else:
-                            log_result("Normal user - plan verification", False, f"Expected 'free', got '{plan}'")
-                    else:
-                        log_result("Normal user - auth/me", False, f"Status {status}")
-                    
-                    print()
-                    
-                    # Test 2: /api/ai/status for free features
-                    print("Test B2: /api/ai/status - Free user features and restrictions")
-                    status, data = make_request("GET", "/ai/status?feature=caption", token=normal_token)
-                    if status == 200:
-                        log_result("Normal user - ai/status access", True, "AI status retrieved")
-                        print(f"   Plan: {data.get('plan', 'N/A')}")
-                        print(f"   Monthly Credits: {data.get('monthlyCredits', 'N/A')}")
-                        print(f"   Daily Credits: {data.get('dailyCredits', 'N/A')}")
-                        print(f"   Super User: {data.get('superUser', False)}")
-                    elif status == 503:
-                        log_result("Normal user - ai/status access", True, "503 ai_service_unavailable (expected)")
-                    else:
-                        log_result("Normal user - ai/status", False, f"Status {status}")
-                    
-                    print()
-                    
-                    # Test 3: /api/ai/analytics should return 403 for normal user
-                    print("Test B3: /api/ai/analytics - Should be forbidden for normal user")
-                    status, data = make_request("GET", "/ai/analytics", token=normal_token)
-                    if status == 403:
-                        log_result("Normal user - ai/analytics forbidden", True, "Correctly returns 403")
-                    elif status == 401:
-                        log_result("Normal user - ai/analytics forbidden", True, "Returns 401 (acceptable)")
-                    else:
-                        log_result("Normal user - ai/analytics forbidden", False, f"Expected 403, got {status}")
-                        log_security_issue("/ai/analytics allows normal user access")
-                    
-                    print()
-                    
-                    # Test 4: /api/admin/users should be forbidden
-                    print("Test B4: /api/admin/users - Should be forbidden for normal user")
-                    status, data = make_request("GET", "/admin/users", token=normal_token)
-                    if status == 403:
-                        log_result("Normal user - admin/users forbidden", True, "Correctly returns 403")
-                    else:
-                        log_result("Normal user - admin/users forbidden", False, f"Expected 403, got {status}")
-                        log_security_issue("/admin/users allows normal user access")
-                    
-                    print()
-                    
-                    # Test 5: Mock checkout (ONLY if safe)
-                    print("Test B5: Mock checkout - Plus plan (safe test)")
-                    print("   Note: Testing with disposable test account only")
-                    status, data = make_request("POST", "/billing/checkout", token=normal_token, data={
-                        "planId": "plus",
-                        "interval": "monthly"
-                    })
-                    if status == 200:
-                        log_result("Normal user - mock checkout", True, "Checkout successful (mock)")
-                        print(f"   Provider: {data.get('provider', 'N/A')}")
-                        if data.get('provider') == 'mock':
-                            print("   ⚠️  Note: This is a MOCK checkout, no real billing")
-                    else:
-                        log_result("Normal user - mock checkout", False, f"Status {status}: {data}")
-                    
-                    print()
-                else:
-                    print(f"   ❌ Login failed: Status {status}")
-                    log_result("Track B - Normal User Testing", False, "Failed to authenticate test user")
-            else:
-                print(f"   ❌ Signup failed: Status {status}")
-                log_result("Track B - Normal User Testing", False, "Failed to create test user")
-    else:
-        print(f"❌ Failed to check Supabase config: Status {status}")
-        log_result("Track B - Normal User Testing", False, "Cannot verify Supabase configuration")
-else:
-    print("✅ /app/memory/test_credentials.md found")
-    # Read and use credentials from file
-    # (Implementation would go here if file existed)
-
-print()
-
-# ============================================================================
-# FINAL REPORT
-# ============================================================================
-print("=" * 80)
-print("FINAL TEST REPORT")
-print("=" * 80)
-print()
-
-print(f"✅ PASSED CHECKS: {len(passed_tests)}")
-for test in passed_tests:
-    print(f"   {test}")
-print()
-
-print(f"❌ FAILED CHECKS: {len(failed_tests)}")
-for test in failed_tests:
-    print(f"   {test}")
-print()
-
-print(f"⚠️  API ERRORS: {len(api_errors)}")
-for error in api_errors:
-    print(f"   {error}")
-print()
-
-print(f"🔒 SECURITY ISSUES: {len(security_issues)}")
-for issue in security_issues:
-    print(f"   {issue}")
-print()
-
-print(f"❌ MISSING ENDPOINTS: {len(missing_endpoints)}")
-for endpoint in missing_endpoints:
-    print(f"   {endpoint}")
-print()
-
-# Check for live AI provider keys
-print("🔑 ENVIRONMENT CONFIGURATION:")
-print("   Checking for live AI provider keys...")
-status, data = make_request("GET", "/ai/status?feature=caption", token=PREVIEW_TOKEN)
-if status == 503:
-    error_data = data.get("error", {})
-    if isinstance(error_data, dict):
-        code = error_data.get("code", "")
-        if code == "ai_service_unavailable":
-            print("   ⚠️  AI service unavailable - Missing EMERGENT_LLM_KEY or GEMINI_API_KEY")
-            print("   Note: 503 ai_service_unavailable is EXPECTED without AI keys")
-elif status == 200:
-    print("   ✅ AI service is configured and available")
-print()
-
-print("=" * 80)
-print("RECOMMENDED FIXES:")
-print("=" * 80)
-if missing_endpoints:
-    print("1. MISSING ENDPOINTS - The following /api/ai-os/* endpoints are not implemented:")
-    for endpoint in missing_endpoints:
-        print(f"   - {endpoint}")
-    print("   Action: Implement these endpoints or clarify if they are part of a different service")
-    print()
-
-if security_issues:
-    print("2. SECURITY ISSUES:")
-    for issue in security_issues:
-        print(f"   - {issue}")
-    print()
-
-if failed_tests:
-    print("3. FAILED TESTS:")
-    for test in failed_tests:
-        print(f"   - {test}")
-    print()
-
-if not missing_endpoints and not security_issues and not failed_tests:
-    print("✅ No critical issues found. All implemented endpoints working correctly.")
+if failed > 0:
+    print("FAILED TESTS:")
+    for result in test_results:
+        if result["status"] == "FAIL":
+            print(f"  ❌ {result['name']}")
+            if result["details"]:
+                print(f"     {result['details']}")
     print()
 
 print("=" * 80)
-print("TEST COMPLETE")
+print("SECURITY VERIFICATION COMPLETE")
 print("=" * 80)
 
-# Exit with appropriate code
-if failed_tests or security_issues:
-    sys.exit(1)
-else:
-    sys.exit(0)
+sys.exit(0 if failed == 0 else 1)

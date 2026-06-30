@@ -1,14 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { Camera } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
 
 export default function NotFound() {
   return (
     <div className="min-h-screen bg-[#0b0414] text-white flex flex-col items-center justify-center p-4 text-center">
-      <div className="mb-6 h-16 w-16 rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 grid place-items-center shadow-lg shadow-pink-500/30">
-        <Camera className="h-8 w-8 text-white" />
-      </div>
+      <BrandLogo size={72} className="mb-6" priority />
       <h2 className="text-3xl font-bold bg-gradient-to-r from-pink-400 via-fuchsia-300 to-purple-400 bg-clip-text text-transparent mb-2">
         404 — Page Not Found
       </h2>

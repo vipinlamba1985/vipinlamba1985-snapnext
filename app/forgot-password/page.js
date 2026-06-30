@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { useState } from 'react';
-import { Camera, Loader2, Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Loader2, Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -36,7 +37,7 @@ export default function ForgotPassword() {
       </div>
       <div className="w-full max-w-md">
         <Link href="/" className="flex items-center justify-center gap-2 mb-8">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 grid place-items-center"><Camera className="h-5 w-5" /></div>
+          <BrandLogo size={48} priority />
           <span className="font-semibold text-lg">SnapNext AI</span>
         </Link>
         <div className="rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur p-8">

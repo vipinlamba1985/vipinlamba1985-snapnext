@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Home, Images, Sparkles, Users, UserCircle, Camera, Bell, Search, Plus, Send, Smartphone, Cloud, Instagram, Facebook, Star, Heart, Monitor, Plane, FileText, MapPin, CalendarDays, Folder, MessageCircle, Play, ImagePlus, Layers, Share2, Settings, CheckCircle2, ChevronRight, ShieldCheck, AlertCircle } from 'lucide-react';
 import { getStoredUser, getToken } from '@/lib/api-client';
+import BrandLogo from '@/components/BrandLogo';
 
 const statuses = [
   { name: 'Add status', time: 'Share a moment', color: 'from-[#181120] to-[#05020a]', add: true },
@@ -197,7 +198,7 @@ export default function SnapNextV3Page() {
     setUser(getStoredUser());
   }, []);
 
-  return <div className="bg-[#07020f] text-white"><div className="pointer-events-none fixed inset-0 opacity-80"><div className="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-fuchsia-600/25 blur-3xl" /><div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-indigo-600/20 blur-3xl" /></div><header className="sticky top-0 z-30 border-b border-white/5 bg-[#07020f]/90 px-4 py-3 backdrop-blur-xl"><div className="mx-auto flex max-w-5xl items-center justify-between"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-700"><Camera className="h-5 w-5" /></div><div><div className="font-black">SnapNext Evolution</div><div className="text-[10px] font-bold uppercase tracking-widest text-white/40">Digital Life Sync</div></div></div>
+  return <div className="bg-[#07020f] text-white"><div className="pointer-events-none fixed inset-0 opacity-80"><div className="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-fuchsia-600/25 blur-3xl" /><div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-indigo-600/20 blur-3xl" /></div><header className="sticky top-0 z-30 border-b border-white/5 bg-[#07020f]/90 px-4 py-3 backdrop-blur-xl"><div className="mx-auto flex max-w-5xl items-center justify-between"><div className="flex items-center gap-3"><BrandLogo size={40} priority /><div><div className="font-black">SnapNext Evolution</div><div className="text-[10px] font-bold uppercase tracking-widest text-white/40">Digital Life Sync</div></div></div>
   
   <div className="flex items-center gap-3">
     {user ? (

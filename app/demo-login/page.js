@@ -2,7 +2,8 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Camera, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
 
 export default function DemoLoginPage() {
   const router = useRouter();
@@ -31,9 +32,7 @@ export default function DemoLoginPage() {
   return (
     <div className="min-h-screen grid place-items-center px-6 bg-[#0b0414] text-white">
       <div className="text-center">
-        <div className="mx-auto mb-5 h-14 w-14 rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 grid place-items-center shadow-lg shadow-pink-500/30">
-          <Camera className="h-7 w-7" />
-        </div>
+        <BrandLogo size={64} className="mx-auto mb-5" priority />
         <h1 className="text-2xl font-bold">Opening SnapNext preview</h1>
         <p className="mt-2 text-sm text-white/60">Creating a temporary demo session for review only.</p>
         <Loader2 className="mx-auto mt-6 h-6 w-6 animate-spin text-pink-300" />
