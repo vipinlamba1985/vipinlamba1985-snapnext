@@ -1549,6 +1549,10 @@ p0_admin_super_user_entitlement_mismatch:
 
 
   - agent: "testing"
+    - working: "NA"
+      agent: "main"
+      comment: "User approved frontend/browser QA for visible entitlement. Before QA, canonicalized server preview token user in lib/auth.js from plan=admin to plan=super_user as well, so /api/auth/me, client preview user, and effective entitlement all agree. Need rerun build/backend quick check and then browser QA."
+
     message: |
       ✅ P0 ADMIN/SUPER USER ENTITLEMENT VERIFICATION COMPLETE - 34/34 tests passed (100%)
       
@@ -1622,3 +1626,33 @@ p0_admin_super_user_entitlement_mismatch:
       
       CONCLUSION: All P0 requirements met. Admin user with preview-demo-token (vipin.lamba1985@gmail.com) correctly resolves to Super User entitlement across all critical endpoints (/api/auth/me, /api/storage/usage, /api/insights, /api/ai/status, /api/ai/analytics, AI OS routes). Anonymous and non-admin access properly restricted. Centralized isSuperUser helper correctly checks both plan and role. No code/auth/Supabase/Stripe/AWS/DB/billing modifications made. Production-ready.
 
+
+
+  - task: "Preview token super_user plan canonicalization verification"
+    implemented: true
+    working: true
+    file: "app/api/[[...path]]/route.js, lib/auth.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ PREVIEW TOKEN SUPER_USER PLAN VERIFICATION COMPLETE - 6/6 tests passed (100%). Quick backend verification after canonicalizing server preview token plan to super_user. VERIFIED: (1) ✅ /api/auth/me returns user email vipin.lamba1985@gmail.com, role admin, plan super_user (200 OK). (2) ✅ /api/storage/usage returns plan.id super_user, plan.name Super User, effectivePlan super_user, isSuper true (200 OK). (3) ✅ /api/insights returns plan.name Super User, plan.isSuper true (200 OK). (4) ✅ /api/ai/status returns superUser true, plan super_user (200 OK). (5) ✅ Admin APIs accessible: /api/admin/users (200 OK), /api/admin/grant-super (200 OK). (6) ✅ Anonymous restrictions working: /api/auth/me (401), /api/storage/usage (401), /api/admin/users (403) without token. NO CODE OR DATA MODIFICATIONS MADE. All endpoints return correct super_user plan data. Authorization checks working correctly. Production-ready."
+
+agent_communication:
+  - agent: "testing"
+    message: |
+      ✅ PREVIEW TOKEN SUPER_USER PLAN CANONICALIZATION VERIFIED
+      
+      Quick backend verification completed as requested. All 6 test categories passed (100%).
+      
+      VERIFIED WITH Authorization: Bearer preview-demo-token:
+      1. ✅ /api/auth/me → email: vipin.lamba1985@gmail.com, role: admin, plan: super_user
+      2. ✅ /api/storage/usage → plan.id: super_user, plan.name: Super User, effectivePlan: super_user, isSuper: true
+      3. ✅ /api/insights → plan.name: Super User, plan.isSuper: true
+      4. ✅ /api/ai/status → superUser: true, plan: super_user
+      5. ✅ Admin APIs → /admin/users (200), /admin/grant-super (200)
+      6. ✅ Anonymous restrictions → 401/403 for unauthenticated requests
+      
+      NO CODE OR DATA MODIFICATIONS MADE. All endpoints return correct super_user plan data.
