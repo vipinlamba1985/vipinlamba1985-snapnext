@@ -10,7 +10,7 @@ export async function GET(request) {
   if (!user) {
     return Response.json({ error: { code: 'unauthenticated', message: 'Please sign in to view AI governance.' } }, { status: 401 });
   }
-  if (!isSuperUser(user)) {
+  if (!isSuperUser(user, request)) {
     return Response.json({ error: { code: 'feature_not_available', message: 'AI governance is available to Super User only.' } }, { status: 403 });
   }
   const db = await getDb();
@@ -22,7 +22,7 @@ export async function POST(request) {
   if (!user) {
     return Response.json({ error: { code: 'unauthenticated', message: 'Please sign in to update AI governance.' } }, { status: 401 });
   }
-  if (!isSuperUser(user)) {
+  if (!isSuperUser(user, request)) {
     return Response.json({ error: { code: 'feature_not_available', message: 'AI governance is available to Super User only.' } }, { status: 403 });
   }
   const body = await request.json().catch(() => ({}));

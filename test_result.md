@@ -205,6 +205,18 @@ backend:
         agent: "testing"
         comment: "All admin endpoints working correctly. GET /admin/users returns user list for super users, blocks non-super (403). POST /admin/grant-super successfully promotes users to super_user with role=admin, blocks non-super (403). POST /admin/seed-super bootstrap working with correct JWT_SECRET, blocks wrong secret (403). Authorization checks working perfectly."
 
+  - task: "Developer Test Console plan switcher (/api/dev/effective-plan)"
+    implemented: true
+    working: true
+    file: "app/api/dev/effective-plan/route.js, lib/entitlements.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ ALL TESTS PASSED (15/15 - 100%). Comprehensive testing of Developer Test Console plan switcher completed. RESULTS: (1) ✅ GET /api/dev/effective-plan as admin returns realPlan=super_user, realRole=admin, effectivePlan=super_user, overrideActive=false, allowedPlans=[free,plus,pro,family,super_user]. (2) ✅ POST /api/dev/effective-plan {plan:'free'} returns 200, sets HttpOnly SameSite cookie 'snapnext_dev_effective_plan', switches effectivePlan to 'free', overrideActive=true, realPlan remains super_user. (3) ✅ GET with cookie returns effectivePlan=free, overrideActive=true. (4) ✅ /api/storage/usage with free override returns plan.id=free, plan.name=Free, isSuper=false, correct free tier limits (15GB). (5) ✅ /api/ai/status?feature=postIdeas with free override returns 403 feature_not_available (correct restriction enforcement). (6) ✅ POST switches to plus plan successfully, /api/storage/usage reflects plus limits (100GB). (7) ✅ POST switches to pro plan successfully. (8) ✅ POST switches to family plan (developer-only entitlement) successfully. (9) ✅ POST switches back to super_user plan successfully. (10) ✅ DELETE /api/dev/effective-plan clears override cookie (Max-Age=0), returns effectivePlan=super_user, overrideActive=false. (11) ✅ Anonymous users (no token) blocked with 401 unauthenticated. (12) ✅ Code verification confirms normal users blocked with 403 forbidden (isSuper check on lines 37, 44, 60). (13) ✅ No database mutations - /api/auth/me confirms user plan remains super_user, role remains admin (no Stripe/billing/DB changes). (14) ✅ Invalid plan rejected with 400 invalid_plan error. (15) ✅ Build passed (yarn build completed in 27.38s). SECURITY: Cookie is HttpOnly, SameSite=Lax, 7-day expiry. Only super users can access endpoints. Real plan never modified in database. Effective plan correctly applied to all entitlement checks (/storage/usage, /ai/status, etc.). CONCLUSION: Developer Test Console is production-ready and working perfectly."
+
 frontend:
   - task: "Landing page premium product-led storytelling experience"
     implemented: true
@@ -1668,3 +1680,67 @@ agent_communication:
       6. ✅ Anonymous restrictions → 401/403 for unauthenticated requests
       
       NO CODE OR DATA MODIFICATIONS MADE. All endpoints return correct super_user plan data.
+
+  - agent: "testing"
+    message: |
+      ✅ DEVELOPER TEST CONSOLE PLAN SWITCHER - COMPREHENSIVE BACKEND QA COMPLETE (15/15 TESTS PASSED - 100%)
+      
+      Tested /api/dev/effective-plan endpoints with Authorization: Bearer preview-demo-token as requested.
+      
+      📊 TEST RESULTS SUMMARY:
+      
+      ✅ CORE FUNCTIONALITY (Tests 1-10):
+      1. GET /api/dev/effective-plan → realPlan=super_user, realRole=admin, effectivePlan=super_user, overrideActive=false, allowedPlans=[free,plus,pro,family,super_user]
+      2. POST {plan:'free'} → 200, Set-Cookie: snapnext_dev_effective_plan=free; HttpOnly; SameSite=Lax; Max-Age=604800, effectivePlan=free, overrideActive=true
+      3. GET with cookie → effectivePlan=free, overrideActive=true
+      4. /api/storage/usage with free cookie → plan.id=free, plan.name=Free, isSuper=false, storageBytes=15GB (correct free tier)
+      5. /api/ai/status?feature=postIdeas with free cookie → 403 feature_not_available (correct restriction)
+      6. POST {plan:'plus'} → effectivePlan=plus, /api/storage/usage shows 100GB limit
+      7. POST {plan:'pro'} → effectivePlan=pro
+      8. POST {plan:'family'} → effectivePlan=family (developer-only entitlement working)
+      9. POST {plan:'super_user'} → effectivePlan=super_user
+      10. DELETE → 200, Set-Cookie: Max-Age=0 (clears cookie), effectivePlan=super_user, overrideActive=false
+      
+      ✅ SECURITY (Tests 11-14):
+      11. Anonymous (no token) → 401 unauthenticated
+      12. Code verification: isSuper(user) check on lines 37, 44, 60 → normal users get 403 forbidden
+      13. /api/auth/me after all tests → plan=super_user, role=admin (NO database mutations)
+      14. POST {plan:'invalid_plan'} → 400 invalid_plan error
+      
+      ✅ BUILD STATUS (Test 15):
+      15. yarn build → passed in 27.38s
+      
+      🔒 SECURITY VERIFICATION:
+      - Cookie: HttpOnly, SameSite=Lax, 7-day expiry, no Secure flag in dev (correct)
+      - Only super users can access all three endpoints (GET/POST/DELETE)
+      - Real plan never modified in database (verified via /api/auth/me)
+      - No Stripe/billing mutations occurred
+      - Effective plan correctly applied to entitlement checks (/storage/usage, /ai/status)
+      
+      🎯 ENTITLEMENT ENFORCEMENT VERIFIED:
+      - Free plan: 15GB storage, AI features restricted (403 for postIdeas)
+      - Plus plan: 100GB storage
+      - Pro plan: 1TB storage
+      - Family plan: 2TB storage (developer-only)
+      - Super User: Unlimited
+      
+      CONCLUSION: Developer Test Console is production-ready. All endpoints working correctly. Security checks passing. No database mutations. Build passing. Ready for frontend/browser QA if needed.
+
+
+
+# Developer Test Console plan switcher
+admin_developer_test_console_plan_switcher:
+  task: "Secure Admin/Super User Developer Test Console for temporary effective plan switching"
+  implemented: true
+  working: true
+  file: "lib/entitlements.js, app/api/dev/effective-plan/route.js, components/AppShell.js, app/(app)/settings/page.js, app/api/[[...path]]/route.js, lib/ai-router.js, lib/ai-os.js, lib/insights.js, app/api/ai-os/*/route.js, lib/api-client.js"
+  stuck_count: 0
+  priority: "high"
+  needs_retesting: false
+  status_history:
+    - working: "NA"
+      agent: "main"
+      comment: "Implemented cookie-based Developer Test Mode. Added secure HttpOnly SameSite override cookie and /api/dev/effective-plan GET/POST/DELETE with server-side Admin/Super validation. Extended centralized entitlement helper with isSuper, getEffectivePlan, getEffectivePlanConfig, canUseFeature, Family developer-only entitlement config. Wired storage usage, upload limits, direct upload limits, AI status/preflight, AI OS routes, analytics, downloads, insights, AppShell nav/sidebar/banner, and Settings console to effective plan behavior while keeping admin authorization and dev API validation based on real role/plan. No Stripe/billing/database subscription mutation. Build passed. Needs backend QA then browser QA permission."
+    - working: true
+      agent: "testing"
+      comment: "✅ ALL TESTS PASSED (15/15 - 100%). Comprehensive backend testing of Developer Test Console plan switcher completed. RESULTS: (1) ✅ GET /api/dev/effective-plan as admin returns realPlan=super_user, realRole=admin, effectivePlan=super_user, overrideActive=false, allowedPlans=[free,plus,pro,family,super_user]. (2) ✅ POST /api/dev/effective-plan {plan:'free'} returns 200, sets HttpOnly SameSite cookie 'snapnext_dev_effective_plan', switches effectivePlan to 'free', overrideActive=true, realPlan remains super_user. (3) ✅ GET with cookie returns effectivePlan=free, overrideActive=true. (4) ✅ /api/storage/usage with free override returns plan.id=free, plan.name=Free, isSuper=false, correct free tier limits (15GB). (5) ✅ /api/ai/status?feature=postIdeas with free override returns 403 feature_not_available (correct restriction enforcement). (6) ✅ POST switches to plus plan successfully, /api/storage/usage reflects plus limits (100GB). (7) ✅ POST switches to pro plan successfully. (8) ✅ POST switches to family plan (developer-only entitlement) successfully. (9) ✅ POST switches back to super_user plan successfully. (10) ✅ DELETE /api/dev/effective-plan clears override cookie (Max-Age=0), returns effectivePlan=super_user, overrideActive=false. (11) ✅ Anonymous users (no token) blocked with 401 unauthenticated. (12) ✅ Code verification confirms normal users blocked with 403 forbidden (isSuper check on lines 37, 44, 60). (13) ✅ No database mutations - /api/auth/me confirms user plan remains super_user, role remains admin (no Stripe/billing/DB changes). (14) ✅ Invalid plan rejected with 400 invalid_plan error. (15) ✅ Build passed (yarn build completed in 27.38s). SECURITY: Cookie is HttpOnly, SameSite=Lax, 7-day expiry. Only super users can access endpoints. Real plan never modified in database. Effective plan correctly applied to all entitlement checks (/storage/usage, /ai/status, etc.). CONCLUSION: Developer Test Console is production-ready and working perfectly."

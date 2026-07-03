@@ -15,8 +15,8 @@ export async function GET(request) {
     ok: true,
     version: status.version,
     style: status.style,
-    visibleMode: isSuperUser(user) ? 'admin' : 'user',
-    agents: isSuperUser(user)
+    visibleMode: isSuperUser(user, request) ? 'admin' : 'user',
+    agents: isSuperUser(user, request)
       ? status.agents
       : status.agents.map((agent) => ({
           id: agent.id,

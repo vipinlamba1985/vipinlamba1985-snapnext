@@ -17,6 +17,7 @@ const PREF_LABELS = {
 export default function Settings() {
   const [user, setUser] = useState(null);
   const [usage, setUsage] = useState(null);
+  const [devPlan, setDevPlan] = useState(null);
   const [prefs, setPrefs] = useState({ product: true, community: true, favorites: true, marketing: false });
   const [emailVerified, setEmailVerified] = useState(false);
   const [resending, setResending] = useState(false);
@@ -38,12 +39,14 @@ export default function Settings() {
 
   async function refresh() {
     const me = await apiFetch('/auth/me'); setUser(me.user); setStoredUser(me.user);
+    apiFetch('/dev/effective-plan').then(setDevPlan).catch(() => setDevPlan(null));
     const ep = await apiFetch('/settings/email-prefs'); setPrefs(ep.prefs); setEmailVerified(!!ep.emailVerified);
   }
 
   useEffect(() => {
     setUser(getStoredUser());
     apiFetch('/storage/usage').then(setUsage).catch(() => {});
+    apiFetch('/dev/effective-plan').then(setDevPlan).catch(() => setDevPlan(null));
     refresh().catch(() => {});
   }, []);
 
@@ -67,6 +70,28 @@ export default function Settings() {
     finally { setResending(false); }
   }
 
+  async function setDeveloperPlan(plan) {
+    try {
+      const next = await apiFetch('/dev/effective-plan', { method: 'POST', body: JSON.stringify({ plan }) });
+      setDevPlan(next);
+      toast.success(`Developer Test Mode: ${next.effectivePlanName}`);
+      window.location.reload();
+    } catch (e) {
+      toast.error(e?.message || 'Failed to set developer plan');
+    }
+  }
+
+  async function clearDeveloperPlan() {
+    try {
+      const next = await apiFetch('/dev/effective-plan', { method: 'DELETE' });
+      setDevPlan(next);
+      toast.success('Returned to real account');
+      window.location.reload();
+    } catch (e) {
+      toast.error(e?.message || 'Failed to clear developer mode');
+    }
+  }
+
   const entitlement = entitlementForUser(user);
   const isSuper = entitlement.isSuper;
 
@@ -85,6 +110,46 @@ export default function Settings() {
             <div className="font-medium">{user?.name}</div>
             <div className="text-sm text-white/60">{user?.email}</div>
             <div className="text-xs mt-1 inline-flex items-center gap-1 text-white/60">
+
+      {devPlan && (
+        <section className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-amber-100">Developer Test Mode</div>
+              <div className="mt-2 grid gap-1 text-xs text-amber-100/75">
+                <span>Real Account: <b className="text-amber-50">{devPlan.realAccount}</b></span>
+                <span>Current Experience: <b className="text-amber-50">{devPlan.effectivePlanName}</b></span>
+              </div>
+            </div>
+            {devPlan.overrideActive && (
+              <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-100">Override active</span>
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {[
+              ['free', 'Test as Free'],
+              ['plus', 'Test as Plus'],
+              ['pro', 'Test as Pro'],
+              ['family', 'Test as Family'],
+              ['super_user', 'Return to Super User'],
+            ].map(([plan, label]) => (
+              <button
+                key={plan}
+                type="button"
+                onClick={() => setDeveloperPlan(plan)}
+                className={`rounded-full px-4 py-2 text-xs font-bold transition ${devPlan.effectivePlan === plan ? 'bg-white text-black' : 'bg-white/10 text-white hover:bg-white/15'}`}
+              >
+                {label}
+              </button>
+            ))}
+            {devPlan.overrideActive && (
+              <button type="button" onClick={clearDeveloperPlan} className="rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white/80 hover:bg-white/10">Return to Real Account</button>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-amber-100/65">Temporary session override only. Billing, Stripe, subscriptions, and your real plan are not changed.</p>
+        </section>
+      )}
+
               {isSuper ? <><Crown className="h-3 w-3 text-amber-400"/> {entitlement.badge}</> : entitlement.badge}
             </div>
           </div>

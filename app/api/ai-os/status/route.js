@@ -13,8 +13,8 @@ export async function GET(request) {
   const status = getAiOsStatus();
   return Response.json({
     ...status,
-    visibleMode: isSuperUser(user) ? 'admin' : 'user',
-    agents: isSuperUser(user)
+    visibleMode: isSuperUser(user, request) ? 'admin' : 'user',
+    agents: isSuperUser(user, request)
       ? status.agents
       : status.agents.map((agent) => ({ id: agent.id, name: agent.name, status: agent.status })),
   });

@@ -19,9 +19,9 @@ const NAV = [
   { href: '/journal', label: 'Life Journal', icon: BookOpen },
   { href: '/health', label: 'Memory Health', icon: ShieldAlert },
   { href: '/imports', label: 'Cloud Sync', icon: RefreshCw },
-  { href: '/ai-studio', label: 'AI Studio', icon: Sparkles, adminOnly: true },
-  { href: '/ai-video', label: 'AI Video', icon: Film, adminOnly: true },
-  { href: '/ai-command', label: 'AI Command', icon: BrainCircuit, adminOnly: true },
+  { href: '/ai-studio', label: 'AI Studio', icon: Sparkles, superOnly: true },
+  { href: '/ai-video', label: 'AI Video', icon: Film, superOnly: true },
+  { href: '/ai-command', label: 'AI Command', icon: BrainCircuit, superOnly: true },
   { href: '/ready-to-post', label: 'Ready to Post', icon: Send },
   { href: '/favorites', label: 'Favorites', icon: Users },
   { href: '/community', label: 'Community', icon: Users, soon: true },
@@ -39,7 +39,7 @@ const MOBILE_NAV = [
   { href: '/gallery', label: 'Gallery', icon: ImageIcon },
   { href: '/upload', label: 'Upload', icon: Upload },
   { href: '/memories', label: 'Memories', icon: Heart },
-  { href: '/ai-studio', label: 'AI', icon: Sparkles },
+  { href: '/ai-studio', label: 'AI', icon: Sparkles, superOnly: true },
 ];
 
 export default function AppShell({ children }) {
@@ -47,6 +47,8 @@ export default function AppShell({ children }) {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [usage, setUsage] = useState(null);
+  const [devPlan, setDevPlan] = useState(null);
+  const [devReady, setDevReady] = useState(false);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
 
@@ -56,21 +58,38 @@ export default function AppShell({ children }) {
     apiFetch('/auth/me').then(({ user }) => { setUser(user); setStoredUser(user); setReady(true); })
       .catch(() => { logout(); });
     apiFetch('/storage/usage').then(setUsage).catch(()=>{});
+    setDevReady(false);
+    apiFetch('/dev/effective-plan').then(setDevPlan).catch(() => setDevPlan(null)).finally(() => setDevReady(true));
   }, [pathname]);
 
   const activeRoute = NAV.find(item => pathname === item.href || pathname.startsWith(`${item.href}/`));
-  const isAdminRoute = !!activeRoute?.adminOnly;
+  const isAdminAuthRoute = !!activeRoute?.adminOnly;
+  const isSuperExperienceRoute = !!activeRoute?.superOnly;
+  const isAdminRoute = isAdminAuthRoute || isSuperExperienceRoute;
   const entitlement = entitlementForUser(user);
-  const isSuper = entitlement.isSuper;
-  const filteredNav = NAV.filter(n => !n.adminOnly || isSuper);
+  const realIsSuper = entitlement.realIsSuper;
+  const effectivePlanId = devPlan?.effectivePlan || entitlement.planId;
+  const currentIsSuperExperience = effectivePlanId === 'super_user';
+  const currentExperienceName = devPlan?.effectivePlanName || entitlement.plan.name;
+  const currentBadge = devPlan?.overrideActive ? `Testing as ${currentExperienceName}` : entitlement.badge;
+  const filteredNav = NAV.filter(n => {
+    if (n.adminOnly) return realIsSuper;
+    if (n.superOnly) return currentIsSuperExperience;
+    return true;
+  });
+  const filteredMobileNav = MOBILE_NAV.filter(n => !n.superOnly || currentIsSuperExperience);
 
   useEffect(() => {
-    if (ready && isAdminRoute && !isSuper) {
+    const blockedByAuth = isAdminAuthRoute && !realIsSuper;
+    const blockedByExperience = isSuperExperienceRoute && devReady && !currentIsSuperExperience;
+    if (ready && (blockedByAuth || blockedByExperience)) {
       router.replace('/dashboard');
     }
-  }, [ready, isAdminRoute, isSuper, router]);
+  }, [ready, isAdminAuthRoute, isSuperExperienceRoute, realIsSuper, currentIsSuperExperience, devReady, router]);
 
-  if (!ready || (isAdminRoute && !isSuper)) {
+  const waitingForExperience = isSuperExperienceRoute && !devReady;
+  const blockedRoute = (isAdminAuthRoute && !realIsSuper) || (isSuperExperienceRoute && devReady && !currentIsSuperExperience);
+  if (!ready || waitingForExperience || blockedRoute) {
     return (
       <div className="min-h-screen grid place-items-center text-white/50">
         <div className="text-center">
@@ -110,7 +129,7 @@ export default function AppShell({ children }) {
     );
   }
 
-  const pct = usage && !isSuper && usage.plan?.storageBytes ? Math.min(100, Math.round((usage.usage.bytes / usage.plan.storageBytes) * 100)) : 0;
+  const pct = usage && !currentIsSuperExperience && usage.plan?.storageBytes ? Math.min(100, Math.round((usage.usage.bytes / usage.plan.storageBytes) * 100)) : 0;
 
   return (
     <div className="min-h-screen md:grid md:grid-cols-[260px_1fr]">
@@ -131,11 +150,11 @@ export default function AppShell({ children }) {
             <div className="min-w-0">
               <div className="text-sm font-medium truncate">{user?.name}</div>
               <div className="text-xs text-white/50 flex items-center gap-1">
-                {isSuper ? <><Crown className="h-3 w-3 text-amber-400" /> {entitlement.badge}</> : entitlement.badge}
+                {devPlan?.overrideActive ? currentBadge : (currentIsSuperExperience ? <><Crown className="h-3 w-3 text-amber-400" /> {currentBadge}</> : currentBadge)}
               </div>
             </div>
           </div>
-          {!isSuper && usage && (
+          {!currentIsSuperExperience && usage && (
             <div className="mt-3">
               <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-pink-500 to-purple-600" style={{ width: pct + '%' }} />
@@ -146,7 +165,7 @@ export default function AppShell({ children }) {
               </div>
             </div>
           )}
-          {isSuper && <div className="mt-3 text-[11px] text-amber-300">Unlimited storage • Unlimited AI</div>}
+          {currentIsSuperExperience && <div className="mt-3 text-[11px] text-amber-300">Unlimited storage • Unlimited AI</div>}
         </div>
 
         <nav className="px-2 pb-24 space-y-0.5 overflow-y-auto max-h-[calc(100vh-200px)]">
@@ -181,6 +200,26 @@ export default function AppShell({ children }) {
           <NotificationBell />
         </div>
 
+        {devPlan?.overrideActive && (
+          <div className="mx-4 md:mx-8 mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 flex flex-wrap items-center justify-between gap-3">
+              {usage?.plan?.storageBytes && usage?.usage?.bytes > usage.plan.storageBytes && (
+                <div className="mt-1 text-xs text-amber-50">Developer Test Mode: This account is over the selected plan limit because it contains real admin data.</div>
+              )}
+
+            <div>
+              <div className="font-semibold">Developer Test Mode Active</div>
+              <div className="text-xs text-amber-100/75">Current Experience: {currentExperienceName.toUpperCase()} · Real Account: Super User</div>
+            </div>
+            <button
+              onClick={() => apiFetch('/dev/effective-plan', { method: 'DELETE' }).then(() => window.location.reload()).catch((e) => toast.error(e?.message || 'Failed to reset test mode'))}
+              className="rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-amber-100"
+            >
+              Return to Real Account
+            </button>
+          </div>
+        )}
+
+
         <main className="px-4 md:px-8 py-6 md:py-8 pb-36 md:pb-10 max-w-6xl">
           <VerifyBanner user={user} onVerified={() => {
             apiFetch('/auth/me').then(({ user }) => { setUser(user); setStoredUser(user); }).catch(() => {});
@@ -191,7 +230,7 @@ export default function AppShell({ children }) {
         {/* Mobile bottom nav */}
         <nav className="md:hidden fixed bottom-3 left-3 right-3 z-40 pb-[env(safe-area-inset-bottom)]">
           <div className="grid grid-cols-5 items-center rounded-[2rem] border border-white/10 bg-[#0b0414]/85 p-2 shadow-2xl shadow-black/50 backdrop-blur-2xl">
-            {MOBILE_NAV.map(item => {
+            {filteredMobileNav.map(item => {
               const Active = pathname === item.href;
               const Icon = item.icon;
               const isUpload = item.href === '/upload';

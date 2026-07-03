@@ -297,7 +297,7 @@ async function handle(request, ctx) {
     if (route === '/storage/usage' && method === 'GET') {
       const user = await requireUser(request);
       if (!user) return json({ error: 'Unauthorized' }, 401);
-      const plan = effectivePlan(user);
+      const plan = effectivePlan(user, request);
       const usage = await getStorageUsage(db, user.id);
       const aiUsed = await getAiUsageToday(db, user.id);
       return json({
@@ -306,7 +306,7 @@ async function handle(request, ctx) {
         rawPlan: user.plan || 'free',
         role: user.role || 'user',
         effectivePlan: plan.id,
-        isSuper: isSuperUser(user),
+        isSuper: plan.id === 'super_user',
         aiUsedToday: aiUsed,
       });
     }
@@ -315,9 +315,11 @@ async function handle(request, ctx) {
     if (route === '/media/upload' && method === 'POST') {
       const user = await requireUser(request);
       if (!user) return json({ error: 'Unauthorized' }, 401);
-      const plan = effectivePlan(user);
+      const plan = effectivePlan(user, request);
       const usage = await getStorageUsage(db, user.id);
-      const remaining = isSuperUser(user) ? Number.MAX_SAFE_INTEGER : (plan.storageBytes - usage.bytes);
+      const remaining = plan.id === 'super_user' ? Number.MAX_SAFE_INTEGER : (plan.storageBytes - usage.bytes);
+      const singleUploadLimit = Math.min(storage.config.maxUploadBytes || Number.MAX_SAFE_INTEGER, plan.maxUploadBytes || Number.MAX_SAFE_INTEGER);
+
 
       const formData = await request.formData();
       const files = formData.getAll('files');
@@ -337,14 +339,14 @@ async function handle(request, ctx) {
           const dup = await db.collection('media').findOne({ userId: user.id, hash });
           if (dup) { skipped.push({ name: file.name, reason: 'duplicate', message: 'This file is already safely stored.', retryable: false, timestamp: new Date().toISOString() }); continue; }
 
-          if (!isSuperUser(user) && size > runningRemaining) {
+          if (plan.id !== 'super_user' && size > runningRemaining) {
             skipped.push({ name: file.name, reason: 'storage_full', message: 'Storage quota exceeded. Upgrade your plan or free up space.', retryable: false, timestamp: new Date().toISOString() });
             continue;
           }
 
           // hard upper bound per file (single-shot upload). Larger files need multipart.
-          if (size > storage.config.maxUploadBytes) {
-            skipped.push({ name: file.name, reason: 'too_large', message: `File exceeds the single-upload limit (${Math.round(storage.config.maxUploadBytes / 1024 / 1024)} MB).`, retryable: false, timestamp: new Date().toISOString() });
+          if (size > singleUploadLimit) {
+            skipped.push({ name: file.name, reason: 'too_large', message: `File exceeds the single-upload limit (${Math.round(singleUploadLimit / 1024 / 1024)} MB).`, retryable: false, timestamp: new Date().toISOString() });
             continue;
           }
 
@@ -575,7 +577,7 @@ async function handle(request, ctx) {
     if (route === '/ai/status' && method === 'GET') {
       const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
       const feature = new URL(request.url).searchParams.get('feature') || 'chat';
-      const entitlement = getAiEntitlement(user, feature);
+      const entitlement = getAiEntitlement(user, feature, 1, request);
       if (!entitlement.ok) return json({ error: entitlement.error }, entitlement.status || 400);
       return json({
         plan: entitlement.plan,
@@ -583,13 +585,13 @@ async function handle(request, ctx) {
         creditsRequired: entitlement.credits,
         monthlyCredits: entitlement.limits.monthlyCredits,
         dailyCredits: entitlement.limits.dailyCredits,
-        superUser: isSuperUser(user),
+        superUser: entitlement.plan === 'super_user',
       });
     }
 
     if (route === '/ai/analytics' && method === 'GET') {
       const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to view AI analytics.' } }, 401);
-      const result = await getAiUsageSummary({ db, user });
+      const result = await getAiUsageSummary({ db, user, request });
       return aiJson(result);
     }
 
@@ -899,8 +901,8 @@ async function handle(request, ctx) {
     if (route === '/billing/status' && method === 'GET') {
       const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
       const status = await billing.getBillingStatus({ user });
-      const plan = effectivePlan(user);
-      return json({ ...status, plan: plan.id, planDetails: plan, isSuper: isSuperUser(user) });
+      const plan = effectivePlan(user, request);
+      return json({ ...status, plan: plan.id, planDetails: plan, isSuper: plan.id === 'super_user' });
     }
 
     if (route === '/webhooks/stripe' && method === 'POST') {
@@ -1073,9 +1075,12 @@ async function handle(request, ctx) {
       const user = await requireUser(request);
       if (!user) return json({ error: 'Unauthorized' }, 401);
       if (storage.active() !== 's3') return json({ error: 'Direct upload URLs require STORAGE_PROVIDER=s3' }, 400);
+      const plan = effectivePlan(user, request);
+      const singleUploadLimit = Math.min(storage.config.maxUploadBytes || Number.MAX_SAFE_INTEGER, plan.maxUploadBytes || Number.MAX_SAFE_INTEGER);
+
       const { name, mime, size } = await request.json().catch(() => ({}));
       if (!name) return json({ error: 'name required' }, 400);
-      if (size && size > storage.config.maxUploadBytes) return json({ error: 'File too large for single-shot upload. Use multipart.' }, 413);
+      if (size && size > singleUploadLimit) return json({ error: 'File too large for single-shot upload. Use multipart.' }, 413);
       const fileId = uuidv4();
       try {
         const out = await storage.getUploadUrl({ userId: user.id, fileId, name, mime });
@@ -1409,8 +1414,8 @@ async function handle(request, ctx) {
       if (!ids.length) return json({ error: 'No media to export' }, 400);
 
       // Plan limit: max items per export (super bypasses).
-      const plan = effectivePlan(user);
-      if (!isSuperUser(user) && ids.length > plan.downloadsPerDay) {
+      const plan = effectivePlan(user, request);
+      if (plan.id !== 'super_user' && ids.length > plan.downloadsPerDay) {
         return json({ error: `Export exceeds your daily limit of ${plan.downloadsPerDay} items. Upgrade for more.` }, 429);
       }
 
@@ -1481,12 +1486,12 @@ async function handle(request, ctx) {
     // ========== INSIGHTS / SMART BACKUP ==========
     if (route === '/insights' && method === 'GET') {
       const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const insights = await computeInsights(db, user);
+      const insights = await computeInsights(db, user, request);
       return json(insights);
     }
     if (route === '/insights/ai-summary' && method === 'POST') {
       const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
-      const insights = await computeInsights(db, user);
+      const insights = await computeInsights(db, user, request);
       const facts = [
         `Total memories: ${insights.totals.count}`,
         insights.mostPhotographed ? `Most photographed: ${insights.mostPhotographed.label} (${insights.mostPhotographed.count} items)` : null,

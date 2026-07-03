@@ -10,7 +10,7 @@ export async function GET(request) {
   if (!user) {
     return Response.json({ error: { code: 'unauthenticated', message: 'Please sign in to view AI certification.' } }, { status: 401 });
   }
-  if (!isSuperUser(user)) {
+  if (!isSuperUser(user, request)) {
     return Response.json({ error: { code: 'feature_not_available', message: 'AI certification is available to Super User only.' } }, { status: 403 });
   }
 
