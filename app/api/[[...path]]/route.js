@@ -1492,11 +1492,13 @@ async function handle(request, ctx) {
     if (route === '/insights' && method === 'GET') {
       const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
       const insights = await computeInsights(db, user, request);
+      if (insights?.ok === false) return json({ error: insights.error }, insights.status || 403);
       return json(insights);
     }
     if (route === '/insights/ai-summary' && method === 'POST') {
       const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
       const insights = await computeInsights(db, user, request);
+      if (insights?.ok === false) return json({ error: insights.error }, insights.status || 403);
       const facts = [
         `Total memories: ${insights.totals.count}`,
         insights.mostPhotographed ? `Most photographed: ${insights.mostPhotographed.label} (${insights.mostPhotographed.count} items)` : null,

@@ -3,11 +3,15 @@ export const dynamic = 'force-dynamic';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { createVideoGenerationPlan, getVideoProviderAvailability, submitVideoGenerationJob } from '@/lib/ai-video-adapters';
+import { isFeatureEnabled } from '@/lib/entitlements';
 
 export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) {
     return Response.json({ error: { code: 'unauthenticated', message: 'Please sign in to view video AI providers.' } }, { status: 401 });
+  }
+  if (!isFeatureEnabled('aiVideo', request)) {
+    return Response.json({ error: { code: 'feature_disabled', message: 'AI Video is disabled in Developer Test Mode.' } }, { status: 403 });
   }
   return Response.json({ ok: true, providers: getVideoProviderAvailability() });
 }
@@ -19,6 +23,9 @@ export async function POST(request) {
   }
 
   const body = await request.json().catch(() => ({}));
+  if (!isFeatureEnabled('aiVideo', request)) {
+    return Response.json({ error: { code: 'feature_disabled', message: 'AI Video is disabled in Developer Test Mode.' } }, { status: 403 });
+  }
   const task = typeof body.task === 'string' ? body.task.trim() : '';
   if (!task) {
     return Response.json({ error: { code: 'invalid_prompt', message: 'Video task prompt is required.' } }, { status: 400 });

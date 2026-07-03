@@ -2,12 +2,16 @@ export const dynamic = 'force-dynamic';
 
 import { getUserFromRequest } from '@/lib/auth';
 import { getAiOsStatus } from '@/lib/ai-os';
-import { isSuperUser } from '@/lib/entitlements';
+import { isFeatureEnabled, isSuperUser } from '@/lib/entitlements';
 
 export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) {
     return Response.json({ error: { code: 'unauthenticated', message: 'Please sign in to view SnapNext AI OS status.' } }, { status: 401 });
+  }
+
+  if (!isFeatureEnabled('aiCommand', request)) {
+    return Response.json({ error: { code: 'feature_disabled', message: 'AI Command is disabled in Developer Test Mode.' } }, { status: 403 });
   }
 
   const status = getAiOsStatus();
