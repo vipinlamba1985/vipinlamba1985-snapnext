@@ -17,9 +17,9 @@ import DemoBadge from "@/src/components/DemoBadge";
 import { uploadQueue, demoUser } from "@/src/data/mocks";
 
 const STATE_META = {
-  uploaded: { icon: "checkmark-circle" as const, color: "#10B981", label: "Uploaded" },
-  uploading: { icon: "cloud-upload" as const, color: "#06B6D4", label: "Uploading" },
-  queued: { icon: "time-outline" as const, color: "#94A3B8", label: "Queued" },
+  uploaded: { icon: "checkmark-circle" as const, color: "#10B981", label: "Saved" },
+  uploading: { icon: "cloud-upload" as const, color: "#06B6D4", label: "Saving" },
+  queued: { icon: "time-outline" as const, color: "#94A3B8", label: "Waiting" },
   skipped: { icon: "alert-circle" as const, color: "#F59E0B", label: "Skipped" },
   failed: { icon: "close-circle" as const, color: "#EF4444", label: "Failed" },
 };
@@ -33,6 +33,7 @@ export default function UploadScreen() {
   const q = uploadQueue.progress;
   const pct = Math.round((q.uploaded / q.total) * 100);
   const storagePct = Math.round((demoUser.storageUsedGB / demoUser.storageTotalGB) * 100);
+  const isDone = q.uploaded === q.total;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg.base }}>
@@ -51,7 +52,7 @@ export default function UploadScreen() {
               <Text style={styles.pageTitle}>Back up</Text>
               <DemoBadge compact />
             </View>
-            <Text style={styles.pageSub}>Protect new photos and videos safely.</Text>
+            <Text style={styles.pageSub}>Keep your memories safe, forever.</Text>
           </View>
           <TouchableOpacity
             style={styles.iconBtn}
@@ -63,7 +64,7 @@ export default function UploadScreen() {
         </View>
 
         {/* Primary CTA */}
-        <TouchableOpacity activeOpacity={0.9} style={styles.primaryWrap} testID="upload-primary-cta">
+        <TouchableOpacity activeOpacity={0.92} style={styles.primaryWrap} testID="upload-primary-cta">
           <LinearGradient
             colors={gradients.aiAccent as unknown as string[]}
             start={{ x: 0, y: 0 }}
@@ -83,22 +84,32 @@ export default function UploadScreen() {
 
         <TouchableOpacity activeOpacity={0.85} style={styles.secondaryBtn} testID="upload-secondary-cta">
           <Ionicons name="images-outline" size={18} color={colors.text.primary} />
-          <Text style={styles.secondaryBtnText}>Pick specific photos & videos</Text>
+          <Text style={styles.secondaryBtnText}>Choose specific files</Text>
         </TouchableOpacity>
-        <Text style={styles.picker_note} testID="upload-picker-honest-note">
-          On mobile web, SnapNext can only see files you pick with your OS picker. Native app can back up everything automatically.
+        <Text style={styles.pickerNote} testID="upload-picker-honest-note">
+          On mobile web, SnapNext can only see files you pick. The native app can quietly back up everything for you.
         </Text>
 
-        {/* Progress card */}
+        {/* Progress / success card */}
         <View style={styles.card} testID="upload-progress-card">
           <View style={styles.cardHeader}>
-            <View>
-              <Text style={styles.cardTitle}>Current backup</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>
+                {isDone ? "All caught up" : "Backing up now"}
+              </Text>
               <Text style={styles.cardSub}>
-                Uploading {q.uploaded} of {q.total} · {q.skipped} skipped
+                {isDone
+                  ? `${q.total - q.skipped} moments saved · ${q.skipped} skipped`
+                  : `${q.uploaded} of ${q.total} saved · ${q.skipped} skipped`}
               </Text>
             </View>
-            <Text style={styles.pct}>{pct}%</Text>
+            {isDone ? (
+              <View style={styles.doneBadge}>
+                <Ionicons name="checkmark" size={14} color="#fff" />
+              </View>
+            ) : (
+              <Text style={styles.pct}>{pct}%</Text>
+            )}
           </View>
           <View style={styles.progressTrack}>
             <LinearGradient
@@ -124,10 +135,17 @@ export default function UploadScreen() {
         </View>
 
         {/* Skip reasons */}
-        <Text style={styles.h3}>Why {q.skipped} files were skipped</Text>
+        <Text style={styles.h3}>Why {q.skipped} were skipped</Text>
         <View style={styles.reasonList}>
           {uploadQueue.skipReasons.map((r, i) => (
-            <View key={i} style={styles.reasonRow} testID={`upload-skip-${i}`}>
+            <View
+              key={i}
+              style={[
+                styles.reasonRow,
+                i === uploadQueue.skipReasons.length - 1 && { borderBottomWidth: 0 },
+              ]}
+              testID={`upload-skip-${i}`}
+            >
               <View
                 style={[
                   styles.reasonDot,
@@ -172,25 +190,25 @@ export default function UploadScreen() {
             />
           </View>
           <TouchableOpacity style={styles.upgradeBtn} testID="upload-upgrade-button">
-            <Text style={styles.upgradeBtnText}>Upgrade plan</Text>
+            <Text style={styles.upgradeBtnText}>Get more space</Text>
             <Ionicons name="arrow-forward" size={14} color={colors.text.inverse} />
           </TouchableOpacity>
         </View>
 
-        {/* Preferences (honest) */}
-        <Text style={styles.h3}>Backup preferences</Text>
+        {/* Preferences */}
+        <Text style={styles.h3}>Preferences</Text>
         <View style={styles.prefCard}>
           <PrefRow
-            title="Wi-Fi only"
-            subtitle="Save data by uploading only on Wi-Fi"
+            title="Save data (Wi-Fi only)"
+            subtitle="We'll wait for Wi-Fi before backing up"
             value={wifiOnly}
             onToggle={() => setWifiOnly((v) => !v)}
             testID="upload-pref-wifi"
           />
           <View style={styles.prefDivider} />
           <PrefRow
-            title="Daily auto backup"
-            subtitle="Only available in the native app · disabled in preview"
+            title="Back up every day, quietly"
+            subtitle="Available in the native app"
             value={dailySync}
             disabled
             onToggle={() => setDailySync((v) => !v)}
@@ -198,9 +216,12 @@ export default function UploadScreen() {
           />
         </View>
 
-        <Text style={styles.footerNote}>
-          Prototype only. No files are actually uploaded from this preview.
-        </Text>
+        <View style={styles.footerRow}>
+          <Ionicons name="lock-closed" size={11} color={colors.text.muted} />
+          <Text style={styles.footerNote}>
+            Prototype · No files are actually uploaded from this preview
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -282,7 +303,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   primaryTitle: { ...typography.title, color: "#fff" },
-  primarySub: { ...typography.small, color: "rgba(255,255,255,0.85)", marginTop: 2 },
+  primarySub: { ...typography.small, color: "rgba(255,255,255,0.9)", marginTop: 2, lineHeight: 18 },
   secondaryBtn: {
     marginTop: spacing.md,
     marginHorizontal: spacing.lg,
@@ -297,18 +318,18 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   secondaryBtnText: { ...typography.body, color: colors.text.primary, fontWeight: "600" },
-  picker_note: {
-    marginTop: 8,
+  pickerNote: {
+    marginTop: 10,
     marginHorizontal: spacing.lg,
     ...typography.tiny,
     color: colors.text.muted,
-    lineHeight: 15,
+    lineHeight: 16,
   },
 
   h3: {
     ...typography.h3,
     color: colors.text.primary,
-    marginTop: spacing.xl,
+    marginTop: spacing.xxl,
     marginBottom: spacing.md,
     paddingHorizontal: spacing.lg,
   },
@@ -329,6 +350,14 @@ const styles = StyleSheet.create({
   cardTitle: { ...typography.title, color: colors.text.primary },
   cardSub: { ...typography.small, color: colors.text.secondary, marginTop: 2 },
   pct: { ...typography.h3, color: colors.text.primary },
+  doneBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    backgroundColor: colors.status.success,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   progressTrack: {
     height: 8,
     backgroundColor: "rgba(255,255,255,0.06)",
@@ -421,11 +450,16 @@ const styles = StyleSheet.create({
   toggleDisabled: { opacity: 0.4 },
   toggleKnob: { width: 20, height: 20, borderRadius: 999, backgroundColor: "#fff" },
 
+  footerRow: {
+    marginTop: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    justifyContent: "center",
+  },
   footerNote: {
-    marginTop: spacing.xl,
-    marginHorizontal: spacing.lg,
     ...typography.tiny,
     color: colors.text.muted,
-    textAlign: "center",
   },
 });

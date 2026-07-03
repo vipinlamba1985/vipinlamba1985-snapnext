@@ -7,6 +7,15 @@ A **mobile UI/UX reference prototype** that visualizes the "Complete Authenticat
 - **No backend.** No API calls, no auth, no real uploads, no real AI. Nothing here is a production system.
 - **Not a replacement.** Does not replace the existing Next.js app, its APIs, S3, Supabase, Stripe, or auth.
 
+## Polish pass — feel of the product
+After the polish pass, SnapNext feels like a **premium, emotionally intelligent personal AI life OS**:
+- Human copy everywhere ("SnapNext found something for you", "A gentle observation", "People you love", "Little windows back in time", "SnapNext's take", "Trusted people")
+- One primary focus per screen; secondary content quieter
+- Micro-motion on Home (staggered fade + rise for each block) — subtle, not gimmicky
+- Compact horizontal Recent Moments strip (replaced the earlier 2×2 grid)
+- Storage sits quietly at the bottom of Home — not competing with today's memory
+- Media detail leads with "Add to a story" (gradient CTA) — the emotional next step, not a technical action
+
 ## Stack
 - Expo SDK 54, React Native + Expo Router (file-based routing)
 - `expo-linear-gradient`, `@expo/vector-icons`, `react-native-safe-area-context`
@@ -15,36 +24,42 @@ A **mobile UI/UX reference prototype** that visualizes the "Complete Authenticat
 
 ## Screens (matching the brief's product ownership model)
 - **Home = Daily Command Center** (`app/(tabs)/index.tsx`)
-  - Compact personal header (greeting + storage status)
-  - ONE primary smart action (AI recommendation)
-  - Today card (On This Day)
-  - ONE AI insight
+  - Compact personal header + warm subtitle "Your memories are safe. SnapNext found something for you."
+  - ONE primary Smart Action ("Your July story is taking shape")
+  - Today card — On This Day hero
+  - ONE AI insight — "A gentle observation"
   - Continue-your-story horizontal row
-  - Compact recent-memories 2-col grid
-  - Quick Capture (progressive disclosure entry: Note / Media / AI Storyteller)
+  - Recent moments — compact horizontal strip (~92pt tiles)
+  - Quick Capture: Thought / Back up / Ask
+  - Quiet Storage bar at the very bottom
 - **Gallery = fast browsing** (`app/(tabs)/gallery.tsx`)
   - 2-col compact grid, minimal metadata
-  - Search bar + sticky filter chips row (single horizontal scroller)
-  - Multi-select mode with bulk favorite / share / trash
+  - Filters: All · Favorites · Videos · People · Places · Events (real filtering on demo people/places)
+  - Search by moment, person, place, or date
+  - Multi-select mode with bulk favorite/share/trash
 - **Upload = safe backup** (`app/(tabs)/upload.tsx`)
-  - "Back up everything" primary CTA (gradient)
-  - "Pick specific photos & videos" secondary
-  - Honest note about mobile-web picker limitation
-  - Progress card: uploaded / total / skipped, thumbnails w/ state badges
-  - Skip-reason list, storage card, backup preferences
+  - "Back up photos and videos" primary CTA · "Choose specific files" secondary
+  - Honest mobile-web picker note
+  - Progress card with per-thumbnail state badges (Saved / Saving / Waiting / Skipped)
+  - "Why 18 were skipped" reason list, "SnapNext Pro" storage card, gentle preferences
 - **Memories = rediscovery** (`app/(tabs)/memories.tsx`)
-  - On This Day hero → Timeline → Stories → People → Places → Rediscovery
-- **AI = ask/understand/create/organize** (`app/(tabs)/ai.tsx`)
-  - Tabs with prompt hero + example chips
-  - Answer preview / insights / draft cards per tab
-- **Favorites = private sharing** (`app/favorites.tsx`)
-  - Permission-based explanation, invite CTA
-  - Rows with status pills: Connected / Waiting for reply / Invite you sent
-  - Explicit privacy do/don't list
-- **Settings** (`app/settings.tsx`)
-  - Profile card + Account / Privacy / AI / Backup / App sections
-- **Media Detail** (`app/media/[id].tsx`)
-  - Modal presentation, AI description card, tags, AI actions, bottom bar
+  - Today hero → This day, in past years (3/5/7 years ago) → Stories → People you love → Trips & places → Life timeline
+- **AI = one intelligent assistant** (`app/(tabs)/ai.tsx`)
+  - Persistent "Ask SnapNext" hero (natural-language input)
+  - Quieter capability chips: Ask · Understand · Create · Organize · Remember
+  - Contextual sub-hero + example prompts + one primary result block per capability
+- **Favorites = trusted-person sharing** (`app/favorites.tsx`)
+  - "People you trust with your memories" explanation
+  - Status pills: Trusted / Waiting for reply / Wants to connect
+  - Expandable row → shows access level ("Sees photos with both of you"), Manage shared albums, Revoke access
+  - Explicit privacy do/don't list including revoke-anytime
+- **Settings** (`app/settings.tsx`) — Profile + Account/Privacy/AI/Backup/App sections
+- **Media Detail (modal)** (`app/media/[id].tsx`)
+  - Full image, date, place, people
+  - Primary "Add to a story" gradient CTA
+  - "SnapNext's take" AI description
+  - Tags, quick actions grid (Write a caption / Draft a post / Find similar / Share with a favorite)
+  - Bottom action bar: Love / Share / Save / Trash
 
 ## Interaction highlights the prototype demonstrates
 - No content hidden behind bottom nav (safe-area handled, screens padded)

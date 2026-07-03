@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   Image,
   TouchableOpacity,
   StyleSheet,
+  Animated,
   useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -34,15 +35,38 @@ function getGreeting() {
   return "Good night";
 }
 
+// Subtle staggered fade+rise. Keeps micro-motion tasteful.
+function useRevealStack(count: number) {
+  const values = useRef(
+    Array.from({ length: count }, () => new Animated.Value(0)),
+  ).current;
+  useEffect(() => {
+    Animated.stagger(
+      70,
+      values.map((v) =>
+        Animated.timing(v, {
+          toValue: 1,
+          duration: 420,
+          useNativeDriver: true,
+        }),
+      ),
+    ).start();
+  }, [values]);
+  return values.map((v) => ({
+    opacity: v,
+    transform: [
+      { translateY: v.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+    ],
+  }));
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width: winW } = useWindowDimensions();
-  const containerW = Math.min(winW, 480);
-  const tile = (containerW - spacing.lg * 2 - spacing.sm) / 2;
+  void winW;
   const greeting = getGreeting();
-  const storagePct = Math.round((demoUser.storageUsedGB / demoUser.storageTotalGB) * 100);
-  const recentGridPhotos = demoPhotos.slice(0, 4);
+  const styleStack = useRevealStack(6);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg.base }}>
@@ -55,8 +79,8 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         testID="home-scroll"
       >
-        {/* Compact Personal Header */}
-        <View style={styles.headerRow}>
+        {/* A. Compact Personal Header */}
+        <Animated.View style={[styles.headerRow, styleStack[0]]}>
           <TouchableOpacity
             onPress={() => router.push("/settings")}
             style={styles.avatarWrap}
@@ -69,12 +93,12 @@ export default function HomeScreen() {
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Text style={styles.greeting} numberOfLines={1}>
-                {greeting}, {demoUser.name}
+                {greeting}
               </Text>
               <DemoBadge compact />
             </View>
-            <Text style={styles.subGreeting} numberOfLines={1}>
-              Your memories are safe · {storagePct}% of {demoUser.storageTotalGB} GB used
+            <Text style={styles.subGreeting} numberOfLines={2}>
+              Your memories are safe. SnapNext found something for you.
             </Text>
           </View>
           <TouchableOpacity
@@ -85,68 +109,73 @@ export default function HomeScreen() {
           >
             <Ionicons name="heart-outline" size={20} color={colors.text.primary} />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
-        {/* Primary Smart Action */}
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={styles.primaryActionWrap}
-          testID="home-primary-action"
-        >
-          <LinearGradient
-            colors={gradients.aiSoft as unknown as string[]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.primaryActionBg}
+        {/* B. One adaptive Smart Action */}
+        <Animated.View style={styleStack[1]}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={styles.primaryActionWrap}
+            testID="home-primary-action"
           >
-            <View style={styles.aiChip}>
-              <Ionicons name="sparkles" size={12} color={colors.brand.pink} />
-              <Text style={styles.aiChipText}>SnapNext AI · one thing for today</Text>
-            </View>
-            <Text style={styles.primaryActionTitle}>{primaryRecommendation.title}</Text>
-            <Text style={styles.primaryActionReason}>{primaryRecommendation.reason}</Text>
-            <View style={styles.primaryActionCta}>
-              <Text style={styles.primaryActionCtaText}>{primaryRecommendation.actionLabel}</Text>
-              <Ionicons name="arrow-forward" size={16} color={colors.text.primary} />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={gradients.aiSoft as unknown as string[]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.primaryActionBg}
+            >
+              <View style={styles.aiChip}>
+                <Ionicons name="sparkles" size={12} color={colors.brand.pink} />
+                <Text style={styles.aiChipText}>SnapNext found this for you</Text>
+              </View>
+              <Text style={styles.primaryActionTitle}>{primaryRecommendation.title}</Text>
+              <Text style={styles.primaryActionReason}>{primaryRecommendation.reason}</Text>
+              <View style={styles.primaryActionCta}>
+                <Text style={styles.primaryActionCtaText}>{primaryRecommendation.actionLabel}</Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.text.primary} />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
 
-        {/* Today in Your Life */}
+        {/* C. Today in Your Life */}
         <SectionHeader title="Today in your life" testID="home-today-header" />
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={styles.todayCard}
-          testID="home-today-card"
-        >
-          <Image source={{ uri: onThisDay.photo.url }} style={styles.todayImg} />
-          <LinearGradient
-            colors={["transparent", "rgba(11,12,16,0.95)"]}
-            style={styles.todayOverlay}
-          />
-          <View style={styles.todayContent}>
-            <View style={styles.onThisDayPill}>
-              <Ionicons name="calendar" size={12} color="#fff" />
-              <Text style={styles.onThisDayPillText}>
-                On this day · {onThisDay.yearsAgo} years ago
+        <Animated.View style={styleStack[2]}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={styles.todayCard}
+            onPress={() => router.push(`/media/${onThisDay.photo.id}`)}
+            testID="home-today-card"
+          >
+            <Image source={{ uri: onThisDay.photo.url }} style={styles.todayImg} />
+            <LinearGradient
+              colors={["transparent", "rgba(11,12,16,0.95)"]}
+              style={styles.todayOverlay}
+            />
+            <View style={styles.todayContent}>
+              <View style={styles.onThisDayPill}>
+                <Ionicons name="calendar" size={12} color="#fff" />
+                <Text style={styles.onThisDayPillText}>
+                  This day · {onThisDay.yearsAgo} years ago
+                </Text>
+              </View>
+              <Text style={styles.todayCaption} numberOfLines={2}>
+                {onThisDay.caption}
               </Text>
+              <Text style={styles.todayMeta}>{onThisDay.photoCount} photos worth revisiting</Text>
             </View>
-            <Text style={styles.todayCaption} numberOfLines={2}>
-              {onThisDay.caption}
-            </Text>
-            <Text style={styles.todayMeta}>{onThisDay.photoCount} photos from this day</Text>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </Animated.View>
 
-        {/* One AI Insight */}
-        <SectionHeader title="One insight for you" testID="home-insight-header" />
-        <View style={styles.insightCard} testID="home-insight-card">
+        {/* D. One AI Insight */}
+        <SectionHeader title="A gentle observation" testID="home-insight-header" />
+        <Animated.View style={[styles.insightCard, styleStack[3]]} testID="home-insight-card">
           <View style={styles.insightIconWrap}>
             <LinearGradient
               colors={gradients.aiAccent as unknown as string[]}
               style={styles.insightIconBg}
             >
-              <Ionicons name="analytics" size={18} color="#fff" />
+              <Ionicons name="heart" size={16} color="#fff" />
             </LinearGradient>
           </View>
           <View style={{ flex: 1 }}>
@@ -157,83 +186,99 @@ export default function HomeScreen() {
               <Ionicons name="chevron-forward" size={14} color={colors.brand.cyan} />
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
 
-        {/* Continue Your Story */}
+        {/* E. Continue Your Story */}
         <SectionHeader
           title="Continue your story"
-          subtitle="Pick up where SnapNext left off"
           actionLabel="See all"
           onAction={() => router.push("/(tabs)/memories")}
           testID="home-continue-header"
         />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: spacing.lg,
-            gap: spacing.md,
-          }}
-          testID="home-continue-row"
-        >
-          {continueYourStory.map((s) => (
-            <TouchableOpacity
-              key={s.id}
-              activeOpacity={0.85}
-              style={styles.storyCard}
-              testID={`home-story-${s.id}`}
-            >
-              <Image source={{ uri: s.cover }} style={styles.storyCover} />
-              <LinearGradient
-                colors={["transparent", "rgba(0,0,0,0.85)"]}
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.storyMeta}>
-                <Text style={styles.storyTitle} numberOfLines={1}>
-                  {s.title}
-                </Text>
-                <Text style={styles.storySub} numberOfLines={1}>
-                  {s.subtitle} · {s.count}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <Animated.View style={styleStack[4]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: spacing.lg,
+              gap: spacing.md,
+            }}
+            testID="home-continue-row"
+          >
+            {continueYourStory.map((s) => (
+              <TouchableOpacity
+                key={s.id}
+                activeOpacity={0.85}
+                style={styles.storyCard}
+                testID={`home-story-${s.id}`}
+              >
+                <Image source={{ uri: s.cover }} style={styles.storyCover} />
+                <LinearGradient
+                  colors={["transparent", "rgba(0,0,0,0.9)"]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.storyMeta}>
+                  <Text style={styles.storyTitle} numberOfLines={1}>
+                    {s.title}
+                  </Text>
+                  <Text style={styles.storySub} numberOfLines={1}>
+                    {s.subtitle} · {s.count} moments
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </Animated.View>
 
-        {/* Recent Memories preview */}
+        {/* F. Recent Memories — compact horizontal strip (not grid). */}
         <SectionHeader
-          title="Recent memories"
+          title="Recent moments"
           actionLabel="Open gallery"
           onAction={() => router.push("/(tabs)/gallery")}
           testID="home-recent-header"
         />
-        <View style={styles.recentGrid} testID="home-recent-grid">
-          {recentGridPhotos.map((p) => (
-            <TouchableOpacity
-              key={p.id}
-              style={[styles.recentTile, { width: tile, height: tile }]}
-              onPress={() => router.push(`/media/${p.id}`)}
-              activeOpacity={0.85}
-              testID={`home-recent-${p.id}`}
-            >
-              <Image source={{ uri: p.url }} style={StyleSheet.absoluteFill} />
-              {p.favorite ? (
-                <View style={styles.tileFav}>
-                  <Ionicons name="heart" size={12} color="#fff" />
-                </View>
-              ) : null}
-            </TouchableOpacity>
-          ))}
-        </View>
+        <Animated.View style={styleStack[5]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: spacing.lg,
+              gap: spacing.sm,
+            }}
+            testID="home-recent-row"
+          >
+            {demoPhotos.slice(0, 8).map((p) => (
+              <TouchableOpacity
+                key={p.id}
+                style={styles.recentTile}
+                onPress={() => router.push(`/media/${p.id}`)}
+                activeOpacity={0.85}
+                testID={`home-recent-${p.id}`}
+              >
+                <Image source={{ uri: p.url }} style={StyleSheet.absoluteFill} />
+                {p.favorite ? (
+                  <View style={styles.tileFav}>
+                    <Ionicons name="heart" size={10} color="#fff" />
+                  </View>
+                ) : null}
+                {p.isVideo ? (
+                  <View style={styles.tileVideo}>
+                    <Ionicons name="play" size={10} color="#fff" />
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </Animated.View>
 
-        {/* Quick Capture */}
+        {/* Quick Capture — quiet, progressive-disclosure entry */}
         <SectionHeader title="Capture something new" testID="home-capture-header" />
-        <View style={styles.captureRow} testID="home-quick-capture">
+        <View style={[styles.captureRow, { paddingHorizontal: spacing.lg }]} testID="home-quick-capture">
           <TouchableOpacity style={styles.captureBtn} testID="home-capture-note">
             <View style={[styles.captureIcon, { backgroundColor: "rgba(6,182,212,0.15)" }]}>
-              <Ionicons name="create-outline" size={20} color={colors.brand.cyan} />
+              <Ionicons name="create-outline" size={18} color={colors.brand.cyan} />
             </View>
-            <Text style={styles.captureLabel}>Thought note</Text>
+            <Text style={styles.captureLabel}>Thought</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.captureBtn}
@@ -241,9 +286,9 @@ export default function HomeScreen() {
             testID="home-capture-media"
           >
             <View style={[styles.captureIcon, { backgroundColor: "rgba(236,72,153,0.15)" }]}>
-              <Ionicons name="cloud-upload-outline" size={20} color={colors.brand.pink} />
+              <Ionicons name="cloud-upload-outline" size={18} color={colors.brand.pink} />
             </View>
-            <Text style={styles.captureLabel}>Media backup</Text>
+            <Text style={styles.captureLabel}>Back up</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.captureBtn}
@@ -251,15 +296,37 @@ export default function HomeScreen() {
             testID="home-capture-ai"
           >
             <View style={[styles.captureIcon, { backgroundColor: "rgba(139,92,246,0.15)" }]}>
-              <Ionicons name="sparkles-outline" size={20} color={colors.brand.purple} />
+              <Ionicons name="sparkles-outline" size={18} color={colors.brand.purple} />
             </View>
-            <Text style={styles.captureLabel}>AI storyteller</Text>
+            <Text style={styles.captureLabel}>Ask</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.footerNote}>
-          This is a prototype. All content is demo data for UX reference only.
-        </Text>
+        <View style={styles.footerRow}>
+          <Ionicons name="lock-closed" size={11} color={colors.text.muted} />
+          <Text style={styles.footerNote}>
+            Prototype · Demo memories only · Nothing here is real user data
+          </Text>
+        </View>
+        {/* Storage sits quietly at the bottom, not competing with today's moments. */}
+        <View style={styles.storageMini} testID="home-storage-mini">
+          <View style={{ flex: 1 }}>
+            <Text style={styles.storageLabel}>Storage</Text>
+            <Text style={styles.storageValue}>
+              {demoUser.storageUsedGB} GB of {demoUser.storageTotalGB} GB used
+            </Text>
+          </View>
+          <View style={styles.storageTrack}>
+            <View
+              style={[
+                styles.storageFill,
+                {
+                  width: `${Math.round((demoUser.storageUsedGB / demoUser.storageTotalGB) * 100)}%`,
+                },
+              ]}
+            />
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -271,7 +338,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xl,
   },
   avatarWrap: { width: 44, height: 44 },
   avatar: { width: 44, height: 44, borderRadius: 999 },
@@ -287,7 +354,7 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   greeting: { ...typography.h2, color: colors.text.primary },
-  subGreeting: { ...typography.small, color: colors.text.secondary, marginTop: 2 },
+  subGreeting: { ...typography.small, color: colors.text.secondary, marginTop: 3, lineHeight: 18 },
   iconBtn: {
     width: 40,
     height: 40,
@@ -305,7 +372,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(236,72,153,0.35)",
+    borderColor: "rgba(236,72,153,0.28)",
   },
   primaryActionBg: {
     padding: spacing.lg,
@@ -318,15 +385,15 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: "rgba(236,72,153,0.14)",
+    backgroundColor: "rgba(236,72,153,0.12)",
     borderRadius: radius.pill,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: "rgba(236,72,153,0.3)",
+    borderColor: "rgba(236,72,153,0.25)",
   },
   aiChipText: { ...typography.tiny, color: colors.brand.pink, fontWeight: "700" },
-  primaryActionTitle: { ...typography.h2, color: colors.text.primary, marginBottom: 6 },
-  primaryActionReason: { ...typography.body, color: colors.text.secondary, marginBottom: spacing.lg },
+  primaryActionTitle: { ...typography.h2, color: colors.text.primary, marginBottom: 6, lineHeight: 28 },
+  primaryActionReason: { ...typography.body, color: colors.text.secondary, marginBottom: spacing.lg, lineHeight: 20 },
   primaryActionCta: {
     flexDirection: "row",
     alignItems: "center",
@@ -344,11 +411,11 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.lg,
     borderRadius: radius.xl,
     overflow: "hidden",
-    height: 240,
+    height: 260,
     backgroundColor: colors.bg.surface,
   },
   todayImg: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
-  todayOverlay: { ...StyleSheet.absoluteFillObject, top: "40%" },
+  todayOverlay: { ...StyleSheet.absoluteFillObject, top: "35%" },
   todayContent: { position: "absolute", left: spacing.lg, right: spacing.lg, bottom: spacing.lg },
   onThisDayPill: {
     flexDirection: "row",
@@ -357,12 +424,12 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: "rgba(139,92,246,0.9)",
+    backgroundColor: "rgba(139,92,246,0.92)",
     borderRadius: radius.pill,
     marginBottom: spacing.sm,
   },
   onThisDayPillText: { ...typography.tiny, color: "#fff", fontWeight: "700" },
-  todayCaption: { ...typography.h3, color: "#fff", marginBottom: 4 },
+  todayCaption: { ...typography.h3, color: "#fff", marginBottom: 4, lineHeight: 24 },
   todayMeta: { ...typography.small, color: "rgba(255,255,255,0.75)" },
 
   // Insight
@@ -376,23 +443,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.md,
   },
-  insightIconWrap: { width: 44, height: 44 },
+  insightIconWrap: { width: 40, height: 40 },
   insightIconBg: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  insightTitle: { ...typography.title, color: colors.text.primary, marginBottom: 4 },
-  insightDetail: { ...typography.small, color: colors.text.secondary, lineHeight: 18 },
+  insightTitle: { ...typography.title, color: colors.text.primary, marginBottom: 4, lineHeight: 22 },
+  insightDetail: { ...typography.small, color: colors.text.secondary, lineHeight: 19 },
   insightCta: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: spacing.md },
   insightCtaText: { ...typography.small, color: colors.brand.cyan, fontWeight: "700" },
 
   // Story row
   storyCard: {
-    width: 160,
-    height: 200,
+    width: 168,
+    height: 210,
     borderRadius: radius.lg,
     overflow: "hidden",
     backgroundColor: colors.bg.surface,
@@ -400,35 +467,41 @@ const styles = StyleSheet.create({
   storyCover: { ...StyleSheet.absoluteFillObject },
   storyMeta: { position: "absolute", left: 12, right: 12, bottom: 12 },
   storyTitle: { ...typography.title, color: "#fff" },
-  storySub: { ...typography.tiny, color: "rgba(255,255,255,0.75)", marginTop: 2 },
+  storySub: { ...typography.tiny, color: "rgba(255,255,255,0.8)", marginTop: 2 },
 
-  // Recent grid
-  recentGrid: {
-    paddingHorizontal: spacing.lg,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
+  // Recent strip
   recentTile: {
+    width: 92,
+    height: 116,
     borderRadius: radius.md,
     overflow: "hidden",
     backgroundColor: colors.bg.surface,
   },
   tileFav: {
     position: "absolute",
-    top: 8,
-    right: 8,
-    width: 22,
-    height: 22,
+    top: 6,
+    right: 6,
+    width: 20,
+    height: 20,
     borderRadius: 999,
     backgroundColor: "rgba(236,72,153,0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tileVideo: {
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.7)",
     alignItems: "center",
     justifyContent: "center",
   },
 
   // Quick capture
   captureRow: {
-    paddingHorizontal: spacing.lg,
     flexDirection: "row",
     gap: spacing.md,
   },
@@ -440,22 +513,55 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.default,
     alignItems: "flex-start",
-    gap: 10,
+    gap: 8,
   },
   captureIcon: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   captureLabel: { ...typography.small, color: colors.text.primary, fontWeight: "600" },
 
-  footerNote: {
-    marginTop: spacing.xxl,
+  // Storage mini
+  storageMini: {
+    marginTop: spacing.lg,
     marginHorizontal: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.bg.surface,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  storageLabel: { ...typography.tiny, color: colors.text.secondary, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase" },
+  storageValue: { ...typography.small, color: colors.text.primary, marginTop: 2, fontWeight: "600" },
+  storageTrack: {
+    width: 90,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  storageFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: colors.brand.cyan,
+  },
+
+  footerRow: {
+    marginTop: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    justifyContent: "center",
+  },
+  footerNote: {
     ...typography.tiny,
     color: colors.text.muted,
-    textAlign: "center",
   },
 });

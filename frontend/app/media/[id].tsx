@@ -25,8 +25,9 @@ export default function MediaDetailScreen() {
   const photo = demoPhotos.find((p) => p.id === id) ?? demoPhotos[0];
   const [fav, setFav] = useState(!!photo.favorite);
 
-  const aiCaption = `SnapNext AI: "${photo.label} in ${photo.place}. The light hits softly across the frame."`;
-  const tags = [photo.place.split(",")[0], "Family", "Golden hour", photo.isVideo ? "Video" : "Photo"];
+  const people = photo.people ?? [];
+  const aiCaption = `A quiet moment at ${photo.place.split(",")[0]}. The light hits softly across the frame.`;
+  const tags = [photo.place.split(",")[0], ...(people.length > 0 ? ["With people you love"] : []), photo.isVideo ? "Video" : "Photo"];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg.base }}>
@@ -72,9 +73,30 @@ export default function MediaDetailScreen() {
             <Ionicons name="location-outline" size={14} color={colors.text.secondary} />
             <Text style={styles.place}>{photo.place}</Text>
           </View>
+          {people.length > 0 ? (
+            <View style={styles.peopleRow} testID="media-people">
+              <Ionicons name="people-outline" size={14} color={colors.text.secondary} />
+              <Text style={styles.people}>{people.join(", ")}</Text>
+            </View>
+          ) : null}
         </View>
 
-        {/* AI caption */}
+        {/* Primary action: Add to story */}
+        <TouchableOpacity
+          style={styles.primaryAction}
+          activeOpacity={0.9}
+          testID="media-add-to-story"
+        >
+          <LinearGradient
+            colors={gradients.aiAccent as unknown as string[]}
+            style={styles.primaryActionInner}
+          >
+            <Ionicons name="albums-outline" size={18} color="#fff" />
+            <Text style={styles.primaryActionText}>Add to a story</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        {/* SnapNext's take */}
         <View style={styles.aiCard} testID="media-ai-caption">
           <LinearGradient
             colors={gradients.aiSoft as unknown as string[]}
@@ -84,7 +106,7 @@ export default function MediaDetailScreen() {
             <View style={styles.aiIcon}>
               <Ionicons name="sparkles" size={14} color="#fff" />
             </View>
-            <Text style={styles.aiHeaderText}>AI description</Text>
+            <Text style={styles.aiHeaderText}>SnapNext&apos;s take</Text>
           </View>
           <Text style={styles.aiText}>{aiCaption}</Text>
         </View>
@@ -98,14 +120,14 @@ export default function MediaDetailScreen() {
           ))}
         </View>
 
-        {/* AI actions */}
-        <Text style={styles.actionsHeader}>AI actions</Text>
+        {/* Quick AI actions */}
+        <Text style={styles.actionsHeader}>Make something with this</Text>
         <View style={styles.actionsGrid}>
           {[
-            { id: "caption", label: "Rewrite caption", icon: "text-outline" as const },
+            { id: "caption", label: "Write a caption", icon: "text-outline" as const },
             { id: "post", label: "Draft a post", icon: "megaphone-outline" as const },
-            { id: "story", label: "Add to a story", icon: "albums-outline" as const },
             { id: "similar", label: "Find similar", icon: "grid-outline" as const },
+            { id: "share", label: "Share with a favorite", icon: "heart-outline" as const },
           ].map((a) => (
             <TouchableOpacity
               key={a.id}
@@ -124,13 +146,13 @@ export default function MediaDetailScreen() {
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <BarBtn
           icon={fav ? "heart" : "heart-outline"}
-          label="Favorite"
+          label="Love"
           onPress={() => setFav((v) => !v)}
           testID="media-favorite-toggle"
           active={fav}
         />
         <BarBtn icon="share-outline" label="Share" testID="media-share" />
-        <BarBtn icon="cloud-download-outline" label="Download" testID="media-download" />
+        <BarBtn icon="cloud-download-outline" label="Save" testID="media-download" />
         <BarBtn icon="trash-outline" label="Trash" tone="danger" testID="media-trash" />
       </View>
     </View>
@@ -213,6 +235,23 @@ const styles = StyleSheet.create({
   title: { ...typography.h2, color: colors.text.primary },
   placeRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
   place: { ...typography.small, color: colors.text.secondary },
+  peopleRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+  people: { ...typography.small, color: colors.text.secondary },
+
+  primaryAction: {
+    marginTop: spacing.lg,
+    marginHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    overflow: "hidden",
+  },
+  primaryActionInner: {
+    height: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  primaryActionText: { ...typography.body, color: "#fff", fontWeight: "700" },
 
   aiCard: {
     marginHorizontal: spacing.lg,

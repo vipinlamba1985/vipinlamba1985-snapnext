@@ -23,30 +23,42 @@ const TAB_META: Record<TabKey, {
   color: string;
   headline: string;
   subhead: string;
+  helper: string;
 }> = {
   ask: {
     icon: "search",
     color: "#EC4899",
-    headline: "Ask your archive",
-    subhead: "Natural-language search over your memories.",
+    headline: "Ask SnapNext",
+    subhead: "Anything about your own memories.",
+    helper: "Try",
   },
   understand: {
-    icon: "analytics",
+    icon: "leaf",
     color: "#06B6D4",
     headline: "Understand your life",
-    subhead: "See patterns SnapNext AI found across your archive.",
+    subhead: "Quiet observations from your archive.",
+    helper: "Try",
   },
   create: {
     icon: "color-wand",
     color: "#8B5CF6",
     headline: "Create from your moments",
-    subhead: "Captions, stories, and social drafts — from your own photos.",
+    subhead: "Captions, stories, and posts — from your own photos.",
+    helper: "Try",
   },
   organize: {
     icon: "sparkles",
     color: "#10B981",
-    headline: "Organize your archive",
-    subhead: "Duplicates, albums, and cleanup suggestions.",
+    headline: "Organize gently",
+    subhead: "Duplicates, albums, and cleanup — without stress.",
+    helper: "Try",
+  },
+  remember: {
+    icon: "heart",
+    color: "#F472B6",
+    headline: "Remember with me",
+    subhead: "Bring back moments worth revisiting.",
+    helper: "Try",
   },
 };
 
@@ -54,8 +66,8 @@ const UNDERSTAND_INSIGHTS = [
   {
     id: "u1",
     icon: "location" as const,
-    title: "Your top place is Cubbon Park",
-    body: "42 visits captured — mostly weekends with Milo.",
+    title: "Cubbon Park is your quiet place",
+    body: "42 visits — mostly weekends with Milo.",
   },
   {
     id: "u2",
@@ -65,16 +77,22 @@ const UNDERSTAND_INSIGHTS = [
   },
   {
     id: "u3",
-    icon: "images" as const,
-    title: "3 unfinished stories",
-    body: "Goa 2026, Diwali 2025, and Ladakh have enough material to publish.",
+    icon: "book" as const,
+    title: "You have 3 unfinished stories",
+    body: "Goa 2026, Diwali 2025, and Ladakh have enough moments to publish.",
   },
 ];
 
 const ORGANIZE_ITEMS = [
   { id: "o1", icon: "copy-outline" as const, title: "42 possible duplicates", body: "Review before removing." },
   { id: "o2", icon: "folder-outline" as const, title: "Suggested album: Weekend brunches", body: "18 photos over 6 months." },
-  { id: "o3", icon: "eye-off-outline" as const, title: "Screenshots pile-up", body: "112 screenshots — clean up in one tap." },
+  { id: "o3", icon: "eye-off-outline" as const, title: "112 screenshots piling up", body: "Clean up in one tap." },
+];
+
+const REMEMBER_ITEMS = [
+  { id: "r1", icon: "sunny-outline" as const, title: "A morning with Mom", body: "Diwali 2022 · Home" },
+  { id: "r2", icon: "moon-outline" as const, title: "That night in Udaipur", body: "Feb 2021 · Wedding week" },
+  { id: "r3", icon: "cloud-outline" as const, title: "First rain in Ladakh", body: "Jul 2020 · Trip" },
 ];
 
 export default function AIScreen() {
@@ -102,7 +120,7 @@ export default function AIScreen() {
               <Text style={styles.pageTitle}>SnapNext AI</Text>
               <DemoBadge compact />
             </View>
-            <Text style={styles.pageSub}>Ask · Understand · Create · Organize</Text>
+            <Text style={styles.pageSub}>Your quiet intelligence layer</Text>
           </View>
           <View style={styles.aiBadge}>
             <LinearGradient
@@ -114,60 +132,19 @@ export default function AIScreen() {
           </View>
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabsRow}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tabsContent}
-            testID="ai-tabs"
-          >
-            {aiTabs.map((t) => {
-              const active = tab === t.key;
-              return (
-                <TouchableOpacity
-                  key={t.key}
-                  onPress={() => setTab(t.key)}
-                  style={[styles.tab, active && styles.tabActive]}
-                  activeOpacity={0.85}
-                  testID={`ai-tab-${t.key}`}
-                >
-                  <Ionicons
-                    name={TAB_META[t.key].icon}
-                    size={14}
-                    color={active ? colors.text.primary : colors.text.secondary}
-                  />
-                  <Text
-                    style={[styles.tabText, { color: active ? colors.text.primary : colors.text.secondary }]}
-                  >
-                    {t.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* Prompt hero */}
-        <View style={styles.heroCard} testID={`ai-hero-${tab}`}>
-          <View style={[styles.heroIcon, { backgroundColor: `${meta.color}22` }]}>
-            <Ionicons name={meta.icon} size={20} color={meta.color} />
-          </View>
-          <Text style={styles.heroHead}>{meta.headline}</Text>
-          <Text style={styles.heroSub}>{meta.subhead}</Text>
-
+        {/* Ask hero — always present */}
+        <View style={styles.askHero} testID="ai-ask-hero">
+          <LinearGradient
+            colors={gradients.aiSoft as unknown as string[]}
+            style={StyleSheet.absoluteFill}
+          />
+          <Text style={styles.askHeroTitle}>Ask SnapNext</Text>
+          <Text style={styles.askHeroSub}>Anything about your own memories.</Text>
           <View style={styles.promptWrap}>
+            <Ionicons name="sparkles" size={16} color={colors.brand.pink} style={{ marginLeft: 4 }} />
             <TextInput
               style={styles.promptInput}
-              placeholder={
-                tab === "ask"
-                  ? "e.g. Find photos from my Goa trip"
-                  : tab === "understand"
-                    ? "What have you learned about me?"
-                    : tab === "create"
-                      ? "Write a caption for last weekend"
-                      : "Find duplicates in my archive"
-              }
+              placeholder="Find my beach photos with family"
               placeholderTextColor={colors.text.muted}
               value={prompt}
               onChangeText={setPrompt}
@@ -183,34 +160,97 @@ export default function AIScreen() {
               </LinearGradient>
             </TouchableOpacity>
           </View>
+        </View>
 
-          <Text style={styles.exampleLabel}>Try one of these</Text>
-          <View style={styles.examples}>
-            {aiExamples[tab].map((ex) => (
-              <TouchableOpacity
-                key={ex}
-                style={styles.exampleChip}
-                onPress={() => setPrompt(ex)}
-                activeOpacity={0.85}
-                testID={`ai-example-${tab}`}
-              >
-                <Text style={styles.exampleText} numberOfLines={1}>
-                  {ex}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {/* Quieter capability chips row */}
+        <Text style={styles.capabilitiesLabel}>What would you like today?</Text>
+        <View style={styles.tabsRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabsContent}
+            testID="ai-tabs"
+          >
+            {aiTabs.map((t) => {
+              const active = tab === t.key;
+              const tm = TAB_META[t.key];
+              return (
+                <TouchableOpacity
+                  key={t.key}
+                  onPress={() => setTab(t.key)}
+                  style={[
+                    styles.tab,
+                    active && { borderColor: tm.color, backgroundColor: `${tm.color}20` },
+                  ]}
+                  activeOpacity={0.85}
+                  testID={`ai-tab-${t.key}`}
+                >
+                  <Ionicons
+                    name={tm.icon}
+                    size={14}
+                    color={active ? tm.color : colors.text.secondary}
+                  />
+                  <Text
+                    style={[
+                      styles.tabText,
+                      { color: active ? tm.color : colors.text.secondary },
+                    ]}
+                  >
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Contextual sub-copy for chosen capability */}
+        <View style={styles.subHero} testID={`ai-subhero-${tab}`}>
+          <View style={[styles.subHeroIcon, { backgroundColor: `${meta.color}20` }]}>
+            <Ionicons name={meta.icon} size={16} color={meta.color} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.subHeroTitle}>{meta.headline}</Text>
+            <Text style={styles.subHeroSub}>{meta.subhead}</Text>
           </View>
         </View>
 
-        {/* Tab-specific content */}
+        {/* Try chips */}
+        <Text style={styles.tryLabel}>{meta.helper}</Text>
+        <View style={styles.examples}>
+          {aiExamples[tab].map((ex) => (
+            <TouchableOpacity
+              key={ex}
+              style={styles.exampleChip}
+              onPress={() => setPrompt(ex)}
+              activeOpacity={0.85}
+              testID={`ai-example-${tab}`}
+            >
+              <Ionicons
+                name="arrow-up-circle-outline"
+                size={14}
+                color={meta.color}
+              />
+              <Text style={styles.exampleText} numberOfLines={1}>
+                {ex}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Tab-specific content — quiet, single primary block */}
         {tab === "ask" ? <AskResults /> : null}
         {tab === "understand" ? <UnderstandList /> : null}
         {tab === "create" ? <CreateGrid /> : null}
         {tab === "organize" ? <OrganizeList /> : null}
+        {tab === "remember" ? <RememberList /> : null}
 
-        <Text style={styles.footerNote}>
-          AI responses shown here are illustrative. Real AI uses your own archive with strict privacy.
-        </Text>
+        <View style={styles.footerRow}>
+          <Ionicons name="lock-closed" size={11} color={colors.text.muted} />
+          <Text style={styles.footerNote}>
+            Prototype only · SnapNext AI runs privately on your archive
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -219,7 +259,7 @@ export default function AIScreen() {
 function AskResults() {
   return (
     <View style={{ marginTop: spacing.xl }}>
-      <Text style={styles.h3}>Recent answer preview</Text>
+      <Text style={styles.h3}>Recent answer</Text>
       <View style={styles.answerCard}>
         <View style={styles.answerHeader}>
           <View style={styles.answerAvatar}>
@@ -251,10 +291,14 @@ function AskResults() {
 function UnderstandList() {
   return (
     <View style={{ marginTop: spacing.xl }}>
-      <Text style={styles.h3}>What SnapNext AI has learned</Text>
+      <Text style={styles.h3}>What SnapNext has quietly noticed</Text>
       <View style={styles.insightList}>
-        {UNDERSTAND_INSIGHTS.map((it) => (
-          <View key={it.id} style={styles.insightRow} testID={`ai-insight-${it.id}`}>
+        {UNDERSTAND_INSIGHTS.map((it, i) => (
+          <View
+            key={it.id}
+            style={[styles.insightRow, i === UNDERSTAND_INSIGHTS.length - 1 && { borderBottomWidth: 0 }]}
+            testID={`ai-insight-${it.id}`}
+          >
             <View style={styles.insightIcon}>
               <Ionicons name={it.icon} size={16} color={colors.brand.cyan} />
             </View>
@@ -271,14 +315,14 @@ function UnderstandList() {
 
 function CreateGrid() {
   const drafts = [
-    { id: "c1", title: "Caption draft", body: '"Golden hour, quieter than we remember."', tag: "Caption" },
-    { id: "c2", title: "Story: Goa 2026", body: "6 scenes · 47 photos · 1 min read", tag: "Story" },
-    { id: "c3", title: "Reel concept", body: "Ladakh · 15-sec cut · Lo-fi audio", tag: "Video" },
-    { id: "c4", title: "Social post", body: "1 photo + witty caption for Instagram", tag: "Post" },
+    { id: "c1", title: "Caption ready", body: '"Golden hour, quieter than we remember."', tag: "Caption" },
+    { id: "c2", title: "Goa 2026 story", body: "6 chapters · 47 photos · 1 min read", tag: "Story" },
+    { id: "c3", title: "Ladakh reel idea", body: "15-sec cut · Lo-fi audio", tag: "Reel" },
+    { id: "c4", title: "Weekend post", body: "1 photo · witty caption", tag: "Post" },
   ];
   return (
     <View style={{ marginTop: spacing.xl }}>
-      <Text style={styles.h3}>Draft ideas from your archive</Text>
+      <Text style={styles.h3}>Ready when you are</Text>
       <View style={styles.createGrid}>
         {drafts.map((d) => (
           <View key={d.id} style={styles.createCard} testID={`ai-draft-${d.id}`}>
@@ -301,17 +345,44 @@ function CreateGrid() {
 function OrganizeList() {
   return (
     <View style={{ marginTop: spacing.xl }}>
-      <Text style={styles.h3}>Cleanup suggestions</Text>
+      <Text style={styles.h3}>Little cleanups</Text>
       <View style={styles.insightList}>
-        {ORGANIZE_ITEMS.map((it) => (
+        {ORGANIZE_ITEMS.map((it, i) => (
           <TouchableOpacity
             key={it.id}
             activeOpacity={0.85}
-            style={styles.insightRow}
+            style={[styles.insightRow, i === ORGANIZE_ITEMS.length - 1 && { borderBottomWidth: 0 }]}
             testID={`ai-organize-${it.id}`}
           >
             <View style={[styles.insightIcon, { backgroundColor: "rgba(16,185,129,0.15)" }]}>
               <Ionicons name={it.icon} size={16} color={colors.status.success} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.insightTitle}>{it.title}</Text>
+              <Text style={styles.insightBody}>{it.body}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.text.secondary} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function RememberList() {
+  return (
+    <View style={{ marginTop: spacing.xl }}>
+      <Text style={styles.h3}>Waiting for you</Text>
+      <View style={styles.insightList}>
+        {REMEMBER_ITEMS.map((it, i) => (
+          <TouchableOpacity
+            key={it.id}
+            activeOpacity={0.85}
+            style={[styles.insightRow, i === REMEMBER_ITEMS.length - 1 && { borderBottomWidth: 0 }]}
+            testID={`ai-remember-${it.id}`}
+          >
+            <View style={[styles.insightIcon, { backgroundColor: "rgba(244,114,182,0.15)" }]}>
+              <Ionicons name={it.icon} size={16} color="#F472B6" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.insightTitle}>{it.title}</Text>
@@ -349,7 +420,54 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  tabsRow: { height: 44, marginBottom: spacing.md },
+  // Ask hero (always present)
+  askHero: {
+    marginHorizontal: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: radius.xl,
+    backgroundColor: colors.bg.surface,
+    borderWidth: 1,
+    borderColor: "rgba(236,72,153,0.25)",
+    overflow: "hidden",
+  },
+  askHeroTitle: { ...typography.h2, color: colors.text.primary },
+  askHeroSub: { ...typography.small, color: colors.text.secondary, marginTop: 4, marginBottom: spacing.lg, lineHeight: 18 },
+  promptWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.bg.elevated,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    padding: 6,
+    paddingLeft: 8,
+  },
+  promptInput: {
+    flex: 1,
+    color: colors.text.primary,
+    fontSize: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    minHeight: 40,
+    maxHeight: 100,
+    outlineWidth: 0,
+  } as any,
+  sendBtn: { width: 40, height: 40, borderRadius: 12, overflow: "hidden" },
+  sendBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+
+  capabilitiesLabel: {
+    ...typography.tiny,
+    color: colors.text.secondary,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xxl,
+    marginBottom: spacing.sm,
+  },
+
+  tabsRow: { height: 44 },
   tabsContent: {
     paddingHorizontal: spacing.lg,
     gap: spacing.sm,
@@ -367,74 +485,53 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
-  tabActive: {
-    backgroundColor: "rgba(139,92,246,0.18)",
-    borderColor: colors.brand.purple,
-  },
   tabText: { ...typography.small, fontWeight: "600" },
 
-  heroCard: {
+  subHero: {
+    marginTop: spacing.lg,
     marginHorizontal: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.lg,
     backgroundColor: colors.bg.surface,
-    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: colors.border.default,
-    padding: spacing.lg,
+    borderColor: colors.border.subtle,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
   },
-  heroIcon: {
-    width: 44,
-    height: 44,
+  subHeroIcon: {
+    width: 36,
+    height: 36,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.md,
   },
-  heroHead: { ...typography.h2, color: colors.text.primary },
-  heroSub: { ...typography.small, color: colors.text.secondary, marginTop: 4, lineHeight: 18 },
+  subHeroTitle: { ...typography.title, color: colors.text.primary },
+  subHeroSub: { ...typography.tiny, color: colors.text.secondary, marginTop: 2, lineHeight: 15 },
 
-  promptWrap: {
-    marginTop: spacing.lg,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: spacing.sm,
-    backgroundColor: colors.bg.elevated,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-    padding: 6,
-    paddingLeft: 14,
-  },
-  promptInput: {
-    flex: 1,
-    color: colors.text.primary,
-    fontSize: 14,
-    paddingVertical: 10,
-    minHeight: 40,
-    maxHeight: 100,
-    outlineWidth: 0,
-  } as any,
-  sendBtn: { width: 40, height: 40, borderRadius: 12, overflow: "hidden" },
-  sendBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
-
-  exampleLabel: {
+  tryLabel: {
     ...typography.tiny,
     color: colors.text.secondary,
     fontWeight: "700",
     letterSpacing: 0.6,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
+    paddingHorizontal: spacing.lg,
     textTransform: "uppercase",
   },
-  examples: { gap: spacing.sm },
+  examples: { gap: 6, paddingHorizontal: spacing.lg },
   exampleChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: radius.md,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: colors.bg.surface,
     borderWidth: 1,
     borderColor: colors.border.subtle,
   },
-  exampleText: { ...typography.small, color: colors.text.primary },
+  exampleText: { ...typography.small, color: colors.text.primary, flex: 1 },
 
   h3: {
     ...typography.h3,
@@ -522,12 +619,16 @@ const styles = StyleSheet.create({
   createCta: { flexDirection: "row", alignItems: "center", gap: 3, marginTop: 6 },
   createCtaText: { ...typography.tiny, color: colors.brand.purple, fontWeight: "700" },
 
+  footerRow: {
+    marginTop: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    justifyContent: "center",
+  },
   footerNote: {
-    marginTop: spacing.xl,
     ...typography.tiny,
     color: colors.text.muted,
-    textAlign: "center",
-    marginHorizontal: spacing.lg,
-    lineHeight: 15,
   },
 });

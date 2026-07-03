@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -14,17 +14,23 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { colors, gradients, radius, spacing, typography } from "@/src/theme";
 import DemoBadge from "@/src/components/DemoBadge";
-import { favorites } from "@/src/data/mocks";
+import { favorites as SEED } from "@/src/data/mocks";
 
 const STATUS_META = {
-  accepted: { label: "Connected", color: "#10B981", bg: "rgba(16,185,129,0.15)" },
+  accepted: { label: "Trusted", color: "#10B981", bg: "rgba(16,185,129,0.15)" },
   pending: { label: "Waiting for reply", color: "#F59E0B", bg: "rgba(245,158,11,0.15)" },
-  invited: { label: "Invite you sent", color: "#06B6D4", bg: "rgba(6,182,212,0.15)" },
+  invited: { label: "Wants to connect", color: "#06B6D4", bg: "rgba(6,182,212,0.15)" },
+};
+
+const ACCESS_LABEL = {
+  both: "Sees photos with both of you",
+  albums: "Sees photos with both of you + selected albums",
 };
 
 export default function FavoritesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [openedId, setOpenedId] = useState<string | null>(null);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg.base }}>
@@ -58,7 +64,7 @@ export default function FavoritesScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Explanation */}
+        {/* Explanation — human, calm */}
         <View style={styles.explainCard} testID="favorites-explanation">
           <LinearGradient
             colors={gradients.aiSoft as unknown as string[]}
@@ -67,91 +73,144 @@ export default function FavoritesScreen() {
           <View style={styles.explainIcon}>
             <Ionicons name="lock-closed" size={16} color={colors.brand.pink} />
           </View>
-          <Text style={styles.explainTitle}>Private, permission-based sharing</Text>
+          <Text style={styles.explainTitle}>People you trust with your memories</Text>
           <Text style={styles.explainBody}>
-            Favorites are people you invite. They must accept, and they only see memories you
-            explicitly share. Nothing else in your library is visible.
+            A favorite is a trusted person. They only see photos where both of you appear —
+            nothing else in your library — unless you explicitly share an album.
           </Text>
         </View>
 
         {/* Primary CTA */}
-        <TouchableOpacity activeOpacity={0.9} style={styles.inviteBtn} testID="favorites-invite-cta">
+        <TouchableOpacity activeOpacity={0.92} style={styles.inviteBtn} testID="favorites-invite-cta">
           <LinearGradient
             colors={gradients.aiAccent as unknown as string[]}
             style={styles.inviteBtnInner}
           >
             <Ionicons name="person-add" size={18} color="#fff" />
-            <Text style={styles.inviteBtnText}>Invite a favorite</Text>
+            <Text style={styles.inviteBtnText}>Invite someone you love</Text>
           </LinearGradient>
         </TouchableOpacity>
 
         {/* People list */}
-        <Text style={styles.h3}>Your favorites</Text>
+        <Text style={styles.h3}>Your trusted people</Text>
         <View style={styles.list}>
-          {favorites.map((f) => {
+          {SEED.map((f, idx) => {
             const meta = STATUS_META[f.status];
+            const isOpen = openedId === f.id;
             return (
-              <View key={f.id} style={styles.row} testID={`favorites-row-${f.id}`}>
-                <Image source={{ uri: f.avatar }} style={styles.avatar} />
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Text style={styles.name}>{f.name}</Text>
-                    <View style={[styles.statusPill, { backgroundColor: meta.bg }]}>
-                      <View style={[styles.statusDot, { backgroundColor: meta.color }]} />
-                      <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
+              <View
+                key={f.id}
+                style={[styles.rowWrap, idx === SEED.length - 1 && { borderBottomWidth: 0 }]}
+                testID={`favorites-row-${f.id}`}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={styles.row}
+                  onPress={() =>
+                    setOpenedId((prev) => (prev === f.id ? null : f.id))
+                  }
+                  testID={`favorites-toggle-${f.id}`}
+                >
+                  <Image source={{ uri: f.avatar }} style={styles.avatar} />
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Text style={styles.name}>{f.name}</Text>
+                      <View style={[styles.statusPill, { backgroundColor: meta.bg }]}>
+                        <View style={[styles.statusDot, { backgroundColor: meta.color }]} />
+                        <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.sub}>
+                      {f.status === "accepted"
+                        ? `${f.sharedCount} shared moments · ${f.since}`
+                        : f.since}
+                    </Text>
+                  </View>
+                  {f.status === "accepted" ? (
+                    <Ionicons
+                      name={isOpen ? "chevron-up" : "chevron-down"}
+                      size={16}
+                      color={colors.text.secondary}
+                    />
+                  ) : f.status === "pending" ? (
+                    <TouchableOpacity style={styles.actionBtn} testID={`favorites-remind-${f.id}`}>
+                      <Text style={styles.actionText}>Remind</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={{ flexDirection: "row", gap: 6 }}>
+                      <TouchableOpacity
+                        style={[styles.actionBtn, { backgroundColor: colors.brand.pink }]}
+                        testID={`favorites-accept-${f.id}`}
+                      >
+                        <Text style={[styles.actionText, { color: "#fff" }]}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.actionBtn} testID={`favorites-decline-${f.id}`}>
+                        <Text style={styles.actionText}>Decline</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                {/* Expanded permission panel */}
+                {isOpen && f.status === "accepted" ? (
+                  <View style={styles.expand} testID={`favorites-permissions-${f.id}`}>
+                    <View style={styles.permRow}>
+                      <View style={styles.permIcon}>
+                        <Ionicons name="people-outline" size={14} color={colors.brand.cyan} />
+                      </View>
+                      <Text style={styles.permText}>{ACCESS_LABEL[f.accessLevel]}</Text>
+                    </View>
+                    <View style={styles.expandActions}>
+                      <TouchableOpacity
+                        style={styles.expandBtn}
+                        testID={`favorites-manage-albums-${f.id}`}
+                      >
+                        <Ionicons name="albums-outline" size={14} color={colors.text.primary} />
+                        <Text style={styles.expandBtnText}>Manage shared albums</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.expandBtn, styles.dangerBtn]}
+                        testID={`favorites-revoke-${f.id}`}
+                      >
+                        <Ionicons name="close-circle-outline" size={14} color={colors.status.error} />
+                        <Text style={[styles.expandBtnText, { color: colors.status.error }]}>
+                          Revoke access
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
-                  <Text style={styles.sub}>
-                    {f.status === "accepted"
-                      ? `${f.sharedCount} shared memories · ${f.since}`
-                      : f.since}
-                  </Text>
-                </View>
-                {f.status === "accepted" ? (
-                  <TouchableOpacity style={styles.actionBtn} testID={`favorites-view-${f.id}`}>
-                    <Ionicons name="chevron-forward" size={16} color={colors.text.secondary} />
-                  </TouchableOpacity>
-                ) : f.status === "pending" ? (
-                  <TouchableOpacity style={styles.actionBtn} testID={`favorites-remind-${f.id}`}>
-                    <Text style={styles.actionText}>Remind</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={{ flexDirection: "row", gap: 6 }}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: colors.brand.pink }]}
-                      testID={`favorites-accept-${f.id}`}
-                    >
-                      <Text style={[styles.actionText, { color: "#fff" }]}>Accept</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtn} testID={`favorites-decline-${f.id}`}>
-                      <Text style={styles.actionText}>Decline</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                ) : null}
               </View>
             );
           })}
         </View>
 
-        {/* Privacy detail */}
+        {/* Privacy do/don't */}
         <View style={styles.privacyBox}>
           <View style={styles.privacyItem}>
             <Ionicons name="checkmark-circle" size={16} color={colors.status.success} />
-            <Text style={styles.privacyText}>Favorites see only memories you share.</Text>
+            <Text style={styles.privacyText}>They see only what you share, nothing more.</Text>
           </View>
           <View style={styles.privacyItem}>
             <Ionicons name="checkmark-circle" size={16} color={colors.status.success} />
-            <Text style={styles.privacyText}>Photos with both of you may be suggested to share.</Text>
+            <Text style={styles.privacyText}>Photos with both of you may be quietly suggested.</Text>
           </View>
           <View style={styles.privacyItem}>
             <Ionicons name="close-circle" size={16} color={colors.status.error} />
-            <Text style={styles.privacyText}>Favorites never see your private library.</Text>
+            <Text style={styles.privacyText}>They never see your private library.</Text>
+          </View>
+          <View style={styles.privacyItem}>
+            <Ionicons name="checkmark-circle" size={16} color={colors.status.success} />
+            <Text style={styles.privacyText}>You can revoke access anytime — quietly, instantly.</Text>
           </View>
         </View>
 
-        <Text style={styles.footerNote}>
-          Prototype only. No invitations are actually sent from this preview.
-        </Text>
+        <View style={styles.footerRow}>
+          <Ionicons name="lock-closed" size={11} color={colors.text.muted} />
+          <Text style={styles.footerNote}>
+            Prototype · No invitations are actually sent
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -219,7 +278,7 @@ const styles = StyleSheet.create({
     ...typography.h3,
     color: colors.text.primary,
     paddingHorizontal: spacing.lg,
-    marginTop: spacing.xl,
+    marginTop: spacing.xxl,
     marginBottom: spacing.md,
   },
   list: {
@@ -230,13 +289,15 @@ const styles = StyleSheet.create({
     borderColor: colors.border.default,
     overflow: "hidden",
   },
+  rowWrap: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.subtle,
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
     padding: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border.subtle,
   },
   avatar: { width: 44, height: 44, borderRadius: 999 },
   name: { ...typography.title, color: colors.text.primary },
@@ -259,8 +320,49 @@ const styles = StyleSheet.create({
   },
   actionText: { ...typography.tiny, color: colors.text.primary, fontWeight: "700" },
 
+  expand: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    paddingTop: 4,
+    gap: spacing.sm,
+  },
+  permRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+  },
+  permIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    backgroundColor: "rgba(6,182,212,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  permText: { ...typography.small, color: colors.text.primary, flex: 1 },
+  expandActions: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  expandBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    flexGrow: 1,
+    justifyContent: "center",
+  },
+  expandBtnText: { ...typography.tiny, color: colors.text.primary, fontWeight: "700" },
+  dangerBtn: { backgroundColor: "rgba(239,68,68,0.1)" },
+
   privacyBox: {
-    marginTop: spacing.xl,
+    marginTop: spacing.xxl,
     marginHorizontal: spacing.lg,
     padding: spacing.md,
     borderRadius: radius.lg,
@@ -272,11 +374,16 @@ const styles = StyleSheet.create({
   privacyItem: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   privacyText: { ...typography.small, color: colors.text.secondary, flex: 1, lineHeight: 20 },
 
+  footerRow: {
+    marginTop: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    justifyContent: "center",
+  },
   footerNote: {
-    marginTop: spacing.xl,
     ...typography.tiny,
     color: colors.text.muted,
-    textAlign: "center",
-    marginHorizontal: spacing.lg,
   },
 });

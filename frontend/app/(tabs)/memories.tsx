@@ -24,6 +24,13 @@ import {
   demoPhotos,
 } from "@/src/data/mocks";
 
+// "This Day in Past Years" — show one moment per past year.
+const PAST_YEARS = [
+  { year: "3 years ago", cover: demoPhotos[0].url, place: "Goa" },
+  { year: "5 years ago", cover: demoPhotos[4].url, place: "Udaipur" },
+  { year: "7 years ago", cover: demoPhotos[7].url, place: "Home" },
+];
+
 const TIMELINE = [
   { id: "t1", month: "July 2026", count: 47, cover: demoPhotos[0].url, hint: "Goa trip · Family" },
   { id: "t2", month: "June 2026", count: 22, cover: demoPhotos[1].url, hint: "Dubai layover" },
@@ -49,6 +56,7 @@ export default function MemoriesScreen() {
         showsVerticalScrollIndicator={false}
         testID="memories-scroll"
       >
+        {/* Header */}
         <View style={styles.headerRow}>
           <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Text style={styles.pageTitle}>Memories</Text>
@@ -58,12 +66,14 @@ export default function MemoriesScreen() {
             <Ionicons name="search" size={20} color={colors.text.primary} />
           </TouchableOpacity>
         </View>
-        <Text style={styles.pageSub}>Rediscover moments, people, places, and stories.</Text>
+        <Text style={styles.pageSub}>Rediscover the moments that made your life.</Text>
 
-        {/* On This Day hero */}
+        {/* TODAY hero — On This Day */}
+        <SectionHeader title="Today" testID="memories-today-header" />
         <TouchableOpacity
           activeOpacity={0.92}
           style={styles.hero}
+          onPress={() => router.push(`/media/${onThisDay.photo.id}`)}
           testID="memories-on-this-day"
         >
           <Image source={{ uri: onThisDay.photo.url }} style={StyleSheet.absoluteFill} />
@@ -75,7 +85,7 @@ export default function MemoriesScreen() {
             <View style={styles.heroPill}>
               <Ionicons name="calendar" size={12} color="#fff" />
               <Text style={styles.heroPillText}>
-                On this day · {onThisDay.yearsAgo} years ago
+                This day · {onThisDay.yearsAgo} years ago
               </Text>
             </View>
             <Text style={styles.heroTitle}>{onThisDay.caption}</Text>
@@ -89,36 +99,41 @@ export default function MemoriesScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* Timeline */}
+        {/* This Day in Past Years */}
         <SectionHeader
-          title="Timeline"
-          subtitle="Browse your life by month"
-          testID="memories-timeline-header"
+          title="This day, in past years"
+          subtitle="Little windows back in time"
+          testID="memories-past-years-header"
         />
-        <View style={styles.timelineList}>
-          {TIMELINE.map((t) => (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
+        >
+          {PAST_YEARS.map((y, idx) => (
             <TouchableOpacity
-              key={t.id}
+              key={idx}
+              style={styles.pastCard}
               activeOpacity={0.85}
-              style={styles.timelineRow}
-              testID={`memories-timeline-${t.id}`}
+              testID={`memories-pastyear-${idx}`}
             >
-              <Image source={{ uri: t.cover }} style={styles.timelineCover} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.timelineMonth}>{t.month}</Text>
-                <Text style={styles.timelineHint} numberOfLines={1}>
-                  {t.hint} · {t.count} memories
-                </Text>
+              <Image source={{ uri: y.cover }} style={StyleSheet.absoluteFill} />
+              <LinearGradient
+                colors={["transparent", "rgba(0,0,0,0.9)"]}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.pastCardMeta}>
+                <Text style={styles.pastCardYear}>{y.year}</Text>
+                <Text style={styles.pastCardPlace} numberOfLines={1}>{y.place}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Stories */}
         <SectionHeader
           title="Stories"
-          subtitle="AI-crafted narratives from your moments"
+          subtitle="Chapters SnapNext has been quietly writing"
           actionLabel="See all"
           testID="memories-stories-header"
         />
@@ -152,10 +167,10 @@ export default function MemoriesScreen() {
           ))}
         </ScrollView>
 
-        {/* People */}
+        {/* People You Love */}
         <SectionHeader
-          title="People"
-          subtitle="Faces you keep coming back to"
+          title="People you love"
+          subtitle="Faces that keep showing up"
           actionLabel="See all"
           onAction={() => router.push("/favorites")}
           testID="memories-people-header"
@@ -176,14 +191,14 @@ export default function MemoriesScreen() {
                 <Image source={{ uri: p.avatar }} style={styles.personAvatar} />
               </View>
               <Text style={styles.personName}>{p.name}</Text>
-              <Text style={styles.personCount}>{p.count} memories</Text>
+              <Text style={styles.personCount}>{p.count} moments</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
-        {/* Places & Trips */}
+        {/* Trips & Places */}
         <SectionHeader
-          title="Places & Trips"
+          title="Trips & places"
           subtitle="Where your memories live"
           testID="memories-places-header"
         />
@@ -203,52 +218,48 @@ export default function MemoriesScreen() {
               <View style={styles.placeMeta}>
                 <Text style={styles.placeName} numberOfLines={1}>{pl.name}</Text>
                 <Text style={styles.placeSub} numberOfLines={1}>
-                  {pl.subtitle} · {pl.count} memories
+                  {pl.subtitle} · {pl.count} moments
                 </Text>
               </View>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Rediscovery */}
+        {/* Life Timeline */}
         <SectionHeader
-          title="Worth rediscovering"
-          subtitle="Moments SnapNext AI thinks you might love"
-          testID="memories-rediscover-header"
+          title="Life timeline"
+          subtitle="Your months, in one gentle scroll"
+          testID="memories-timeline-header"
         />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.md }}
-        >
-          {demoPhotos.slice(3, 9).map((p) => (
+        <View style={styles.timelineList}>
+          {TIMELINE.map((t, i) => (
             <TouchableOpacity
-              key={p.id}
-              style={styles.rediscoverCard}
+              key={t.id}
               activeOpacity={0.85}
-              onPress={() => router.push(`/media/${p.id}`)}
-              testID={`memories-rediscover-${p.id}`}
+              style={[
+                styles.timelineRow,
+                i === TIMELINE.length - 1 && { borderBottomWidth: 0 },
+              ]}
+              testID={`memories-timeline-${t.id}`}
             >
-              <Image source={{ uri: p.url }} style={StyleSheet.absoluteFill} />
-              <LinearGradient
-                colors={["transparent", "rgba(0,0,0,0.85)"]}
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.rediscoverMeta}>
-                <View style={styles.aiTag}>
-                  <Ionicons name="sparkles" size={10} color="#fff" />
-                  <Text style={styles.aiTagText}>AI pick</Text>
-                </View>
-                <Text style={styles.rediscoverTitle} numberOfLines={1}>{p.label}</Text>
-                <Text style={styles.rediscoverSub} numberOfLines={1}>{p.date}</Text>
+              <Image source={{ uri: t.cover }} style={styles.timelineCover} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.timelineMonth}>{t.month}</Text>
+                <Text style={styles.timelineHint} numberOfLines={1}>
+                  {t.hint} · {t.count} moments
+                </Text>
               </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
-        <Text style={styles.footerNote}>
-          Demo memories are illustrative only. Real SnapNext uses your own archive.
-        </Text>
+        <View style={styles.footerRow}>
+          <Ionicons name="lock-closed" size={11} color={colors.text.muted} />
+          <Text style={styles.footerNote}>
+            Prototype · Demo memories only
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -267,7 +278,6 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: 4,
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
   },
   iconBtn: {
     width: 40,
@@ -281,7 +291,7 @@ const styles = StyleSheet.create({
   },
   hero: {
     marginHorizontal: spacing.lg,
-    height: 260,
+    height: 280,
     borderRadius: radius.xl,
     overflow: "hidden",
     backgroundColor: colors.bg.surface,
@@ -294,12 +304,12 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: "rgba(139,92,246,0.9)",
+    backgroundColor: "rgba(139,92,246,0.92)",
     borderRadius: radius.pill,
     marginBottom: spacing.sm,
   },
   heroPillText: { ...typography.tiny, color: "#fff", fontWeight: "700" },
-  heroTitle: { ...typography.h3, color: "#fff", marginBottom: spacing.md },
+  heroTitle: { ...typography.h3, color: "#fff", marginBottom: spacing.md, lineHeight: 24 },
   heroCtaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   heroCta: {
     flexDirection: "row",
@@ -312,6 +322,18 @@ const styles = StyleSheet.create({
   },
   heroCtaText: { ...typography.small, color: "#fff", fontWeight: "700" },
   heroSub: { ...typography.small, color: "rgba(255,255,255,0.8)" },
+
+  // Past years
+  pastCard: {
+    width: 128,
+    height: 160,
+    borderRadius: radius.lg,
+    overflow: "hidden",
+    backgroundColor: colors.bg.surface,
+  },
+  pastCardMeta: { position: "absolute", left: 10, right: 10, bottom: 10 },
+  pastCardYear: { ...typography.small, color: "#fff", fontWeight: "700" },
+  pastCardPlace: { ...typography.tiny, color: "rgba(255,255,255,0.8)", marginTop: 2 },
 
   // Timeline
   timelineList: {
@@ -336,8 +358,8 @@ const styles = StyleSheet.create({
 
   // Stories
   storyCard: {
-    width: 200,
-    height: 250,
+    width: 196,
+    height: 246,
     borderRadius: radius.xl,
     overflow: "hidden",
     backgroundColor: colors.bg.surface,
@@ -392,35 +414,16 @@ const styles = StyleSheet.create({
   placeName: { ...typography.title, color: "#fff" },
   placeSub: { ...typography.tiny, color: "rgba(255,255,255,0.8)", marginTop: 2 },
 
-  // Rediscover
-  rediscoverCard: {
-    width: 160,
-    height: 200,
-    borderRadius: radius.lg,
-    overflow: "hidden",
-    backgroundColor: colors.bg.surface,
-  },
-  rediscoverMeta: { position: "absolute", left: 12, right: 12, bottom: 12 },
-  aiTag: {
+  footerRow: {
+    marginTop: spacing.xxl,
+    paddingHorizontal: spacing.lg,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: "rgba(236,72,153,0.85)",
-    marginBottom: 6,
+    gap: 6,
+    justifyContent: "center",
   },
-  aiTagText: { ...typography.tiny, color: "#fff", fontWeight: "700" },
-  rediscoverTitle: { ...typography.small, color: "#fff", fontWeight: "700" },
-  rediscoverSub: { ...typography.tiny, color: "rgba(255,255,255,0.8)", marginTop: 2 },
-
   footerNote: {
-    marginTop: spacing.xl,
     ...typography.tiny,
     color: colors.text.muted,
-    textAlign: "center",
-    marginHorizontal: spacing.lg,
   },
 });

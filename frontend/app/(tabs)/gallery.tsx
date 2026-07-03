@@ -37,14 +37,17 @@ export default function GalleryScreen() {
     let list = demoPhotos;
     if (activeFilter === "Favorites") list = list.filter((p) => p.favorite);
     if (activeFilter === "Videos") list = list.filter((p) => p.isVideo);
-    if (activeFilter === "Screenshots") list = [];
+    if (activeFilter === "People") list = list.filter((p) => (p.people ?? []).length > 0);
+    if (activeFilter === "Places") list = list.filter((p) => p.place && p.place !== "Home");
+    if (activeFilter === "Events") list = list.filter((p) => (p.people ?? []).length >= 2);
     if (query.trim()) {
       const q = query.toLowerCase();
       list = list.filter(
         (p) =>
           p.label.toLowerCase().includes(q) ||
           p.place.toLowerCase().includes(q) ||
-          p.date.toLowerCase().includes(q),
+          p.date.toLowerCase().includes(q) ||
+          (p.people ?? []).some((n) => n.toLowerCase().includes(q)),
       );
     }
     return list;
@@ -94,7 +97,7 @@ export default function GalleryScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search by place, date, or moment"
+            placeholder="Search by moment, person, place, or date"
             placeholderTextColor={colors.text.muted}
             style={styles.searchInput}
             returnKeyType="search"
@@ -170,9 +173,9 @@ export default function GalleryScreen() {
             <View style={styles.emptyIcon}>
               <Ionicons name="images-outline" size={28} color={colors.text.secondary} />
             </View>
-            <Text style={styles.emptyTitle}>No matches</Text>
+            <Text style={styles.emptyTitle}>Nothing here yet</Text>
             <Text style={styles.emptyBody}>
-              Try a different search or clear the filter to see all memories.
+              Try a different search, or clear the filter to see all your moments.
             </Text>
           </View>
         }
