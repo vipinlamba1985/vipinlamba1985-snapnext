@@ -70,15 +70,19 @@ export default function Settings() {
     finally { setResending(false); }
   }
 
-  async function setDeveloperPlan(plan) {
+  async function updateDeveloperProfile(patch) {
     try {
-      const next = await apiFetch('/dev/effective-plan', { method: 'POST', body: JSON.stringify({ plan }) });
+      const next = await apiFetch('/dev/effective-plan', { method: 'POST', body: JSON.stringify(patch) });
       setDevPlan(next);
-      toast.success(`Developer Test Mode: ${next.effectivePlanName}`);
+      toast.success('Developer Test Mode updated');
       window.location.reload();
     } catch (e) {
-      toast.error(e?.message || 'Failed to set developer plan');
+      toast.error(e?.message || 'Failed to update developer mode');
     }
+  }
+
+  async function setDeveloperPlan(plan) {
+    return updateDeveloperProfile({ experience: plan });
   }
 
   async function clearDeveloperPlan() {
@@ -93,7 +97,10 @@ export default function Settings() {
   }
 
   const entitlement = entitlementForUser(user);
-  const isSuper = entitlement.isSuper;
+  const isSuper = devPlan?.effectivePlan ? devPlan.effectivePlan === 'super_user' : entitlement.isSuper;
+  const profile = devPlan?.developerProfile || {};
+
+  const optionClass = (active) => `rounded-full border px-3 py-2 text-xs font-semibold ${active ? 'border-white bg-white text-black' : 'border-white/10 bg-white/5 text-white/75 hover:bg-white/10'}`;
 
   return (
     <div className="space-y-6">
@@ -110,6 +117,11 @@ export default function Settings() {
             <div className="font-medium">{user?.name}</div>
             <div className="text-sm text-white/60">{user?.email}</div>
             <div className="text-xs mt-1 inline-flex items-center gap-1 text-white/60">
+              {isSuper ? <><Crown className="h-3 w-3 text-amber-400"/> {devPlan?.overrideActive ? `Testing as ${devPlan.effectivePlanName}` : entitlement.badge}</> : (devPlan?.overrideActive ? `Testing as ${devPlan.effectivePlanName}` : entitlement.badge)}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {devPlan && (
         <section className="rounded-2xl border border-amber-400/25 bg-amber-500/10 p-5">
@@ -119,42 +131,92 @@ export default function Settings() {
               <div className="mt-2 grid gap-1 text-xs text-amber-100/75">
                 <span>Real Account: <b className="text-amber-50">{devPlan.realAccount}</b></span>
                 <span>Current Experience: <b className="text-amber-50">{devPlan.effectivePlanName}</b></span>
+                <span>Persona: <b className="text-amber-50 capitalize">{(profile.persona || 'active_user').replaceAll('_', ' ')}</b></span>
               </div>
             </div>
-            {devPlan.overrideActive && (
-              <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-100">Override active</span>
-            )}
+            {devPlan.overrideActive && <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-100">Override active</span>}
           </div>
+
+          <div className="mt-5 space-y-5 text-sm">
+            <fieldset>
+              <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-100/80">Experience</legend>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['free', 'Free User'], ['plus', 'Plus User'], ['pro', 'Pro User'], ['family', 'Family User'], ['super_user', 'Super User'],
+                ].map(([value, label]) => (
+                  <label key={value} className={optionClass(devPlan.effectivePlan === value)}>
+                    <input className="sr-only" type="radio" checked={devPlan.effectivePlan === value} onChange={() => setDeveloperPlan(value)} /> {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-100/80">Persona</legend>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['new_user', 'New User'], ['active_user', 'Active User'], ['creator', 'Creator'], ['family_member', 'Family Member'], ['photographer', 'Photographer'], ['business_user', 'Business User'], ['content_creator', 'Content Creator'], ['memory_collector', 'Memory Collector'], ['power_user', 'Power User'],
+                ].map(([value, label]) => (
+                  <label key={value} className={optionClass(profile.persona === value)}>
+                    <input className="sr-only" type="radio" checked={profile.persona === value} onChange={() => updateDeveloperProfile({ persona: value })} /> {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-100/80">Storage</legend>
+              <div className="flex flex-wrap gap-2">
+                {[[ 'empty', 'Empty' ], [ '5gb', '5 GB' ], [ '100gb', '100 GB' ], [ '1tb', '1 TB' ]].map(([value, label]) => (
+                  <label key={value} className={optionClass(profile.storage === value)}>
+                    <input className="sr-only" type="radio" checked={profile.storage === value} onChange={() => updateDeveloperProfile({ storage: value })} /> {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-100/80">AI Credits</legend>
+              <div className="flex flex-wrap gap-2">
+                {[[ 'low', 'Low' ], [ 'half', 'Half' ], [ 'full', 'Full' ], [ 'unlimited', 'Unlimited' ]].map(([value, label]) => (
+                  <label key={value} className={optionClass(profile.aiCredits === value)}>
+                    <input className="sr-only" type="radio" checked={profile.aiCredits === value} onChange={() => updateDeveloperProfile({ aiCredits: value })} /> {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-100/80">Notifications</legend>
+              <div className="flex flex-wrap gap-2">
+                {[[ 'none', 'None' ], [ 'normal', 'Normal' ], [ 'heavy', 'Heavy' ]].map(([value, label]) => (
+                  <label key={value} className={optionClass(profile.notifications === value)}>
+                    <input className="sr-only" type="radio" checked={profile.notifications === value} onChange={() => updateDeveloperProfile({ notifications: value })} /> {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-100/80">Feature Flags</legend>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {[
+                  ['aiStudio', 'AI Studio'], ['aiVideo', 'AI Video'], ['aiMemory', 'AI Memory'], ['aiCommand', 'AI Command'], ['premiumBackup', 'Premium Backup'], ['favorites', 'Favorites'], ['community', 'Community'],
+                ].map(([flag, label]) => (
+                  <label key={flag} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80">
+                    <input type="checkbox" checked={profile.featureFlags?.[flag] !== false} onChange={(e) => updateDeveloperProfile({ featureFlags: { [flag]: e.target.checked } })} /> {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          </div>
+
           <div className="mt-4 flex flex-wrap gap-2">
-            {[
-              ['free', 'Test as Free'],
-              ['plus', 'Test as Plus'],
-              ['pro', 'Test as Pro'],
-              ['family', 'Test as Family'],
-              ['super_user', 'Return to Super User'],
-            ].map(([plan, label]) => (
-              <button
-                key={plan}
-                type="button"
-                onClick={() => setDeveloperPlan(plan)}
-                className={`rounded-full px-4 py-2 text-xs font-bold transition ${devPlan.effectivePlan === plan ? 'bg-white text-black' : 'bg-white/10 text-white hover:bg-white/15'}`}
-              >
-                {label}
-              </button>
-            ))}
-            {devPlan.overrideActive && (
-              <button type="button" onClick={clearDeveloperPlan} className="rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white/80 hover:bg-white/10">Return to Real Account</button>
-            )}
+            {devPlan.overrideActive && <button type="button" onClick={clearDeveloperPlan} className="rounded-full border border-white/15 px-4 py-2 text-xs font-bold text-white/80 hover:bg-white/10">Return to Real Account</button>}
           </div>
-          <p className="mt-3 text-xs text-amber-100/65">Temporary session override only. Billing, Stripe, subscriptions, and your real plan are not changed.</p>
+          <p className="mt-3 text-xs text-amber-100/65">Temporary session profile only. Persona is stored/displayed for QA now. Billing, Stripe, subscriptions, uploaded media, and your real plan are not changed.</p>
         </section>
       )}
-
-              {isSuper ? <><Crown className="h-3 w-3 text-amber-400"/> {entitlement.badge}</> : entitlement.badge}
-            </div>
-          </div>
-        </div>
-      </section>
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
         <div className="text-sm font-medium mb-3 flex items-center gap-2"><Mail className="h-4 w-4 text-pink-300"/> Email verification</div>
@@ -208,6 +270,7 @@ export default function Settings() {
             <span>{usage.isSuper ? 'Unlimited' : formatBytes(usage.usage.bytes) + ' of ' + formatBytes(usage.plan.storageBytes)}</span>
             <span>{usage.usage.count} items</span>
           </div>
+          {usage.storageSimulated && <div className="mt-2 text-xs text-amber-200">Developer storage simulation active. Real uploaded data remains unchanged.</div>}
         </section>
       )}
 
@@ -216,31 +279,15 @@ export default function Settings() {
         <div className="flex gap-2 flex-wrap items-center">
           <button onClick={logout} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm"><LogOut className="h-4 w-4"/> Sign out</button>
           <Link href="/downloads" className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm">Export my data</Link>
-          
           {!confirmDelete ? (
-            <button 
-              onClick={() => setConfirmDelete(true)} 
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm hover:bg-rose-500/20 transition"
-            >
-              Delete account
-            </button>
+            <button onClick={() => setConfirmDelete(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-200 text-sm hover:bg-rose-500/20 transition">Delete account</button>
           ) : (
             <div className="flex items-center gap-2 bg-rose-950/30 border border-rose-500/30 rounded-2xl p-3 w-full sm:w-auto">
               <span className="text-xs text-rose-200 font-medium">Are you sure? This deletes ALL media files and data.</span>
-              <button 
-                onClick={handleDeleteAccount} 
-                disabled={deleting}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-60 transition"
-              >
+              <button onClick={handleDeleteAccount} disabled={deleting} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-60 transition">
                 {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : null} Yes, delete everything
               </button>
-              <button 
-                onClick={() => setConfirmDelete(false)} 
-                disabled={deleting}
-                className="px-3 py-1.5 rounded-full bg-white/10 text-white text-xs font-medium hover:bg-white/20 disabled:opacity-60 transition"
-              >
-                Cancel
-              </button>
+              <button onClick={() => setConfirmDelete(false)} disabled={deleting} className="px-3 py-1.5 rounded-full bg-white/10 text-white text-xs font-medium hover:bg-white/20 disabled:opacity-60 transition">Cancel</button>
             </div>
           )}
         </div>

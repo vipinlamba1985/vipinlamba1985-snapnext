@@ -157,7 +157,8 @@ function explainFailure(reason, message) {
     }
   }, [uploading]);
 
-  const isSuper = !!usage?.isSuper;
+  const isPremiumBackupEnabled = usage?.developerProfile?.featureFlags?.premiumBackup !== false;
+  const isSuper = !!usage?.isSuper && isPremiumBackupEnabled;
 
   // Helper to add files to the queue
   function addFilesToQueue(filesList) {

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest, syncSupabaseUserToAppUser } from '@/lib/auth';
 import { supabaseServer, supabaseAdmin, isSupabaseConfigured, hasSupabaseServiceRole } from '@/lib/supabase';
-import { PLANS, effectivePlan, isSuperUser } from '@/lib/entitlements';
+import { PLANS, applyStorageSimulation, effectivePlan, entitlementForUser, isSuperUser } from '@/lib/entitlements';
 import { storage } from '@/lib/storage';
 import { analyzeImage, analyzeVideo, transcribeAudio } from '@/lib/gemini';
 import { runAiTask, getAiEntitlement, getAiUsageSummary, preflightAiRequest } from '@/lib/ai-router';
@@ -298,7 +298,8 @@ async function handle(request, ctx) {
       const user = await requireUser(request);
       if (!user) return json({ error: 'Unauthorized' }, 401);
       const plan = effectivePlan(user, request);
-      const usage = await getStorageUsage(db, user.id);
+      const usage = applyStorageSimulation(await getStorageUsage(db, user.id), request);
+      const devEntitlement = entitlementForUser(user, request);
       const aiUsed = await getAiUsageToday(db, user.id);
       return json({
         usage,
@@ -307,7 +308,11 @@ async function handle(request, ctx) {
         role: user.role || 'user',
         effectivePlan: plan.id,
         isSuper: plan.id === 'super_user',
+        developerProfile: devEntitlement.developerProfile || null,
+        storageSimulated: !!usage.simulated,
         aiUsedToday: aiUsed,
+
+
       });
     }
 

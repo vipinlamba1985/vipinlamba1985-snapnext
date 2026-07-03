@@ -6,7 +6,7 @@ import { Home, Upload, Image as ImageIcon, Heart, Sparkles, Send, Users, Message
 import { apiFetch, logout, getStoredUser, setStoredUser, getToken } from '@/lib/api-client';
 import BrandLogo from '@/components/BrandLogo';
 import { formatBytes } from '@/lib/utils';
-import { entitlementForUser } from '@/lib/entitlements';
+import { entitlementForUser, isFeatureEnabled } from '@/lib/entitlements';
 import { toast } from 'sonner';
 import NotificationBell from '@/components/NotificationBell';
 
@@ -14,17 +14,17 @@ const NAV = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/upload', label: 'Upload', icon: Upload },
   { href: '/gallery', label: 'Gallery', icon: ImageIcon },
-  { href: '/memories', label: 'Memories', icon: Heart },
+  { href: '/memories', label: 'Memories', icon: Heart, featureFlag: 'aiMemory' },
   { href: '/life-graph', label: 'Life Graph', icon: Network },
   { href: '/journal', label: 'Life Journal', icon: BookOpen },
   { href: '/health', label: 'Memory Health', icon: ShieldAlert },
   { href: '/imports', label: 'Cloud Sync', icon: RefreshCw },
-  { href: '/ai-studio', label: 'AI Studio', icon: Sparkles, superOnly: true },
-  { href: '/ai-video', label: 'AI Video', icon: Film, superOnly: true },
-  { href: '/ai-command', label: 'AI Command', icon: BrainCircuit, superOnly: true },
+  { href: '/ai-studio', label: 'AI Studio', icon: Sparkles, superOnly: true, featureFlag: 'aiStudio' },
+  { href: '/ai-video', label: 'AI Video', icon: Film, superOnly: true, featureFlag: 'aiVideo' },
+  { href: '/ai-command', label: 'AI Command', icon: BrainCircuit, superOnly: true, featureFlag: 'aiCommand' },
   { href: '/ready-to-post', label: 'Ready to Post', icon: Send },
-  { href: '/favorites', label: 'Favorites', icon: Users },
-  { href: '/community', label: 'Community', icon: Users, soon: true },
+  { href: '/favorites', label: 'Favorites', icon: Users, featureFlag: 'favorites' },
+  { href: '/community', label: 'Community', icon: Users, soon: true, featureFlag: 'community' },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/downloads', label: 'Downloads', icon: Download },
   { href: '/trash', label: 'Trash', icon: Trash2 },
@@ -38,8 +38,8 @@ const MOBILE_NAV = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/gallery', label: 'Gallery', icon: ImageIcon },
   { href: '/upload', label: 'Upload', icon: Upload },
-  { href: '/memories', label: 'Memories', icon: Heart },
-  { href: '/ai-studio', label: 'AI', icon: Sparkles, superOnly: true },
+  { href: '/memories', label: 'Memories', icon: Heart, featureFlag: 'aiMemory' },
+  { href: '/ai-studio', label: 'AI', icon: Sparkles, superOnly: true, featureFlag: 'aiStudio' },
 ];
 
 export default function AppShell({ children }) {
@@ -73,11 +73,15 @@ export default function AppShell({ children }) {
   const currentExperienceName = devPlan?.effectivePlanName || entitlement.plan.name;
   const currentBadge = devPlan?.overrideActive ? `Testing as ${currentExperienceName}` : entitlement.badge;
   const filteredNav = NAV.filter(n => {
+    if (n.featureFlag && devPlan?.developerProfile?.featureFlags?.[n.featureFlag] === false) return false;
     if (n.adminOnly) return realIsSuper;
     if (n.superOnly) return currentIsSuperExperience;
     return true;
   });
-  const filteredMobileNav = MOBILE_NAV.filter(n => !n.superOnly || currentIsSuperExperience);
+  const filteredMobileNav = MOBILE_NAV.filter(n => {
+    if (n.featureFlag && devPlan?.developerProfile?.featureFlags?.[n.featureFlag] === false) return false;
+    return !n.superOnly || currentIsSuperExperience;
+  });
 
   useEffect(() => {
     const blockedByAuth = isAdminAuthRoute && !realIsSuper;
@@ -208,7 +212,7 @@ export default function AppShell({ children }) {
 
             <div>
               <div className="font-semibold">Developer Test Mode Active</div>
-              <div className="text-xs text-amber-100/75">Current Experience: {currentExperienceName.toUpperCase()} · Real Account: Super User</div>
+              <div className="text-xs text-amber-100/75">Current Experience: {currentExperienceName.toUpperCase()} · Persona: {devPlan.developerProfile?.persona?.replaceAll('_', ' ') || 'active user'} · Real Account: Super User</div>
             </div>
             <button
               onClick={() => apiFetch('/dev/effective-plan', { method: 'DELETE' }).then(() => window.location.reload()).catch((e) => toast.error(e?.message || 'Failed to reset test mode'))}
