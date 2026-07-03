@@ -1,0 +1,184 @@
+{
+  "theme": {
+    "mode": "dark",
+    "archetype": "Luxury & Neon Accents (Hybrid)",
+    "description": "A premium, personal, calm yet delightful digital memory vault. Uses deep near-black surfaces with vibrant pink, cyan, and purple accents for AI moments, status, and CTAs. Mobile-first prototype design.",
+    "colors": {
+      "background": {
+        "base": "#0B0C10",
+        "surface": "#121318",
+        "elevated": "#1A1C23",
+        "overlay": "rgba(11, 12, 16, 0.8)"
+      },
+      "text": {
+        "primary": "#F8FAFC",
+        "secondary": "#94A3B8",
+        "muted": "#475569",
+        "inverse": "#020617"
+      },
+      "brand": {
+        "pink": "#EC4899",
+        "cyan": "#06B6D4",
+        "purple": "#8B5CF6",
+        "gradient_ai": "linear-gradient(135deg, #EC4899 0%, #8B5CF6 50%, #06B6D4 100%)"
+      },
+      "status": {
+        "success": "#10B981",
+        "warning": "#F59E0B",
+        "error": "#EF4444",
+        "info": "#3B82F6"
+      },
+      "border": {
+        "subtle": "rgba(255, 255, 255, 0.05)",
+        "default": "rgba(255, 255, 255, 0.1)"
+      }
+    },
+    "typography": {
+      "headings": {
+        "family": "Inter, sans-serif",
+        "weight": "600",
+        "tracking": "tracking-tight"
+      },
+      "body": {
+        "family": "Inter, sans-serif",
+        "weight": "400",
+        "tracking": "tracking-normal"
+      },
+      "sizes": {
+        "h1": "text-3xl sm:text-4xl",
+        "h2": "text-2xl sm:text-3xl",
+        "h3": "text-xl",
+        "body": "text-base",
+        "small": "text-sm",
+        "tiny": "text-xs"
+      }
+    },
+    "spacing": {
+      "container": "max-w-md mx-auto",
+      "page_padding": "px-4 py-6 pb-24",
+      "component_gap": "gap-4 sm:gap-6",
+      "safe_area": "pt-safe pb-safe"
+    },
+    "borders_and_shadows": {
+      "radius": {
+        "card": "rounded-2xl",
+        "button": "rounded-full",
+        "chip": "rounded-full",
+        "image": "rounded-xl"
+      },
+      "elevation": {
+        "none": "border border-white/5",
+        "sm": "border border-white/10 shadow-sm",
+        "lg": "border border-white/10 shadow-lg shadow-black/50 backdrop-blur-xl"
+      }
+    }
+  },
+  "layout_and_components": {
+    "app_shell": {
+      "wrapper_classes": "relative w-full min-h-[100dvh] bg-[#0B0C10] text-slate-50 font-sans overflow-x-hidden selection:bg-purple-500/30",
+      "mobile_container": "max-w-md mx-auto min-h-[100dvh] bg-[#0B0C10] relative shadow-2xl overflow-y-auto pb-20 no-scrollbar"
+    },
+    "bottom_navigation": {
+      "classes": "fixed bottom-0 left-0 right-0 z-50 bg-[#0B0C10]/80 backdrop-blur-xl border-t border-white/5 max-w-md mx-auto pb-safe",
+      "items": [
+        {"name": "Home", "icon": "House"},
+        {"name": "Gallery", "icon": "Images"},
+        {"name": "Upload", "icon": "Plus", "is_center": true, "classes": "bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 text-white rounded-full w-12 h-12 flex items-center justify-center -mt-6 border-4 border-[#0B0C10] shadow-lg"},
+        {"name": "Memories", "icon": "Clock"},
+        {"name": "AI", "icon": "Sparkles"}
+      ]
+    },
+    "cards": {
+      "base": "bg-[#121318] border border-white/5 rounded-2xl overflow-hidden",
+      "interactive": "hover:border-white/10 transition-colors active:scale-[0.98]",
+      "ai_highlight": "relative before:absolute before:inset-0 before:bg-gradient-to-r before:from-pink-500/10 before:via-purple-500/10 before:to-cyan-500/10 before:opacity-50"
+    },
+    "buttons": {
+      "primary": "bg-white text-black font-medium rounded-full px-6 py-3 active:scale-95 transition-transform",
+      "secondary": "bg-white/10 text-white font-medium rounded-full px-6 py-3 active:scale-95 transition-transform hover:bg-white/15",
+      "ai_action": "bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 text-white font-medium rounded-full px-6 py-3 active:scale-95 transition-transform"
+    },
+    "glassmorphism": {
+      "header": "sticky top-0 z-40 bg-[#0B0C10]/70 backdrop-blur-xl border-b border-white/5 pt-safe"
+    }
+  },
+  "views_structure": {
+    "Home": {
+      "sections": [
+        "Compact Greeting Header (Avatar + 'Good morning, Alex')",
+        "Primary AI Smart Action ('3 new memories ready to rediscover')",
+        "Today in Your Life Card (On This Day)",
+        "AI Insight Card",
+        "Continue Your Story Row (Horizontal scroll)",
+        "Compact Recent Memories Grid",
+        "Quick Capture Entry"
+      ]
+    },
+    "Gallery": {
+      "features": [
+        "2-column mobile grid layout (gap-2)",
+        "Minimal metadata (only essential icons like video duration)",
+        "Sticky filter chips (All, Favorites, Videos, Screenshots)",
+        "Multi-select mode capability"
+      ]
+    },
+    "Memories": {
+      "hierarchy": [
+        "On This Day Hero",
+        "Timeline",
+        "Stories",
+        "People (Avatars grid)",
+        "Places & Trips (Map/place cards)"
+      ]
+    },
+    "AI": {
+      "tabs": ["Ask", "Understand", "Create", "Organize"],
+      "layout": "Tabbed interface with example prompt chips and conversational UI cards."
+    },
+    "Upload": {
+      "states": ["Selected", "Preparing", "Uploading", "Completed", "Skipped", "Failed"],
+      "primary_action": "Back up everything",
+      "secondary_action": "Pick specific"
+    }
+  },
+  "testing": {
+    "data_attributes": [
+      "All interactive elements MUST have data-testid attributes.",
+      "Format: kebab-case, role-based. Example: data-testid='home-tab-button'"
+    ]
+  },
+  "media": {
+    "instructions": "Main agent MUST use these precise URLs for mock data placeholders. Do NOT use placeholder text or dummy services like via.placeholder.com.",
+    "images": {
+      "avatar": {
+        "url": "https://images.pexels.com/photos/20157010/pexels-photo-20157010.jpeg",
+        "description": "User profile avatar"
+      },
+      "memory_family": {
+        "url": "https://images.pexels.com/photos/38065247/pexels-photo-38065247.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Family vacation sunset beach memory"
+      },
+      "memory_city": {
+        "url": "https://images.unsplash.com/photo-1611416457332-946853cc75d6",
+        "description": "Urban architecture night city memory"
+      },
+      "memory_friends": {
+        "url": "https://images.unsplash.com/photo-1653762381632-2945469edb7b",
+        "description": "Friends laughing cafe memory"
+      },
+      "memory_pet": {
+        "url": "https://images.unsplash.com/photo-1597046835715-16f81ac132c0",
+        "description": "Dog playing in park memory"
+      }
+    }
+  },
+  "instructions_to_main_agent": [
+    "Build a mobile UI prototype strictly for the web using max-w-md and mx-auto container sizes.",
+    "Apply DEMO DATA labels discreetly but visibly to indicate the mock status.",
+    "Use Phosphor Icons or Lucide Icons for clean, consistent mobile iconography.",
+    "Implement bottom-sheet style overlays for detail views instead of full page navigations to simulate mobile gestures.",
+    "No horizontal scroll overflow on the body (overflow-x-hidden).",
+    "Ensure all tap targets (buttons, links, icons) are at least 44x44 pixels for mobile accessibility.",
+    "Use standard React / Tailwind CSS in .js files as constrained by the environment."
+  ]
+}
