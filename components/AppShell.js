@@ -6,7 +6,8 @@ import { Home, Upload, Image as ImageIcon, Heart, Sparkles, Send, Users, Message
 import { apiFetch, logout, getStoredUser, setStoredUser, getToken } from '@/lib/api-client';
 import BrandLogo from '@/components/BrandLogo';
 import { formatBytes } from '@/lib/utils';
-import { entitlementForUser, isFeatureEnabled } from '@/lib/entitlements';
+import { entitlementForUser } from '@/lib/entitlements';
+import { canUseAiFeature } from '@/lib/plans';
 import { toast } from 'sonner';
 import NotificationBell from '@/components/NotificationBell';
 
@@ -19,9 +20,9 @@ const NAV = [
   { href: '/journal', label: 'Life Journal', icon: BookOpen },
   { href: '/health', label: 'Memory Health', icon: ShieldAlert },
   { href: '/imports', label: 'Cloud Sync', icon: RefreshCw },
-  { href: '/ai-studio', label: 'AI Studio', icon: Sparkles, superOnly: true, featureFlag: 'aiStudio' },
-  { href: '/ai-video', label: 'AI Video', icon: Film, superOnly: true, featureFlag: 'aiVideo' },
-  { href: '/ai-command', label: 'AI Command', icon: BrainCircuit, superOnly: true, featureFlag: 'aiCommand' },
+  { href: '/ai-studio', label: 'AI Studio', icon: Sparkles, aiCapability: 'studio', featureFlag: 'aiStudio' },
+  { href: '/ai-video', label: 'AI Video', icon: Film, aiCapability: 'video', featureFlag: 'aiVideo' },
+  { href: '/ai-command', label: 'AI Command', icon: BrainCircuit, adminOnly: true, featureFlag: 'aiCommand' },
   { href: '/ready-to-post', label: 'Ready to Post', icon: Send },
   { href: '/favorites', label: 'Favorites', icon: Users, featureFlag: 'favorites' },
   { href: '/community', label: 'Community', icon: Users, soon: true, featureFlag: 'community' },
@@ -64,42 +65,39 @@ export default function AppShell({ children }) {
 
   const activeRoute = NAV.find(item => pathname === item.href || pathname.startsWith(`${item.href}/`));
   const isAdminAuthRoute = !!activeRoute?.adminOnly;
-  const isSuperExperienceRoute = !!activeRoute?.superOnly;
-  const isAdminRoute = isAdminAuthRoute || isSuperExperienceRoute;
   const entitlement = entitlementForUser(user);
   const realIsSuper = entitlement.realIsSuper;
   const effectivePlanId = devPlan?.effectivePlan || entitlement.planId;
   const currentIsSuperExperience = effectivePlanId === 'super_user';
   const currentExperienceName = devPlan?.effectivePlanName || entitlement.plan.name;
   const currentBadge = devPlan?.overrideActive ? `Testing as ${currentExperienceName}` : entitlement.badge;
+  const routeCapabilityAllowed = !activeRoute?.aiCapability || canUseAiFeature(effectivePlanId, activeRoute.aiCapability);
   const filteredNav = NAV.filter(n => {
     if (n.featureFlag && devPlan?.developerProfile?.featureFlags?.[n.featureFlag] === false) return false;
     if (n.adminOnly) return realIsSuper;
-    if (n.superOnly) return currentIsSuperExperience;
+    if (n.aiCapability) return canUseAiFeature(effectivePlanId, n.aiCapability);
     return true;
   });
   const filteredMobileNav = MOBILE_NAV.filter(n => {
     if (n.featureFlag && devPlan?.developerProfile?.featureFlags?.[n.featureFlag] === false) return false;
-    return !n.superOnly || currentIsSuperExperience;
+    return true;
   });
 
   useEffect(() => {
     const blockedByAuth = isAdminAuthRoute && !realIsSuper;
-    const blockedByExperience = isSuperExperienceRoute && devReady && !currentIsSuperExperience;
-    if (ready && (blockedByAuth || blockedByExperience)) {
-      router.replace('/dashboard');
-    }
-  }, [ready, isAdminAuthRoute, isSuperExperienceRoute, realIsSuper, currentIsSuperExperience, devReady, router]);
+    const blockedByPlan = devReady && !routeCapabilityAllowed;
+    if (ready && (blockedByAuth || blockedByPlan)) router.replace('/billing');
+  }, [ready, isAdminAuthRoute, realIsSuper, routeCapabilityAllowed, devReady, router]);
 
-  const waitingForExperience = isSuperExperienceRoute && !devReady;
-  const blockedRoute = (isAdminAuthRoute && !realIsSuper) || (isSuperExperienceRoute && devReady && !currentIsSuperExperience);
+  const waitingForExperience = !!activeRoute?.aiCapability && !devReady;
+  const blockedRoute = (isAdminAuthRoute && !realIsSuper) || (devReady && !routeCapabilityAllowed);
   if (!ready || waitingForExperience || blockedRoute) {
     return (
       <div className="min-h-screen grid place-items-center text-white/50">
         <div className="text-center">
           <BrandLogo size={56} className="mx-auto mb-4" priority />
           <Loader2 className="mx-auto h-5 w-5 animate-spin text-pink-300" />
-          <div className="mt-3 text-sm">{isAdminRoute ? 'Checking Super User access…' : 'Loading…'}</div>
+          <div className="mt-3 text-sm">{blockedRoute ? 'Checking plan access…' : 'Loading…'}</div>
         </div>
       </div>
     );
@@ -137,121 +135,30 @@ export default function AppShell({ children }) {
 
   return (
     <div className="min-h-screen md:grid md:grid-cols-[260px_1fr]">
-      {/* Sidebar */}
       <aside className={`fixed md:static z-50 inset-y-0 left-0 w-72 md:w-auto bg-[#0b0414]/95 md:bg-white/[0.02] backdrop-blur border-r border-white/5 transform ${open ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform`}>
         <div className="p-5 flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <BrandLogo size={32} priority />
-            <span className="font-semibold">SnapNext AI</span>
-          </Link>
+          <Link href="/dashboard" className="flex items-center gap-2"><BrandLogo size={32} priority /><span className="font-semibold">SnapNext AI</span></Link>
           <button className="md:hidden" onClick={()=>setOpen(false)}><X className="h-5 w-5" /></button>
         </div>
-
-        {/* User card */}
         <div className="mx-3 mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-full grid place-items-center text-sm font-semibold" style={{ background: user?.avatarColor || '#a855f7' }}>{user?.name?.[0]?.toUpperCase() || 'U'}</div>
-            <div className="min-w-0">
-              <div className="text-sm font-medium truncate">{user?.name}</div>
-              <div className="text-xs text-white/50 flex items-center gap-1">
-                {devPlan?.overrideActive ? currentBadge : (currentIsSuperExperience ? <><Crown className="h-3 w-3 text-amber-400" /> {currentBadge}</> : currentBadge)}
-              </div>
-            </div>
+            <div className="min-w-0"><div className="text-sm font-medium truncate">{user?.name}</div><div className="text-xs text-white/50 flex items-center gap-1">{devPlan?.overrideActive ? currentBadge : (currentIsSuperExperience ? <><Crown className="h-3 w-3 text-amber-400" /> {currentBadge}</> : currentBadge)}</div></div>
           </div>
-          {!currentIsSuperExperience && usage && (
-            <div className="mt-3">
-              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-pink-500 to-purple-600" style={{ width: pct + '%' }} />
-              </div>
-              <div className="mt-1 text-[11px] text-white/50 flex justify-between">
-                <span>{formatBytes(usage.usage.bytes)} of {formatBytes(usage.plan.storageBytes)}</span>
-                <span>{pct}%</span>
-              </div>
-            </div>
-          )}
+          {!currentIsSuperExperience && usage && <div className="mt-3"><div className="h-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-gradient-to-r from-pink-500 to-purple-600" style={{ width: pct + '%' }} /></div><div className="mt-1 text-[11px] text-white/50 flex justify-between"><span>{formatBytes(usage.usage.bytes)} of {formatBytes(usage.plan.storageBytes)}</span><span>{pct}%</span></div></div>}
           {currentIsSuperExperience && <div className="mt-3 text-[11px] text-amber-300">Unlimited storage • Unlimited AI</div>}
         </div>
-
         <nav className="px-2 pb-24 space-y-0.5 overflow-y-auto max-h-[calc(100vh-200px)]">
-          {filteredNav.map(item => {
-            const Active = pathname === item.href;
-            const Icon = item.icon;
-            return (
-              <Link key={item.href} href={item.href} onClick={()=>setOpen(false)} className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-sm ${Active ? 'bg-gradient-to-r from-pink-500/20 to-purple-600/20 text-white border border-white/10' : 'text-white/70 hover:bg-white/5'}`}>
-                <span className="flex items-center gap-3"><Icon className="h-4 w-4" /> {item.label}</span>
-                {item.soon && <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">Soon</span>}
-              </Link>
-            );
-          })}
+          {filteredNav.map(item => { const Active = pathname === item.href; const Icon = item.icon; return <Link key={item.href} href={item.href} onClick={()=>setOpen(false)} className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-sm ${Active ? 'bg-gradient-to-r from-pink-500/20 to-purple-600/20 text-white border border-white/10' : 'text-white/70 hover:bg-white/5'}`}><span className="flex items-center gap-3"><Icon className="h-4 w-4" /> {item.label}</span>{item.soon && <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">Soon</span>}</Link>; })}
           <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-white/70 hover:bg-white/5"><LogOut className="h-4 w-4"/> Sign out</button>
         </nav>
       </aside>
-
-      {/* Main */}
       <div className="min-w-0">
-        {/* Mobile top bar */}
-        <header className="md:hidden sticky top-0 z-30 backdrop-blur bg-[#0b0414]/80 border-b border-white/5 px-4 h-14 flex items-center justify-between">
-          <button onClick={()=>setOpen(true)}><Menu className="h-5 w-5" /></button>
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <BrandLogo size={28} priority />
-            <span className="font-semibold text-sm">SnapNext AI</span>
-          </Link>
-          <NotificationBell />
-        </header>
-
-        {/* Desktop top-right bell */}
-        <div className="hidden md:flex items-center justify-end px-8 pt-4">
-          <NotificationBell />
-        </div>
-
-        {devPlan?.overrideActive && (
-          <div className="mx-4 md:mx-8 mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 flex flex-wrap items-center justify-between gap-3">
-              {usage?.plan?.storageBytes && usage?.usage?.bytes > usage.plan.storageBytes && (
-                <div className="mt-1 text-xs text-amber-50">Developer Test Mode: This account is over the selected plan limit because it contains real admin data.</div>
-              )}
-
-            <div>
-              <div className="font-semibold">Developer Test Mode Active</div>
-              <div className="text-xs text-amber-100/75">Current Experience: {currentExperienceName.toUpperCase()} · Persona: {devPlan.developerProfile?.persona?.replaceAll('_', ' ') || 'active user'} · Real Account: Super User</div>
-            </div>
-            <button
-              onClick={() => apiFetch('/dev/effective-plan', { method: 'DELETE' }).then(() => window.location.reload()).catch((e) => toast.error(e?.message || 'Failed to reset test mode'))}
-              className="rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-amber-100"
-            >
-              Return to Real Account
-            </button>
-          </div>
-        )}
-
-
-        <main className="px-4 md:px-8 py-6 md:py-8 pb-36 md:pb-10 max-w-6xl">
-          <VerifyBanner user={user} onVerified={() => {
-            apiFetch('/auth/me').then(({ user }) => { setUser(user); setStoredUser(user); }).catch(() => {});
-          }} />
-          {children}
-        </main>
-
-        {/* Mobile bottom nav */}
-        <nav className="md:hidden fixed bottom-3 left-3 right-3 z-40 pb-[env(safe-area-inset-bottom)]">
-          <div className="grid grid-cols-5 items-center rounded-[2rem] border border-white/10 bg-[#0b0414]/85 p-2 shadow-2xl shadow-black/50 backdrop-blur-2xl">
-            {filteredMobileNav.map(item => {
-              const Active = pathname === item.href;
-              const Icon = item.icon;
-              const isUpload = item.href === '/upload';
-              return (
-                <Link key={item.href} href={item.href} className="relative flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[10px] font-semibold transition active:scale-95">
-                  {isUpload ? (
-                    <div className="grid h-12 w-12 -mt-8 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 shadow-2xl shadow-pink-500/40 ring-4 ring-[#0b0414]/90"><Upload className="h-5 w-5 text-white" /></div>
-                  ) : (
-                    <Icon className={`h-5 w-5 transition ${Active ? 'text-pink-300 drop-shadow-[0_0_10px_rgba(236,72,153,0.65)]' : 'text-white/55'}`} />
-                  )}
-                  {Active && !isUpload && <span className="absolute inset-x-3 top-1 h-8 rounded-2xl bg-white/[0.07] -z-10" />}
-                  <span className={Active ? 'text-white' : 'text-white/55'}>{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
+        <header className="md:hidden sticky top-0 z-30 backdrop-blur bg-[#0b0414]/80 border-b border-white/5 px-4 h-14 flex items-center justify-between"><button onClick={()=>setOpen(true)}><Menu className="h-5 w-5" /></button><Link href="/dashboard" className="flex items-center gap-2"><BrandLogo size={28} priority /><span className="font-semibold text-sm">SnapNext AI</span></Link><NotificationBell /></header>
+        <div className="hidden md:flex items-center justify-end px-8 pt-4"><NotificationBell /></div>
+        {devPlan?.overrideActive && <div className="mx-4 md:mx-8 mt-4 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 flex flex-wrap items-center justify-between gap-3"><div><div className="font-semibold">Developer Test Mode Active</div><div className="text-xs text-amber-100/75">Current Experience: {currentExperienceName.toUpperCase()} · Persona: {devPlan.developerProfile?.persona?.replaceAll('_', ' ') || 'active user'} · Real Account: Super User</div></div><button onClick={() => apiFetch('/dev/effective-plan', { method: 'DELETE' }).then(() => window.location.reload()).catch((e) => toast.error(e?.message || 'Failed to reset test mode'))} className="rounded-full bg-white px-4 py-2 text-xs font-bold text-black hover:bg-amber-100">Return to Real Account</button></div>}
+        <main className="px-4 md:px-8 py-6 md:py-8 pb-36 md:pb-10 max-w-6xl"><VerifyBanner user={user} onVerified={() => { apiFetch('/auth/me').then(({ user }) => { setUser(user); setStoredUser(user); }).catch(() => {}); }} />{children}</main>
+        <nav className="md:hidden fixed bottom-3 left-3 right-3 z-40 pb-[env(safe-area-inset-bottom)]"><div className="grid grid-cols-5 items-center rounded-[2rem] border border-white/10 bg-[#0b0414]/85 p-2 shadow-2xl shadow-black/50 backdrop-blur-2xl">{filteredMobileNav.map(item => { const Active = pathname === item.href; const Icon = item.icon; const isUpload = item.href === '/upload'; return <Link key={item.href} href={item.href} className="relative flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[10px] font-semibold transition active:scale-95">{isUpload ? <div className="grid h-12 w-12 -mt-8 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 shadow-2xl shadow-pink-500/40 ring-4 ring-[#0b0414]/90"><Upload className="h-5 w-5 text-white" /></div> : <Icon className={`h-5 w-5 transition ${Active ? 'text-pink-300 drop-shadow-[0_0_10px_rgba(236,72,153,0.65)]' : 'text-white/55'}`} />}{Active && !isUpload && <span className="absolute inset-x-3 top-1 h-8 rounded-2xl bg-white/[0.07] -z-10" />}<span className={Active ? 'text-white' : 'text-white/55'}>{item.label}</span></Link>; })}</div></nav>
       </div>
     </div>
   );
