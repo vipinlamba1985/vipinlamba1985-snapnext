@@ -39,7 +39,7 @@ const MOBILE_NAV = [
   { href: '/gallery', label: 'Gallery', icon: ImageIcon },
   { href: '/upload', label: 'Upload', icon: Upload },
   { href: '/memories', label: 'Memories', icon: Heart, featureFlag: 'aiMemory' },
-  { href: '/ai-studio', label: 'AI', icon: Sparkles, superOnly: true, featureFlag: 'aiStudio' },
+  { href: '/chat', label: 'AI', icon: Sparkles },
 ];
 
 export default function AppShell({ children }) {
