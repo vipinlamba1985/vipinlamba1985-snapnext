@@ -16,7 +16,7 @@ import requests
 import json
 import sys
 
-BASE_URL = "https://aios-preview.preview.emergentagent.com/api"
+BASE_URL = "https://snapnext-memory.preview.emergentagent.com/api"
 
 # Test results storage
 results = {

@@ -9,7 +9,7 @@ Fix: id/_id no longer in $set, id only in $setOnInsert
 import requests
 import json
 
-BASE_URL = "https://aios-preview.preview.emergentagent.com/api"
+BASE_URL = "https://snapnext-memory.preview.emergentagent.com/api"
 
 print("=" * 80)
 print("MongoDB Auth Upsert Bug Fix Test")

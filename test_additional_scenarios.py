@@ -9,7 +9,7 @@ import json
 import os
 from io import BytesIO
 
-BASE_URL = os.getenv("NEXT_PUBLIC_BASE_URL", "https://aios-preview.preview.emergentagent.com")
+BASE_URL = os.getenv("NEXT_PUBLIC_BASE_URL", "https://snapnext-memory.preview.emergentagent.com")
 API_URL = f"{BASE_URL}/api"
 PREVIEW_TOKEN = "preview-demo-token"
 
