@@ -3,7 +3,25 @@ export const dynamic = 'force-dynamic';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { createVideoGenerationPlan, getVideoProviderAvailability, submitVideoGenerationJob } from '@/lib/ai-video-adapters';
-import { isFeatureEnabled } from '@/lib/entitlements';
+import { getEffectivePlan, isFeatureEnabled } from '@/lib/entitlements';
+import { canUseAiFeature } from '@/lib/plans';
+
+function videoAccess(user, request) {
+  const planId = getEffectivePlan(user, request);
+  return { planId, allowed: canUseAiFeature(planId, 'video') };
+}
+
+function upgradeRequired(planId) {
+  return Response.json({
+    error: {
+      code: 'upgrade_required',
+      message: 'AI Video is available on Pro and Family plans.',
+      currentPlan: planId,
+      requiredPlan: 'pro',
+      upgradePath: '/billing',
+    },
+  }, { status: 403 });
+}
 
 export async function GET(request) {
   const user = await getUserFromRequest(request);
@@ -13,7 +31,9 @@ export async function GET(request) {
   if (!isFeatureEnabled('aiVideo', request)) {
     return Response.json({ error: { code: 'feature_disabled', message: 'AI Video is disabled in Developer Test Mode.' } }, { status: 403 });
   }
-  return Response.json({ ok: true, providers: getVideoProviderAvailability() });
+  const access = videoAccess(user, request);
+  if (!access.allowed) return upgradeRequired(access.planId);
+  return Response.json({ ok: true, providers: getVideoProviderAvailability(), plan: access.planId });
 }
 
 export async function POST(request) {
@@ -26,6 +46,9 @@ export async function POST(request) {
   if (!isFeatureEnabled('aiVideo', request)) {
     return Response.json({ error: { code: 'feature_disabled', message: 'AI Video is disabled in Developer Test Mode.' } }, { status: 403 });
   }
+  const access = videoAccess(user, request);
+  if (!access.allowed) return upgradeRequired(access.planId);
+
   const task = typeof body.task === 'string' ? body.task.trim() : '';
   if (!task) {
     return Response.json({ error: { code: 'invalid_prompt', message: 'Video task prompt is required.' } }, { status: 400 });
