@@ -25,6 +25,12 @@ const PROTECTED_PREFIXES = [
   '/support',
 ];
 
+// Preview/demo authentication is a development-only convenience.
+// It must NEVER authenticate anyone in production.
+function previewAuthAllowed() {
+  return process.env.NODE_ENV !== 'production' && process.env.VERCEL_ENV !== 'production';
+}
+
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -35,14 +41,17 @@ export async function middleware(request) {
   const cookieToken = request.cookies.get('sb-access-token')?.value || null;
   const token = bearer || cookieToken;
 
-  if (token === 'preview-demo-token') return NextResponse.next();
-
-  if (token && supabaseServer) {
+  if (token === 'preview-demo-token') {
+    // Strictly non-production. In production this token is rejected and the
+    // request falls through to the login redirect below (fail closed).
+    if (previewAuthAllowed()) return NextResponse.next();
+  } else if (token && supabaseServer) {
     try {
       const { data, error } = await supabaseServer.auth.getUser(token);
       if (data?.user && !error) return NextResponse.next();
     } catch {
-      return NextResponse.next();
+      // Fail closed: if Supabase verification throws or cannot verify the
+      // session, we must NOT allow access to a protected page.
     }
   }
 

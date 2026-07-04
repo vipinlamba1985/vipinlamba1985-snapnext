@@ -9,24 +9,42 @@ export default function DemoLoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const demoUser = {
-      id: 'preview-super-user',
-      name: 'Vipin Lamba',
-      email: 'vipin.lamba1985@gmail.com',
-      role: 'admin',
-      plan: 'admin',
-      storageUsed: 0,
-      storageLimit: 10240,
-      isPreview: true,
-    };
+    let cancelled = false;
+    (async () => {
+      try {
+        // Preview sessions are strictly non-production. The server decides.
+        const res = await fetch('/api/auth/config');
+        const cfg = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!cfg?.previewAllowed) {
+          router.replace('/login');
+          return;
+        }
 
-    localStorage.setItem('snapnext_token', 'preview-demo-token');
-    localStorage.setItem('snapnext_user', JSON.stringify(demoUser));
-    localStorage.setItem('snapnext_access_token', 'preview-demo-token');
-    localStorage.setItem('snapnext_profile', JSON.stringify(demoUser));
+        const demoUser = {
+          id: 'preview-super-user',
+          name: 'Vipin Lamba',
+          email: 'vipin.lamba1985@gmail.com',
+          role: 'admin',
+          plan: 'admin',
+          storageUsed: 0,
+          storageLimit: 10240,
+          isPreview: true,
+        };
 
-    const next = new URLSearchParams(window.location.search).get('next') || '/dashboard';
-    router.replace(next);
+        localStorage.setItem('snapnext_token', 'preview-demo-token');
+        localStorage.setItem('snapnext_user', JSON.stringify(demoUser));
+        localStorage.setItem('snapnext_access_token', 'preview-demo-token');
+        localStorage.setItem('snapnext_profile', JSON.stringify(demoUser));
+        document.cookie = 'sb-access-token=preview-demo-token; path=/; max-age=86400; SameSite=Lax';
+
+        const next = new URLSearchParams(window.location.search).get('next') || '/dashboard';
+        router.replace(next);
+      } catch {
+        if (!cancelled) router.replace('/login');
+      }
+    })();
+    return () => { cancelled = true; };
   }, [router]);
 
   return (

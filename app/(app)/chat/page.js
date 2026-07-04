@@ -14,7 +14,7 @@ export default function ChatPage() {
     {
       id: 'welcome',
       role: 'assistant',
-      text: "Hello! I am your central SnapNext AI Memory Brain. I continuously learn from your library to organize, understand, and bring your digital legacy to life.\n\nAsk me anything! Try saying:\n· \"Show beach photos from Goa\"\n· \"Find pictures with mom and dad\"\n· \"Create a story from our vacation\"\n· \"Show all memories from 2024\"",
+      text: "Hello! I'm SnapNext AI. I help you search, organize, and understand the photos and videos you've saved — always grounded in your real library.\n\nAsk me anything! Try saying:\n· \"Show my beach photos\"\n· \"Find my favorite memories\"\n· \"Create a story from my recent uploads\"\n· \"What did I save last month?\"",
       createdAt: new Date()
     }
   ]);
@@ -290,10 +290,10 @@ export default function ChatPage() {
       {messages.length === 1 && (
         <div className="px-6 py-3 bg-white/[0.01] border-t border-white/5 flex gap-2 overflow-x-auto select-none no-scrollbar">
           {[
-            "Show Goa photos",
-            "Beach pictures with Sarika",
-            "Create a Dubai story",
-            "Show memories from 2024"
+            "Show my beach photos",
+            "Find my favorite memories",
+            "Create a story from my uploads",
+            "What did I save last month?"
           ].map((item, idx) => (
             <button 
               key={idx} 

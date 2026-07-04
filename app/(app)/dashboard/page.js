@@ -356,7 +356,7 @@ export default function Dashboard() {
   const allTags = media.flatMap((m) => m.aiAnalysis?.tags || []).filter(Boolean);
   const uniqueTags = [...new Set(allTags.map((tag) => String(tag).toLowerCase()))];
   const faceSignals = media.flatMap((m) => m.aiAnalysis?.faces || []).filter(Boolean);
-  const placeSignals = uniqueTags.filter((tag) => ['goa', 'dubai', 'beach', 'travel', 'trip', 'vacation', 'wedding', 'birthday', 'family'].some((hint) => tag.includes(hint)));
+  const placeSignals = uniqueTags.filter((tag) => ['beach', 'travel', 'trip', 'vacation', 'wedding', 'birthday', 'family'].some((hint) => tag.includes(hint)));
   const storySignals = media.filter((m) => m.kind === 'text' || m.aiAnalysis?.caption || m.aiAnalysis?.description).length;
 
   const latestMemory = media[0];
@@ -395,9 +395,9 @@ export default function Dashboard() {
   const storyRows = [
     { title: 'Continue your stories', items: recentMedia.length ? recentMedia : media.slice(0, 4), empty: 'Your first story starts with one memory.' },
     { title: 'People you love', items: media.filter((m) => m.favorite).slice(0, 4), empty: 'Favorite people and moments will appear here.' },
-    { title: 'Trips & places', items: media.filter((m) => (m.aiAnalysis?.tags || []).some((tag) => String(tag).toLowerCase().match(/goa|dubai|trip|travel|beach|vacation|wedding|birthday|family/))).slice(0, 4), empty: 'Trips and places appear as AI learns your archive.' },
+    { title: 'Trips & places', items: media.filter((m) => (m.aiAnalysis?.tags || []).some((tag) => String(tag).toLowerCase().match(/trip|travel|beach|vacation|wedding|birthday|family/))).slice(0, 4), empty: 'Trips and places appear as AI learns your archive.' },
   ];
-  const searchSuggestions = ['Beach photos', 'Sarika', 'Dubai', 'Birthday', 'Goa', 'Family trip', 'Wedding'];
+  const searchSuggestions = ['Beach photos', 'Birthday', 'Family trip', 'Wedding', 'Videos', 'Favorites'];
 
 
   return (
@@ -423,7 +423,7 @@ export default function Dashboard() {
             <div className="relative max-w-2xl">
               <Search className="absolute left-4 top-3.5 h-5 w-5 text-pink-300" />
               <Input
-                placeholder="Ask your memory: beach photos, Sarika, Dubai trip..."
+                placeholder="Ask your memory: beach photos, birthdays, last summer..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-13 rounded-2xl border-white/10 bg-black/25 pl-12 pr-4 text-sm text-white shadow-inner shadow-black/30 placeholder:text-white/38 focus:border-pink-400/50"
@@ -643,7 +643,7 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2 w-full md:max-w-md">
                         <Tag className="h-3.5 w-3.5 text-white/40 shrink-0" />
                         <Input 
-                          placeholder="Tags (comma-separated, e.g. sarika, rain, sunset)"
+                          placeholder="Tags (comma-separated, e.g. rain, sunset, family)"
                           value={noteTags}
                           onChange={(e) => setNoteTags(e.target.value)}
                           className="bg-white/[0.02] border-white/10 rounded-xl text-xs h-8 text-white placeholder:text-white/30 focus:border-pink-500/30"
@@ -711,7 +711,7 @@ export default function Dashboard() {
                 <TabsContent value="ai" className="space-y-4 outline-none">
                   <div className="grid grid-cols-1 md:grid-cols-[1fr_150px] gap-3">
                     <Input 
-                      placeholder="Prompt (e.g. Rainy coffee morning with Sarika lamba)"
+                      placeholder="Prompt (e.g. Rainy coffee morning by the window)"
                       value={aiTopic}
                       onChange={(e) => setAiTopic(e.target.value)}
                       className="bg-white/[0.02] border-white/10 rounded-xl text-sm h-10 text-white placeholder:text-white/40 focus:border-pink-500/40"

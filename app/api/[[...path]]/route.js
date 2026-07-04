@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { getDb } from '@/lib/db';
-import { getUserFromRequest, syncSupabaseUserToAppUser } from '@/lib/auth';
+import { getUserFromRequest, syncSupabaseUserToAppUser, isPreviewAuthAllowed } from '@/lib/auth';
 import { supabaseServer, supabaseAdmin, isSupabaseConfigured, hasSupabaseServiceRole } from '@/lib/supabase';
 import { PLANS, applyStorageSimulation, effectivePlan, entitlementForUser, isSuperUser } from '@/lib/entitlements';
 import { storage } from '@/lib/storage';
@@ -89,6 +89,78 @@ async function getAiUsageToday(db, userId) {
   return db.collection('ai_generations').countDocuments({ userId, createdAt: { $gte: start } });
 }
 
+// ---------- JOURNAL (real, grounded user data only — no fabricated content) ----------
+function journalWindow(cycle) {
+  const now = new Date();
+  let start;
+  if (cycle === 'daily') { start = new Date(now); start.setHours(0, 0, 0, 0); }
+  else if (cycle === 'weekly') { start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); }
+  else if (cycle === 'yearly') { start = new Date(now.getFullYear(), 0, 1); }
+  else { start = new Date(now.getFullYear(), now.getMonth(), 1); }
+  return { start, end: now };
+}
+
+async function computeJournalData(db, userId, cycle) {
+  const { start, end } = journalWindow(cycle);
+  const items = await db.collection('media')
+    .find({ userId, trashed: { $ne: true }, createdAt: { $gte: start } })
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .toArray();
+
+  const photos = items.filter((m) => m.kind === 'photo').length;
+  const videos = items.filter((m) => m.kind === 'video').length;
+  const favorites = items.filter((m) => m.favorite || m.isFavorite).length;
+  const locationSet = new Set();
+  const peopleSet = new Set();
+  const albumSet = new Set();
+  const tagCounts = {};
+  const descriptions = [];
+  for (const m of items) {
+    for (const loc of (m.aiAnalysis?.locations || [])) if (loc) locationSet.add(String(loc));
+    for (const f of (m.aiAnalysis?.faces || [])) if (f) peopleSet.add(String(f));
+    const album = m.aiAnalysis?.autoAlbum;
+    if (album && album !== 'Unprocessed' && album !== 'General') albumSet.add(album);
+    for (const t of (m.aiAnalysis?.tags || [])) {
+      const k = String(t).toLowerCase();
+      tagCounts[k] = (tagCounts[k] || 0) + 1;
+    }
+    if (m.aiAnalysis?.description) descriptions.push(m.aiAnalysis.description);
+  }
+  const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([tag, count]) => ({ tag, count }));
+  const highlights = items
+    .filter((m) => m.favorite || m.isFavorite || m.aiAnalysis?.description)
+    .slice(0, 6)
+    .map((m) => ({
+      id: m.id,
+      name: m.name,
+      kind: m.kind,
+      createdAt: m.createdAt,
+      description: m.aiAnalysis?.description || null,
+      isFavorite: !!(m.favorite || m.isFavorite),
+    }));
+
+  return {
+    cycle,
+    range: { start, end },
+    stats: {
+      memories: items.length,
+      photos,
+      videos,
+      favorites,
+      locations: locationSet.size,
+      people: peopleSet.size,
+      albums: albumSet.size,
+    },
+    topTags,
+    locations: [...locationSet].slice(0, 10),
+    albums: [...albumSet].slice(0, 10),
+    descriptions: descriptions.slice(0, 20),
+    highlights,
+    hasAnalyzedMedia: descriptions.length > 0,
+  };
+}
+
 async function issueVerification(db, user) {
   return { url: '', raw: '' };
 }
@@ -106,7 +178,7 @@ async function handle(request, ctx) {
 
     // ---------- AUTH ----------
     if (route === '/auth/config' && method === 'GET') {
-      return json({ supabase: isSupabaseConfigured, serviceRole: hasSupabaseServiceRole });
+      return json({ supabase: isSupabaseConfigured, serviceRole: hasSupabaseServiceRole, previewAllowed: isPreviewAuthAllowed() });
     }
 
     if (route === '/auth/signup' && method === 'POST') {
@@ -387,7 +459,7 @@ async function handle(request, ctx) {
           let aiAnalysis = null;
           try {
             if (isVideo) {
-              aiAnalysis = await analyzeVideo({ name: file.name, mimeType: file.type || '' });
+              aiAnalysis = await analyzeVideo({ buffer, name: file.name, mimeType: file.type || '' });
             } else {
               aiAnalysis = await analyzeImage({ buffer, mimeType: file.type || '' });
             }
@@ -578,6 +650,52 @@ async function handle(request, ctx) {
       return json({ groups: Object.values(groups), onThisDay });
     }
 
+    // ---------- JOURNAL (grounded in the authenticated user's real media) ----------
+    if (route === '/journal/summary' && method === 'GET') {
+      const user = await requireUser(request);
+      if (!user) return json({ error: 'Unauthorized' }, 401);
+      const cycle = ['daily', 'weekly', 'monthly', 'yearly'].includes(new URL(request.url).searchParams.get('cycle'))
+        ? new URL(request.url).searchParams.get('cycle')
+        : 'monthly';
+      const data = await computeJournalData(db, user.id, cycle);
+      // Only expose fields the UI needs. All values are computed from real media.
+      return json({
+        cycle: data.cycle,
+        range: data.range,
+        stats: data.stats,
+        topTags: data.topTags,
+        highlights: data.highlights,
+        hasAnalyzedMedia: data.hasAnalyzedMedia,
+      });
+    }
+
+    if (route === '/journal/narrative' && method === 'POST') {
+      const user = await requireUser(request);
+      if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
+      const body = await request.json().catch(() => ({}));
+      const cycle = ['daily', 'weekly', 'monthly', 'yearly'].includes(body.cycle) ? body.cycle : 'monthly';
+      const data = await computeJournalData(db, user.id, cycle);
+      if (data.stats.memories === 0) {
+        return json({ error: { code: 'no_data', message: 'No memories saved in this period yet. Back up photos or videos first.' } }, 400);
+      }
+      // Grounded prompt: the model may only use these verified facts.
+      const facts = {
+        period: cycle,
+        memories: data.stats.memories,
+        photos: data.stats.photos,
+        videos: data.stats.videos,
+        favorites: data.stats.favorites,
+        topTags: data.topTags,
+        locations: data.locations,
+        albums: data.albums,
+        mediaDescriptions: data.descriptions,
+      };
+      const prompt = `Write a short, warm, first-person journal narrative (3-5 sentences) for the user's ${cycle} journal. It must be STRICTLY grounded in the verified facts below about media the user actually saved. Absolute rules: do not invent names, people, relationships, places, trips, events, dates, counts, or emotions that are not directly supported by the facts. If the facts are sparse, keep the narrative brief and factual. Do not address the user by name.\nVERIFIED FACTS: ${JSON.stringify(facts)}`;
+      const result = await runAiTask({ db, user, feature: 'memorySummary', input: { cycle }, prompt, request });
+      if (!result.ok) return aiJson(result);
+      return json({ narrative: readAiResult(result, 'summary'), meta: result.meta });
+    }
+
     // ---------- AI ----------
     if (route === '/ai/status' && method === 'GET') {
       const user = await requireUser(request); if (!user) return json({ error: { code: 'unauthenticated', message: 'Please sign in to use SnapNext AI.' } }, 401);
@@ -703,7 +821,7 @@ async function handle(request, ctx) {
         }
 
         // Relationship Timeline
-        if (autoAlbum === 'Wedding' || faces.some(f => ['couple', 'wife', 'husband', 'sarika', 'partner', 'marriage', 'wedding'].includes(f))) {
+        if (autoAlbum === 'Wedding' || faces.some(f => ['couple', 'wife', 'husband', 'partner', 'marriage', 'wedding'].includes(f))) {
           relationship.push(clean(m));
         }
 
@@ -713,13 +831,29 @@ async function handle(request, ctx) {
         }
       }
 
-      const monthlyRecap = all.length > 0 
-        ? `In the past month, you captured ${Math.min(all.length, 12)} memory landmarks across tags like ${all[0]?.aiAnalysis?.tags?.slice(0, 3).join(', ') || 'personal life'}. Reflecting on joyful and serene moments.`
-        : "No new memories this month yet. Start capturing life to get personalized AI recaps!";
+      // TRUTHFULNESS: recaps are deterministic statements computed from the
+      // user's real media only. No invented themes, emotions, or claims.
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const lastMonthItems = all.filter((m) => new Date(m.createdAt) >= thirtyDaysAgo);
+      const monthTagCounts = {};
+      for (const m of lastMonthItems) {
+        for (const t of (m.aiAnalysis?.tags || [])) {
+          const k = String(t).toLowerCase();
+          monthTagCounts[k] = (monthTagCounts[k] || 0) + 1;
+        }
+      }
+      const topMonthTags = Object.entries(monthTagCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => t);
+      const monthlyRecap = lastMonthItems.length > 0
+        ? `You saved ${lastMonthItems.length} ${lastMonthItems.length === 1 ? 'memory' : 'memories'} in the last 30 days${topMonthTags.length ? ` — common themes: ${topMonthTags.join(', ')}` : ''}.`
+        : 'No new memories in the last 30 days yet. Back up recent photos or videos to keep your timeline growing.';
 
-      const yearlyRecap = all.length > 0
-        ? `Year 2026 was defined by travel landmarks, heartwarming family gatherings, and beautiful life highlights. SnapNext has archived and indexed your digital legacy perfectly.`
-        : "Capture memories to generate a premium annual digest of your life story.";
+      const currentYear = today.getFullYear();
+      const yearItems = all.filter((m) => new Date(m.createdAt).getFullYear() === currentYear);
+      const yearPhotos = yearItems.filter((m) => m.kind === 'photo').length;
+      const yearVideos = yearItems.filter((m) => m.kind === 'video').length;
+      const yearlyRecap = yearItems.length > 0
+        ? `So far in ${currentYear} you have saved ${yearItems.length} ${yearItems.length === 1 ? 'memory' : 'memories'} (${yearPhotos} ${yearPhotos === 1 ? 'photo' : 'photos'}, ${yearVideos} ${yearVideos === 1 ? 'video' : 'videos'}).`
+        : `No memories saved in ${currentYear} yet. Upload photos or videos to start this year's timeline.`;
 
       return json({
         onThisDay,
@@ -757,13 +891,18 @@ async function handle(request, ctx) {
         .sort((a, b) => b.count - a.count);
 
       const suggestions = favoritePeople.length > 0 
-        ? [`Your favorite person "${favoritePeople[0].name}" appears in ${favoritePeople[0].count} memories. Create a joint timeline?`, `Archive a family album with ${favoritePeople[0].name}.`]
-        : ["Start uploading photos with friends & family so SnapNext can identify your favorite relationships!"];
+        ? [`"${favoritePeople[0].name}" appears in ${favoritePeople[0].count} of your analyzed memories. Create a shared timeline?`, `Build an album featuring ${favoritePeople[0].name}.`]
+        : ["Upload photos so SnapNext can group the people who appear in your analyzed memories."];
+
+      // TRUTHFULNESS: factual statement based on real analysis counts only.
+      const relationshipHighlights = favoritePeople.length > 0
+        ? `${favoritePeople.slice(0, 3).map(p => `"${p.name}"`).join(', ')} ${favoritePeople.length === 1 ? 'appears' : 'appear'} most often in your analyzed memories.`
+        : null;
 
       return json({
         favoritePeople,
         suggestions,
-        relationshipHighlights: `You share the most emotional, joyful moments with ${favoritePeople.slice(0, 3).map(p => p.name).join(', ') || 'your loved ones'}.`
+        relationshipHighlights
       });
     }
 
@@ -825,16 +964,27 @@ async function handle(request, ctx) {
       const doc = await db.collection('media').findOne({ id: mediaId, userId: user.id });
       if (!doc) return json({ error: 'Media not found' }, 404);
 
-      let text = "This is a clean transcript of your family recording memo.";
+      // TRUTHFULNESS: never return a canned fake transcript. If transcription
+      // fails or is unavailable, return an honest structured error instead.
       try {
         const buf = await storage.read({ provider: doc.provider || 'local', storageKey: doc.storageKey });
-        text = await transcribeAudio({ buffer: buf, mimeType: doc.mime });
+        const text = await transcribeAudio({ buffer: buf, mimeType: doc.mime });
         await db.collection('media').updateOne({ id: mediaId }, { $set: { 'aiAnalysis.transcript': text } });
+        return json({ transcript: text, meta: { creditsUsed: q.credits, plan: q.plan, requestId: q.requestId } });
       } catch (err) {
         console.error('[transcription] error:', err?.message);
+        const code = err?.code === 'ai_service_unavailable' ? 'ai_service_unavailable' : 'transcription_failed';
+        const status = code === 'ai_service_unavailable' ? 503 : 502;
+        return json({
+          error: {
+            code,
+            message: code === 'ai_service_unavailable'
+              ? 'Audio transcription is not available yet. The AI service is not configured.'
+              : 'We could not transcribe this audio right now. Please try again.',
+            retryable: code !== 'ai_service_unavailable',
+          },
+        }, status);
       }
-
-      return json({ transcript: text, meta: { creditsUsed: q.credits, plan: q.plan, requestId: q.requestId } });
     }
 
     // ---------- AI REEL CREATOR ----------
