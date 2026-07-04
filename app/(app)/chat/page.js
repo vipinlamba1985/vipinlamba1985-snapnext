@@ -21,6 +21,20 @@ function wantsLastMonth(query) {
   return /\b(last month|past month|previous month)\b/i.test(query || '');
 }
 
+function appHelpAnswer(query) {
+  const q = String(query || '').toLowerCase();
+  if (/\b(help|what can you do|how does snapnext work|features)\b/i.test(q)) {
+    return 'I can search your saved photos and videos, help you rediscover memories, prepare creative drafts, and guide you through SnapNext. Try “Show my latest pics”, “Find my favorite memories”, or ask me to help create something.';
+  }
+  if (/\b(how (do|can) i upload|where (do|can) i upload|back up photos|backup photos)\b/i.test(q)) {
+    return 'Open Upload from the bottom navigation. You can back up photos and videos or choose specific files. SnapNext will show real progress and explain anything that is skipped.';
+  }
+  if (/\b(where are my favorites|how (do|can) i share|trusted people|favorite sharing)\b/i.test(q)) {
+    return 'Open Favorites to manage trusted people and permission-based sharing. A trusted person only gets the access you explicitly allow, and you can revoke access later.';
+  }
+  return null;
+}
+
 function queryTerms(query) {
   const stop = new Set(['show','find','my','me','the','a','an','photos','photo','pictures','picture','pics','pic','videos','video','latest','recent','saved','memories','memory','with','from','and','or','please']);
   return String(query || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter((word) => word.length > 2 && !stop.has(word));
@@ -113,23 +127,32 @@ export default function ChatPage() {
   async function sendMessage(textToSend) {
     const queryText = (textToSend || input).trim();
     if (!queryText) return;
+    if (queryText.length > 2000) return toast.error('Please shorten your request to 2,000 characters or less.');
     if (!textToSend) setInput('');
     setLoading(true);
     setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'user', text: queryText, createdAt: new Date() }]);
 
     try {
+      const help = appHelpAnswer(queryText);
+      if (help) {
+        setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: help, matchedMedia: [], createdAt: new Date() }]);
+        return;
+      }
+
       if (wantsMedia(queryText) || wantsLastMonth(queryText)) {
         const answer = await directMediaAnswer(queryText);
         setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: answer.text, matchedMedia: answer.matchedMedia, createdAt: new Date() }]);
         return;
       }
 
-      const res = await apiFetch('/ai/chat', { method: 'POST', body: JSON.stringify({ query: queryText, voiceResponse: false }) });
-      setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: res.reply || 'I can help, but I need a little more detail.', matchedMedia: [], createdAt: new Date() }]);
+      // Only genuinely generative requests reach a model. This keeps common
+      // search/navigation/help intents deterministic and protects AI margins.
+      const res = await apiFetch('/ai-agent', { method: 'POST', body: JSON.stringify({ task: queryText, feature: 'postIdeas', qualityMode: 'balanced' }) });
+      const reply = res.result?.caption || res.result?.summary || 'I can help, but I need a little more detail.';
+      setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: reply, matchedMedia: [], createdAt: new Date() }]);
     } catch (e) {
       if (/prompt is too long/i.test(e.message || '')) {
-        const answer = await directMediaAnswer(queryText);
-        setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: answer.text || 'Your library is large. Try a more specific search.', matchedMedia: answer.matchedMedia || [], createdAt: new Date() }]);
+        setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: 'That request is too large for one AI response. Please ask for one specific search, summary, or creation task at a time.', matchedMedia: [], createdAt: new Date() }]);
       } else {
         toast.error(e.message || 'An AI error occurred.');
       }
@@ -172,7 +195,7 @@ export default function ChatPage() {
             </motion.div>
           ))}
         </AnimatePresence>
-        {loading && <div className="flex gap-4 justify-start"><div className="h-9 w-9 rounded-full bg-purple-950/80 border border-purple-500/30 flex items-center justify-center shrink-0"><Bot className="h-4.5 w-4.5 text-purple-300" /></div><div className="bg-white/[0.02] border border-white/15 px-4 py-3 rounded-2xl text-sm text-white/60 flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching memories...</div></div>}
+        {loading && <div className="flex gap-4 justify-start"><div className="h-9 w-9 rounded-full bg-purple-950/80 border border-purple-500/30 flex items-center justify-center shrink-0"><Bot className="h-4.5 w-4.5 text-purple-300" /></div><div className="bg-white/[0.02] border border-white/15 px-4 py-3 rounded-2xl text-sm text-white/60 flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Working on it...</div></div>}
         <div ref={messagesEndRef} />
       </div>
 
@@ -181,7 +204,7 @@ export default function ChatPage() {
       <div className="p-4 border-t border-white/10 bg-white/[0.01] flex items-center gap-3">
         <button onClick={toggleRecording} className={`p-3.5 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30' : 'bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10'}`} title={isRecording ? 'Stop Recording' : 'Speak'}>{isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}</button>
         <div className="flex-1 relative flex items-center">
-          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()} placeholder={isRecording ? 'Listening...' : 'Ask SnapNext AI...'} disabled={isRecording} className="w-full bg-white/5 border border-white/10 focus:border-pink-500/50 rounded-2xl pl-4 pr-12 py-3.5 text-sm outline-none text-white transition placeholder-white/40" />
+          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()} placeholder={isRecording ? 'Listening...' : 'Ask SnapNext AI...'} disabled={isRecording} maxLength={2000} className="w-full bg-white/5 border border-white/10 focus:border-pink-500/50 rounded-2xl pl-4 pr-12 py-3.5 text-sm outline-none text-white transition placeholder-white/40" />
           <button onClick={() => sendMessage()} disabled={!input.trim() || loading} className="absolute right-2.5 p-2 rounded-xl bg-pink-500 hover:bg-pink-600 disabled:opacity-30 disabled:hover:bg-pink-500 transition text-white"><Send className="h-4.5 w-4.5" /></button>
         </div>
       </div>
