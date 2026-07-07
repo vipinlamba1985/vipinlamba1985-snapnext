@@ -1,0 +1,1 @@
+Magic Library uses existing person labels and media metadata already stored by SnapNext. Plan activation is server-enforced and append-only: Free 4, Starter 10, Plus 30, Pro 100, Family 500, Super User 500. No new biometric recognition is introduced by this change.
