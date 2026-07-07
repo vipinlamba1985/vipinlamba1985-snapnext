@@ -6,6 +6,7 @@ import { apiFetch } from '@/lib/api-client';
 import { formatBytes } from '@/lib/utils';
 import { classifyLocalFile } from '@/lib/discovery-classify';
 import useDiscoveryFlow from '@/components/protection/useDiscoveryFlow';
+import ProtectionStages from './ProtectionStages';
 
 const PRIORITIES = [
   { id: 'self', title: 'Just Me', copy: 'Protect your best portraits, milestones and life stages first.', icon: User },
@@ -18,6 +19,12 @@ export default function DiscoveryFlow() {
   const inputRef = useRef(null);
   const flow = useDiscoveryFlow();
   useEffect(() => { apiFetch('/storage/usage').then(flow.setUsage).catch(() => {}); }, []);
+  useEffect(() => {
+    if (flow.stage !== 'protecting') return;
+    const warn = (event) => { event.preventDefault(); event.returnValue = 'Your memories are still being protected.'; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [flow.stage]);
 
   function chooseFiles(files) {
     const items = files.filter((file) => file.type?.startsWith('image/') || file.type?.startsWith('video/')).map(classifyLocalFile);
@@ -40,6 +47,8 @@ export default function DiscoveryFlow() {
       flow.setStage('review');
     }
   }
+
+  if (flow.stage === 'protecting' || flow.stage === 'results') return <ProtectionStages flow={flow} />;
 
   if (flow.stage === 'welcome') return (
     <div className="mx-auto max-w-5xl pb-36 md:pb-12"><section className="rounded-[2.5rem] border border-white/10 bg-gradient-to-br from-pink-500/15 via-purple-600/10 to-cyan-500/10 p-6 text-center md:p-12">
