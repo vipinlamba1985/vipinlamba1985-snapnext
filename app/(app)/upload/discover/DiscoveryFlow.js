@@ -7,11 +7,12 @@ import { formatBytes } from '@/lib/utils';
 import { classifyLocalFile } from '@/lib/discovery-classify';
 import useDiscoveryFlow from '@/components/protection/useDiscoveryFlow';
 import ProtectionStages from './ProtectionStages';
+import PriorityTruthNote from './PriorityTruthNote';
 
 const PRIORITIES = [
   { id: 'self', title: 'Just Me', copy: 'Protect your best portraits, milestones and life stages first.', icon: User },
-  { id: 'person', title: 'Someone I Care About', copy: 'Set a person as your active Memory Priority.', icon: Heart },
-  { id: 'together', title: 'Us Together', copy: 'Prioritize the story you share with someone important.', icon: Users },
+  { id: 'person', title: 'Someone I Care About', copy: 'Record the person you want SnapNext to organize around as matching evidence becomes available.', icon: Heart },
+  { id: 'together', title: 'Us Together', copy: 'Record the shared story you want SnapNext to organize around as matching evidence becomes available.', icon: Users },
   { id: 'best_of_life', title: 'Best of My Life', copy: 'Build a balanced protection plan across your strongest memories.', icon: Stars },
 ];
 
@@ -79,7 +80,7 @@ export default function DiscoveryFlow() {
     <div className="mx-auto max-w-5xl space-y-6 pb-36 md:pb-12"><section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
       <p className="text-xs font-black uppercase tracking-[0.22em] text-pink-200/70">Memory Priority</p><h1 className="mt-2 text-3xl font-black text-white md:text-5xl">What would you like to protect first?</h1>
       <div className="mt-7 grid gap-3 md:grid-cols-2">{PRIORITIES.map((option) => { const selected = flow.priority.type === option.id; return <button key={option.id} onClick={() => flow.setPriority((current) => ({ ...current, type: option.id }))} className={`rounded-3xl border p-5 text-left ${selected ? 'border-pink-400/60 bg-pink-500/10' : 'border-white/10 bg-black/15'}`}><option.icon className="h-6 w-6 text-pink-200" /><div className="mt-3 text-lg font-black text-white">{option.title}</div><p className="mt-1 text-sm leading-6 text-white/50">{option.copy}</p></button>; })}</div>
-      {(flow.priority.type === 'person' || flow.priority.type === 'together') && <div className="mt-5 grid gap-3 md:grid-cols-2"><input value={flow.priority.personName} onChange={(event) => flow.setPriority((current) => ({ ...current, personName: event.target.value }))} placeholder="Person's name" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none focus:border-pink-400/50" /><input value={flow.priority.relationship} onChange={(event) => flow.setPriority((current) => ({ ...current, relationship: event.target.value }))} placeholder="Relationship (optional)" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none focus:border-pink-400/50" /></div>}
+      {(flow.priority.type === 'person' || flow.priority.type === 'together') && <><div className="mt-5 grid gap-3 md:grid-cols-2"><input value={flow.priority.personName} onChange={(event) => flow.setPriority((current) => ({ ...current, personName: event.target.value }))} placeholder="Person's name" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none focus:border-pink-400/50" /><input value={flow.priority.relationship} onChange={(event) => flow.setPriority((current) => ({ ...current, relationship: event.target.value }))} placeholder="Relationship (optional)" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none focus:border-pink-400/50" /></div><PriorityTruthNote /></>}
       <div className="mt-7 flex flex-wrap gap-3"><button onClick={() => flow.setStage('review')} disabled={(flow.priority.type === 'person' || flow.priority.type === 'together') && !flow.priority.personName.trim()} className="rounded-full bg-white px-6 py-3 text-sm font-black text-black disabled:opacity-40">Build My Protection Plan</button><button onClick={() => flow.setStage('report')} className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">Back</button></div>
     </section></div>
   );
