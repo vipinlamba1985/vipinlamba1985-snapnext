@@ -14,6 +14,7 @@ export default function MagicLibraryGallery() {
   const magic = useMagicLibrary();
   const [viewer, setViewer] = useState(null);
   const [lockedPerson, setLockedPerson] = useState(null);
+  const [activationSkipped, setActivationSkipped] = useState(false);
 
   useEffect(() => {
     if (!magic.activePerson && magic.activation.enabled?.length) magic.setActivePerson(magic.activation.enabled[0]);
@@ -28,10 +29,15 @@ export default function MagicLibraryGallery() {
     }
   }
 
+  function skipActivation() {
+    setActivationSkipped(true);
+    toast('You can activate People Search later from Favorites.');
+  }
+
   if (magic.busy) return <div className="grid min-h-[50vh] place-items-center"><Loader2 className="h-8 w-8 animate-spin text-pink-300" /></div>;
 
-  if (magic.people.length > 0 && magic.activation.active.length === 0) {
-    return <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />;
+  if (magic.people.length > 0 && magic.activation.active.length === 0 && !activationSkipped) {
+    return <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} onSkip={skipActivation} busy={magic.activating} />;
   }
 
   const canAddMore = magic.activation.active.length < magic.activation.limit && magic.people.some((person) => !magic.activation.active.includes(person.name));
@@ -47,7 +53,7 @@ export default function MagicLibraryGallery() {
 
       {magic.people.length > 0 && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} onOpen={magic.setActivePerson} onLocked={setLockedPerson} />}
       {magic.activePerson && <button onClick={() => magic.setActivePerson('')} className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-bold text-white/65">Show all memories</button>}
-      {canAddMore && <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />}
+      {canAddMore && magic.activation.active.length > 0 && <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />}
 
       <div><h2 className="text-2xl font-black text-white">{title}</h2><p className="mt-1 text-sm text-white/45">{magic.visibleItems.length} matching protected memories</p></div>
       <MediaSection title={magic.activePerson ? `Best of ${magic.activePerson} ✨` : 'Best Matches ✨'} items={magic.bestItems} onOpen={setViewer} />
