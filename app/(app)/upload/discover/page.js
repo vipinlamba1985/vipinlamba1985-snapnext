@@ -1,5 +1,5 @@
-'use client';
+import DiscoveryFlow from './DiscoveryFlow';
 
 export default function DiscoverUploadPage() {
-  return <div>Discovery</div>;
+  return <DiscoveryFlow />;
 }
