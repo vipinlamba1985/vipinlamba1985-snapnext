@@ -1,13 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { apiFetch } from '@/lib/api-client';
 import { buildDiscoveryReport } from '@/lib/discovery-classify';
 import { buildProtectionPlan } from '@/lib/protection-plan';
 import { hashLocalFile } from '@/lib/file-hash';
 import { requestProtectionDecisions } from '@/lib/protection-network';
-import { uploadProtectedDirect } from '@/lib/protection-direct-client';
-import { uploadProtectedViaServer } from '@/lib/protection-server-client';
 
 export default function useDiscoveryFlow() {
   const [stage, setStage] = useState('welcome');
@@ -26,5 +23,30 @@ export default function useDiscoveryFlow() {
     setQueue((current) => current.map((row) => row.localId === localId ? { ...row, ...patch } : row));
   }
 
-  return { stage, setStage, items, setItems, usage, setUsage, priority, setPriority, report, availableBytes, plan, queue, setQueue, updateQueue, hashProgress, setHashProgress, summary, setSummary, protecting, setProtecting };
+  async function prepareProtection() {
+    setProtecting(true);
+    setHashProgress({ done: 0, total: plan.selected.length });
+    const prepared = [];
+    for (let index = 0; index < plan.selected.length; index += 1) {
+      const item = plan.selected[index];
+      const hash = await hashLocalFile(item.file);
+      prepared.push({ localId: item.localId, name: item.name, size: item.size, mime: item.mime, hash, captureDate: item.captureDate, priorityType: priority.type, priorityPersonName: priority.personName || null, relationship: priority.relationship || null, priorityScore: item.priorityScore || 0 });
+      setHashProgress({ done: index + 1, total: plan.selected.length });
+    }
+    const decisions = await requestProtectionDecisions(prepared);
+    const byId = new Map(decisions.map((decision) => [decision.localId, decision]));
+    setQueue(plan.selected.map((item) => ({ ...item, decision: byId.get(item.localId), status: decisionStatus(byId.get(item.localId)), progress: 0 })));
+    setProtecting(false);
+    return decisions;
+  }
+
+  return { stage, setStage, items, setItems, usage, setUsage, priority, setPriority, report, availableBytes, plan, queue, setQueue, updateQueue, hashProgress, summary, setSummary, protecting, prepareProtection };
+}
+
+function decisionStatus(decision) {
+  if (!decision) return 'failed';
+  if (decision.decision === 'ACCEPT') return 'waiting';
+  if (decision.decision === 'SKIP_DUPLICATE') return 'duplicate';
+  if (decision.decision === 'SKIP_NO_SPACE') return 'outside';
+  return 'skipped';
 }
