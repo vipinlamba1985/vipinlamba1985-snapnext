@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { aiIndexAccess } from '@/lib/ai-index-access';
-import { processAnalysisJobs } from '@/lib/analysis-queue';
+import { processAnalysisJobs } from '@/lib/universal-ai-index';
 
 export async function POST(request) {
   const user = await getUserFromRequest(request);
