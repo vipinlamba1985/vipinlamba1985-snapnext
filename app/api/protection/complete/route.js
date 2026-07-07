@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
+import { storage } from '@/lib/storage';
 import { getReservedUpload, commitReservedUpload } from '@/lib/protection-commit';
 import { verifyProtectedObject } from '@/lib/protection-verify';
 
@@ -20,6 +21,7 @@ export async function POST(request) {
   try {
     await verifyProtectedObject({ provider: 's3', storageKey: reservation.storageKey, expectedBytes: reservation.bytes });
     const result = await commitReservedUpload({ db, user, reservation, provider: 's3', storageKey: reservation.storageKey });
+    if (result.duplicate) await storage.delete({ provider: 's3', storageKey: reservation.storageKey });
     return NextResponse.json({ ok: true, duplicate: result.duplicate, item: result.item });
   } catch (error) {
     return NextResponse.json({ error: error?.message || 'Could not verify upload' }, { status: 502 });
