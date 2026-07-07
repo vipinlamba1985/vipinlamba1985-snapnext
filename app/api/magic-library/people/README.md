@@ -1,0 +1,1 @@
+This route is reserved for future server-side discovery summaries. The current Magic Library reads existing person labels from protected media and uses `/api/magic-library/activation` for plan enforcement.
