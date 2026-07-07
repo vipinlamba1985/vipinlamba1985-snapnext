@@ -1,10 +1,10 @@
 'use client';
 
-import { Check, Sparkles } from 'lucide-react';
+import { Check, Clock3, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { mediaSrc } from '@/lib/api-client';
 
-export default function PeopleActivation({ people, limit, activeNames, draftNames, onToggle, onConfirm, busy }) {
+export default function PeopleActivation({ people, limit, activeNames, draftNames, onToggle, onConfirm, onSkip, busy }) {
   const required = Math.min(limit, people.length);
   const firstActivation = activeNames.length === 0;
   const selectedCount = draftNames.length;
@@ -52,11 +52,17 @@ export default function PeopleActivation({ people, limit, activeNames, draftName
         })}
       </div>
 
-      <div className="mt-7 flex justify-center">
+      <div className="mt-7 flex flex-wrap justify-center gap-3">
         <button type="button" onClick={handleConfirm} disabled={busy} aria-busy={busy} className={`rounded-full px-6 py-3 text-sm font-black text-white ${canConfirm ? 'bg-gradient-to-r from-pink-500 to-purple-600' : 'bg-white/10 text-white/55'}`}>
           {busy ? 'Activating…' : firstActivation && remaining > 0 ? `Choose ${remaining} More` : `Activate My ${selectedCount} People`}
         </button>
+        {firstActivation && onSkip && (
+          <button type="button" onClick={onSkip} disabled={busy} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-6 py-3 text-sm font-black text-white/70 hover:bg-white/10">
+            <Clock3 className="h-4 w-4" /> Choose Later
+          </button>
+        )}
       </div>
+      {firstActivation && <p className="mt-3 text-center text-xs text-white/35">You can activate People Search anytime later from Favorites.</p>}
     </section>
   );
 }
