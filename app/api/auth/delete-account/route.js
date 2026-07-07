@@ -21,17 +21,22 @@ export async function POST(request) {
   if (!isSameSiteRequest(request)) return Response.json({ error: 'Cross-site account deletion request blocked.' }, { status: 403 });
 
   const db = await getDb();
-  const cleanup = await deleteUserAccountData({ db, userId: user.id });
-  await db.collection('users').deleteOne({ id: user.id });
+  let cleanup;
+  try {
+    cleanup = await deleteUserAccountData({ db, userId: user.id });
+  } catch (error) {
+    return Response.json({ error: error?.message || 'Account cleanup failed. Please retry.' }, { status: 503 });
+  }
 
   if (supabaseAdmin && user.supabaseUserId) {
-    try {
-      const { error } = await supabaseAdmin.auth.admin.deleteUser(user.supabaseUserId);
-      if (error) throw error;
-    } catch (error) {
-      console.error('[delete-account] Supabase user delete failed', error?.message);
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(user.supabaseUserId);
+    if (error) {
+      console.error('[delete-account] Supabase user delete failed', error.message);
+      return Response.json({ error: 'Authentication cleanup failed. Please retry.' }, { status: 503 });
     }
   }
+
+  await db.collection('users').deleteOne({ id: user.id });
 
   return Response.json({
     ok: true,
