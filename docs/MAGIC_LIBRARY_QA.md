@@ -1,0 +1,1 @@
+QA: open `/magic-library`, verify person labels already attached to media appear as round thumbnails, activate within the plan limit, confirm activated selections cannot be removed or rotated, tap active people to view Best Of then Videos then All Photos, and test object/place search suggestions from existing media metadata.
