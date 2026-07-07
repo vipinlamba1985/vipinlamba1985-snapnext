@@ -26,6 +26,21 @@ export default function DiscoveryFlow() {
     flow.setStage('report');
   }
 
+  async function startProtection() {
+    try {
+      flow.setStage('protecting');
+      const decisions = await flow.prepareProtection();
+      const { runProtectionQueue } = await import('@/lib/protection-run');
+      const counts = await runProtectionQueue(flow.plan.selected, decisions, flow.updateQueue);
+      flow.setSummary(counts);
+      flow.setProtecting(false);
+      flow.setStage('results');
+    } catch {
+      flow.setProtecting(false);
+      flow.setStage('review');
+    }
+  }
+
   if (flow.stage === 'welcome') return (
     <div className="mx-auto max-w-5xl pb-36 md:pb-12"><section className="rounded-[2.5rem] border border-white/10 bg-gradient-to-br from-pink-500/15 via-purple-600/10 to-cyan-500/10 p-6 text-center md:p-12">
       <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-white/10 text-pink-200"><Sparkles className="h-8 w-8" /></div>
@@ -65,7 +80,7 @@ export default function DiscoveryFlow() {
       <div className="flex items-center gap-3"><ShieldCheck className="h-7 w-7 text-emerald-200" /><div><p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-100/60">Approval required</p><h1 className="mt-1 text-3xl font-black text-white">Ready to protect your memories?</h1></div></div>
       <div className="mt-6 grid gap-3 sm:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="text-xs text-white/40">Will protect</div><div className="mt-2 text-2xl font-black text-white">{flow.plan.selected.length} memories</div><div className="mt-1 text-sm text-white/50">{formatBytes(flow.plan.usedBytes)}</div></div><div className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="text-xs text-white/40">Outside this plan</div><div className="mt-2 text-2xl font-black text-white">{flow.plan.outside.length} memories</div><div className="mt-1 text-sm text-white/50">Nothing outside this plan will upload.</div></div></div>
       <div className="mt-5 rounded-2xl border border-white/10 bg-black/15 p-4 text-sm text-white/55">Priority: <b className="text-white">{PRIORITIES.find((item) => item.id === flow.priority.type)?.title}</b>{flow.priority.personName ? ` · ${flow.priority.personName}` : ''}<br />Your protected space currently has {formatBytes(flow.availableBytes)} available.</div>
-      <div className="mt-7 flex flex-wrap gap-3"><button onClick={() => flow.setStage('protecting')} disabled={!flow.plan.selected.length} className="rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-3 text-sm font-black text-white disabled:opacity-40">Protect These Memories</button><button onClick={() => flow.setStage('priority')} className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">Adjust My Plan</button><button onClick={() => flow.setStage('welcome')} className="rounded-full px-4 py-3 text-sm text-white/40">Cancel</button></div>
+      <div className="mt-7 flex flex-wrap gap-3"><button onClick={startProtection} disabled={!flow.plan.selected.length} className="rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-3 text-sm font-black text-white disabled:opacity-40">Protect These Memories</button><button onClick={() => flow.setStage('priority')} className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">Adjust My Plan</button><button onClick={() => flow.setStage('welcome')} className="rounded-full px-4 py-3 text-sm text-white/40">Cancel</button></div>
     </section></div>
   );
 
