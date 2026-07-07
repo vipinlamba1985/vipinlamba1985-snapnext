@@ -6,13 +6,15 @@ import { apiFetch } from '@/lib/api-client';
 import { formatBytes } from '@/lib/utils';
 import { classifyLocalFile } from '@/lib/discovery-classify';
 import useDiscoveryFlow from '@/components/protection/useDiscoveryFlow';
+import IdentityDiscovery from './IdentityDiscovery';
+import PeoplePriorityPicker from './PeoplePriorityPicker';
 import ProtectionStages from './ProtectionStages';
 import PriorityTruthNote from './PriorityTruthNote';
 
 const PRIORITIES = [
   { id: 'self', title: 'Just Me', copy: 'Protect your best portraits, milestones and life stages first.', icon: User },
-  { id: 'person', title: 'Someone I Care About', copy: 'Record the person you want SnapNext to organize around as matching evidence becomes available.', icon: Heart },
-  { id: 'together', title: 'Us Together', copy: 'Record the shared story you want SnapNext to organize around as matching evidence becomes available.', icon: Users },
+  { id: 'person', title: 'Someone I Care About', copy: 'Prioritize the confirmed person group you choose.', icon: Heart },
+  { id: 'together', title: 'Us Together', copy: 'Prioritize memories where your confirmed self group and chosen person appear together.', icon: Users },
   { id: 'best_of_life', title: 'Best of My Life', copy: 'Build a balanced protection plan across your strongest memories.', icon: Stars },
 ];
 
@@ -50,6 +52,7 @@ export default function DiscoveryFlow() {
   }
 
   if (flow.stage === 'protecting' || flow.stage === 'results') return <ProtectionStages flow={flow} />;
+  if (flow.stage === 'identity') return <div className="pb-36 md:pb-12"><IdentityDiscovery flow={flow} /></div>;
 
   if (flow.stage === 'welcome') return (
     <div className="mx-auto max-w-5xl pb-36 md:pb-12"><section className="rounded-[2.5rem] border border-white/10 bg-gradient-to-br from-pink-500/15 via-purple-600/10 to-cyan-500/10 p-6 text-center md:p-12">
@@ -72,18 +75,23 @@ export default function DiscoveryFlow() {
       <p className="text-xs font-black uppercase tracking-[0.22em] text-pink-200/70">Discovery complete</p><h1 className="mt-2 text-3xl font-black text-white md:text-5xl">Look what SnapNext found ✨</h1>
       <p className="mt-3 text-sm text-white/50">Selected {flow.report.total} items · {formatBytes(flow.report.bytes)}. Discovery is not backup.</p>
       <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">{stats.map((stat) => <div key={stat.label} className="rounded-2xl border border-white/10 bg-black/20 p-4"><stat.icon className="h-5 w-5 text-pink-200" /><div className="mt-3 text-2xl font-black text-white">{stat.value}</div><div className="mt-1 text-xs text-white/45">{stat.label}</div></div>)}</div>
-      <div className="mt-6 flex flex-wrap gap-3"><button onClick={() => flow.setStage('priority')} className="inline-flex min-h-12 items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-black text-black">Choose What to Protect <ArrowRight className="h-4 w-4" /></button><button onClick={() => flow.setStage('welcome')} className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">Start Again</button></div>
+      <div className="mt-6 flex flex-wrap gap-3"><button onClick={() => flow.setStage('identity')} className="inline-flex min-h-12 items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-black text-black">Find People & Choose What to Protect <ArrowRight className="h-4 w-4" /></button><button onClick={() => flow.setStage('welcome')} className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">Start Again</button></div>
     </section></div>;
   }
 
-  if (flow.stage === 'priority') return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-36 md:pb-12"><section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
-      <p className="text-xs font-black uppercase tracking-[0.22em] text-pink-200/70">Memory Priority</p><h1 className="mt-2 text-3xl font-black text-white md:text-5xl">What would you like to protect first?</h1>
-      <div className="mt-7 grid gap-3 md:grid-cols-2">{PRIORITIES.map((option) => { const selected = flow.priority.type === option.id; return <button key={option.id} onClick={() => flow.setPriority((current) => ({ ...current, type: option.id }))} className={`rounded-3xl border p-5 text-left ${selected ? 'border-pink-400/60 bg-pink-500/10' : 'border-white/10 bg-black/15'}`}><option.icon className="h-6 w-6 text-pink-200" /><div className="mt-3 text-lg font-black text-white">{option.title}</div><p className="mt-1 text-sm leading-6 text-white/50">{option.copy}</p></button>; })}</div>
-      {(flow.priority.type === 'person' || flow.priority.type === 'together') && <><div className="mt-5 grid gap-3 md:grid-cols-2"><input value={flow.priority.personName} onChange={(event) => flow.setPriority((current) => ({ ...current, personName: event.target.value }))} placeholder="Person's name" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none focus:border-pink-400/50" /><input value={flow.priority.relationship} onChange={(event) => flow.setPriority((current) => ({ ...current, relationship: event.target.value }))} placeholder="Relationship (optional)" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none focus:border-pink-400/50" /></div><PriorityTruthNote /></>}
-      <div className="mt-7 flex flex-wrap gap-3"><button onClick={() => flow.setStage('review')} disabled={(flow.priority.type === 'person' || flow.priority.type === 'together') && !flow.priority.personName.trim()} className="rounded-full bg-white px-6 py-3 text-sm font-black text-black disabled:opacity-40">Build My Protection Plan</button><button onClick={() => flow.setStage('report')} className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">Back</button></div>
-    </section></div>
-  );
+  if (flow.stage === 'priority') {
+    const needsPerson = flow.priority.type === 'person' || flow.priority.type === 'together';
+    const hasDetectedChoices = flow.people.clusters.some((cluster) => cluster.id !== flow.priority.selfClusterId);
+    const personReady = !needsPerson || (flow.priority.personName.trim() && (!hasDetectedChoices || flow.priority.personClusterId));
+    return (
+      <div className="mx-auto max-w-5xl space-y-6 pb-36 md:pb-12"><section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 md:p-8">
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-pink-200/70">Memory Priority</p><h1 className="mt-2 text-3xl font-black text-white md:text-5xl">What would you like to protect first?</h1>
+        <div className="mt-7 grid gap-3 md:grid-cols-2">{PRIORITIES.map((option) => { const selected = flow.priority.type === option.id; return <button key={option.id} onClick={() => flow.setPriority((current) => ({ ...current, type: option.id }))} className={`rounded-3xl border p-5 text-left ${selected ? 'border-pink-400/60 bg-pink-500/10' : 'border-white/10 bg-black/15'}`}><option.icon className="h-6 w-6 text-pink-200" /><div className="mt-3 text-lg font-black text-white">{option.title}</div><p className="mt-1 text-sm leading-6 text-white/50">{option.copy}</p></button>; })}</div>
+        {needsPerson && <><PeoplePriorityPicker flow={flow} /><PriorityTruthNote /></>}
+        <div className="mt-7 flex flex-wrap gap-3"><button onClick={() => flow.setStage('review')} disabled={!personReady} className="rounded-full bg-white px-6 py-3 text-sm font-black text-black disabled:opacity-40">Build My Protection Plan</button><button onClick={() => flow.setStage('identity')} className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">Back</button></div>
+      </section></div>
+    );
+  }
 
   if (flow.stage === 'review') return (
     <div className="mx-auto max-w-4xl space-y-6 pb-36 md:pb-12"><section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-emerald-400/10 via-white/[0.03] to-purple-500/10 p-6 md:p-8">
