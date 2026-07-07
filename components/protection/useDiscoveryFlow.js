@@ -1,10 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { apiFetch } from '@/lib/api-client';
 import { buildDiscoveryReport } from '@/lib/discovery-classify';
 import { buildProtectionPlan } from '@/lib/protection-plan';
 import { hashLocalFile } from '@/lib/file-hash';
 import { requestProtectionDecisions } from '@/lib/protection-network';
+import { uploadProtectedViaServer } from '@/lib/protection-server-client';
 
 export default function useDiscoveryFlow() {
   const [stage, setStage] = useState('welcome');
@@ -40,7 +42,7 @@ export default function useDiscoveryFlow() {
     return decisions;
   }
 
-  return { stage, setStage, items, setItems, usage, setUsage, priority, setPriority, report, availableBytes, plan, queue, setQueue, updateQueue, hashProgress, summary, setSummary, protecting, prepareProtection };
+  return { stage, setStage, items, setItems, usage, setUsage, priority, setPriority, report, availableBytes, plan, queue, setQueue, updateQueue, hashProgress, summary, setSummary, protecting, setProtecting, prepareProtection };
 }
 
 function decisionStatus(decision) {
