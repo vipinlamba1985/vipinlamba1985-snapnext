@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { aiIndexAccess } from '@/lib/ai-index-access';
-import { getAnalysisStatus } from '@/lib/analysis-queue';
+import { getAnalysisStatus } from '@/lib/universal-ai-index';
 
 function clean(doc) {
   if (!doc) return doc;
