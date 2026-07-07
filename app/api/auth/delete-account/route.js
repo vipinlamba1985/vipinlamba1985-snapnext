@@ -6,14 +6,19 @@ import { getUserFromRequest } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { deleteUserAccountData } from '@/lib/account-deletion';
 
+function isSameSiteRequest(request) {
+  const origin = request.headers.get('origin');
+  const site = request.headers.get('sec-fetch-site');
+  const requestOrigin = new URL(request.url).origin;
+  if (origin && origin !== requestOrigin) return false;
+  if (site && !['same-origin', 'same-site', 'none'].includes(site)) return false;
+  return true;
+}
+
 export async function POST(request) {
   const user = await getUserFromRequest(request);
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const body = await request.json().catch(() => ({}));
-  if (body.confirm !== 'DELETE_MY_ACCOUNT') {
-    return Response.json({ error: 'Explicit account deletion confirmation is required.' }, { status: 409 });
-  }
+  if (!isSameSiteRequest(request)) return Response.json({ error: 'Cross-site account deletion request blocked.' }, { status: 403 });
 
   const db = await getDb();
   const cleanup = await deleteUserAccountData({ db, userId: user.id });
