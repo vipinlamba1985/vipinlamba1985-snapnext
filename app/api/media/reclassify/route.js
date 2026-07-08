@@ -6,7 +6,7 @@ import { analyzeImage } from '@/lib/gemini';
 
 export const runtime = 'nodejs';
 
-const BATCH_SIZE = 4;
+const BATCH_SIZE = 8;
 const MAX_ANALYSIS_BYTES = 20 * 1024 * 1024;
 
 export async function POST(request) {
