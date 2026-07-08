@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, Download, Heart, Plus, Send, Tag, Trash2, X } from 'lucide-react';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
-import { mediaCategory, mediaUserTags } from '@/lib/media-category';
+import { isScreenshotMedia, mediaCategory, mediaUserTags, screenshotType } from '@/lib/media-category';
 import { toast } from 'sonner';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -13,19 +13,31 @@ const CATEGORY_LABELS = {
   docs: 'Docs',
 };
 
+const SCREENSHOT_TYPE_LABELS = {
+  visual: 'Visual',
+  info: 'Info',
+  docs: 'Docs',
+};
+
 export default function MediaViewer({ item, items = [], index = 0, onClose, onChanged }) {
   const [currentIndex, setCurrentIndex] = useState(index || 0);
   const [selectedCategory, setSelectedCategory] = useState('photos');
+  const [selectedScreenshotType, setSelectedScreenshotType] = useState('info');
+  const [screenshotMeta, setScreenshotMeta] = useState(null);
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState('');
   const [saving, setSaving] = useState(false);
   const list = useMemo(() => items.length ? items : item ? [item] : [], [items, item]);
   const current = list[currentIndex] || item;
+  const screenshot = isScreenshotMedia(current);
 
   useEffect(() => { setCurrentIndex(index || 0); }, [index, item?.id]);
   useEffect(() => {
     if (!current) return;
     setSelectedCategory(mediaCategory(current));
+    const type = screenshotType(current);
+    setSelectedScreenshotType(type.type);
+    setScreenshotMeta(type);
     setTags(mediaUserTags(current));
     setTagInput('');
   }, [current?.id]);
@@ -87,6 +99,17 @@ export default function MediaViewer({ item, items = [], index = 0, onClose, onCh
     }
   }
 
+  async function changeScreenshotType(nextType) {
+    const previous = selectedScreenshotType;
+    setSelectedScreenshotType(nextType);
+    setScreenshotMeta({ type: nextType, source: 'user', confidence: 1, reason: 'Chosen by you' });
+    try {
+      await saveOrganization({ screenshotType: nextType }, `Saved as ${SCREENSHOT_TYPE_LABELS[nextType]}`);
+    } catch {
+      setSelectedScreenshotType(previous);
+    }
+  }
+
   async function addTag() {
     const value = tagInput.trim().toLowerCase();
     if (!value || tags.includes(value)) {
@@ -125,20 +148,30 @@ export default function MediaViewer({ item, items = [], index = 0, onClose, onCh
           {current.kind === 'photo' ? <img src={mediaSrc(current.id)} alt="" className="max-h-full max-w-full object-contain" /> : current.kind === 'video' ? <video src={mediaSrc(current.id)} className="max-h-full max-w-full" controls autoPlay /> : <div className="max-w-lg rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-white/75">{current.aiAnalysis?.description || current.name}</div>}
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 max-h-[44vh] overflow-y-auto border-t border-white/10 bg-[#0b0414]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <div className="absolute bottom-0 left-0 right-0 max-h-[46vh] overflow-y-auto border-t border-white/10 bg-[#0b0414]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0"><h2 className="truncate text-sm font-black text-white">{current.name}</h2><p className="text-xs text-white/45">Swipe or tap arrows · {currentIndex + 1} of {list.length}</p></div></div>
 
           <div className="mb-3 grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 md:grid-cols-2">
-            <label className="block">
-              <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-white/45">Category</span>
-              <select value={selectedCategory} onChange={(event) => changeCategory(event.target.value)} disabled={saving} className="w-full rounded-xl border border-white/10 bg-[#170d22] px-3 py-2.5 text-sm font-bold text-white outline-none">
-                <option value="photos">Photos</option>
-                <option value="videos">Videos</option>
-                <option value="screenshots">Screenshots</option>
-                <option value="docs">Docs</option>
-              </select>
-              {selectedCategory === 'screenshots' && <p className="mt-1.5 text-[11px] text-white/40">Choose Docs here when a screenshot should be filed as a document.</p>}
-            </label>
+            {screenshot ? (
+              <div>
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-white/45">Screenshot type</span>
+                {screenshotMeta?.source !== 'user' && <p className="mb-2 text-xs text-white/45">Suggested: <span className="font-bold text-white/80">{SCREENSHOT_TYPE_LABELS[screenshotMeta?.type || selectedScreenshotType]}</span> · {screenshotMeta?.reason}</p>}
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(SCREENSHOT_TYPE_LABELS).map(([key, label]) => <button key={key} onClick={() => changeScreenshotType(key)} disabled={saving} className={`rounded-xl border px-2 py-2.5 text-xs font-black ${selectedScreenshotType === key ? 'border-pink-400/50 bg-pink-500/15 text-pink-100' : 'border-white/10 bg-white/5 text-white/55'}`}>{label}</button>)}
+                </div>
+                <p className="mt-2 text-[11px] text-white/35">Visual for saved images · Info for references · Docs for important documents.</p>
+              </div>
+            ) : (
+              <label className="block">
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-white/45">Category</span>
+                <select value={selectedCategory} onChange={(event) => changeCategory(event.target.value)} disabled={saving} className="w-full rounded-xl border border-white/10 bg-[#170d22] px-3 py-2.5 text-sm font-bold text-white outline-none">
+                  <option value="photos">Photos</option>
+                  <option value="videos">Videos</option>
+                  <option value="screenshots">Screenshots</option>
+                  <option value="docs">Docs</option>
+                </select>
+              </label>
+            )}
 
             <div>
               <span className="mb-1.5 flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-white/45"><Tag className="h-3.5 w-3.5" /> Tags</span>
