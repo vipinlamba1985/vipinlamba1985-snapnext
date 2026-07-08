@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { MEDIA_CATEGORIES } from '@/lib/media-category';
+import { MEDIA_CATEGORIES, SCREENSHOT_TYPES } from '@/lib/media-category';
 
 export const runtime = 'nodejs';
 
@@ -19,6 +19,17 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
     update.userCategory = category;
+  }
+
+  if (body.screenshotType !== undefined) {
+    const screenshotType = String(body.screenshotType || '').trim().toLowerCase();
+    if (!SCREENSHOT_TYPES.includes(screenshotType)) {
+      return NextResponse.json({ error: 'Invalid screenshot type' }, { status: 400 });
+    }
+    update.userScreenshotType = screenshotType;
+    update.screenshotTypeSource = 'user';
+    update.screenshotTypeConfidence = 1;
+    update.screenshotTypeReason = 'Chosen by user';
   }
 
   if (body.tags !== undefined) {
