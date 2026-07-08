@@ -1,5 +1,5 @@
-import MagicLibraryGallery from '@/components/magic-library/MagicLibraryGallery';
+import MagicLibraryGalleryMagic from '@/components/magic-library/MagicLibraryGalleryMagic';
 
 export default function MagicLibraryPage() {
-  return <MagicLibraryGallery />;
+  return <MagicLibraryGalleryMagic />;
 }
