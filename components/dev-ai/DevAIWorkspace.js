@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Bot, Code2, Loader2, SearchCode, Send, ShieldCheck, TerminalSquare, Wrench } from 'lucide-react';
+import { Bot, Code2, Gauge, Loader2, SearchCode, Send, ShieldCheck, TerminalSquare, Wrench } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -38,7 +38,7 @@ export default function DevAIWorkspace() {
         body: JSON.stringify({ message, history }),
       });
       setMessages((current) => [...current, { role: 'assistant', content: result.text || 'No response returned.' }]);
-      setLastMeta({ model: result.model, tools: result.tools || [], usage: result.usage || null });
+      setLastMeta({ model: result.model, tools: result.tools || [], usage: result.usage || null, limits: result.limits || null });
     } catch (error) {
       toast.error(error?.message || 'Dev AI request failed');
       setMessages((current) => [...current, { role: 'assistant', content: `I could not complete that request: ${error?.message || 'unknown error'}` }]);
@@ -90,10 +90,11 @@ export default function DevAIWorkspace() {
       </div>
 
       {lastMeta && (
-        <div className="mt-3 grid gap-2 text-[11px] text-white/40 md:grid-cols-3">
+        <div className="mt-3 grid gap-2 text-[11px] text-white/40 md:grid-cols-4">
           <Meta icon={Bot} label="Model" value={lastMeta.model || '—'} />
           <Meta icon={Wrench} label="Repo tools" value={String(lastMeta.tools?.length || 0)} />
           <Meta icon={TerminalSquare} label="Output tokens" value={String(lastMeta.usage?.output_tokens || '—')} />
+          <Meta icon={Gauge} label="Daily budget" value={lastMeta.limits ? `${lastMeta.limits.usedToday}/${lastMeta.limits.dailyLimit}` : '—'} />
         </div>
       )}
     </section>
