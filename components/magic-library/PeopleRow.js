@@ -1,9 +1,20 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Heart, LockKeyhole, Pencil, Sparkles } from 'lucide-react';
-import { mediaSrc } from '@/lib/api-client';
+import { apiFetch, mediaSrc } from '@/lib/api-client';
 
-export default function PeopleRow({ people, enabledNames, favoriteNames, activePerson, displayName, onRename, onOpen, onLocked, limit = 4 }) {
+export default function PeopleRow({ people, enabledNames, favoriteNames, activePerson, displayName, onRename, onOpen, onLocked }) {
+  const [limit, setLimit] = useState(Math.max(4, enabledNames.length));
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/magic-library/activation')
+      .then((state) => { if (!cancelled) setLimit(Number(state?.limit || 4)); })
+      .catch(() => null);
+    return () => { cancelled = true; };
+  }, [enabledNames.length]);
+
   const active = people.filter((person) => enabledNames.includes(person.name));
   const discovered = people.filter((person) => !enabledNames.includes(person.name));
 
@@ -30,7 +41,7 @@ export default function PeopleRow({ people, enabledNames, favoriteNames, activeP
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
             <div className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35">Discovered · {discovered.length}</div>
-            <div className="text-[10px] text-white/30">Visible to everyone</div>
+            <div className="text-[10px] text-white/30">Visible on every plan</div>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
             {discovered.map((person) => <PersonTile key={person.name} person={person} enabled={false} favoriteNames={favoriteNames} activePerson={activePerson} displayName={displayName} onRename={onRename} onOpen={onOpen} onLocked={onLocked} />)}
