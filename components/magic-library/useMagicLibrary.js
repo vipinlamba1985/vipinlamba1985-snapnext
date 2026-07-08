@@ -39,13 +39,20 @@ export default function useMagicLibrary() {
 
   function toggleDraft(name) {
     if (activation.active.includes(name)) return;
-    setDraftNames((current) => current.includes(name) ? current.filter((value) => value !== name) : current.length < activation.limit ? [...current, name] : current);
+    setDraftNames((current) => current.includes(name)
+      ? current.filter((value) => value !== name)
+      : current.length < activation.limit
+        ? [...current, name]
+        : current);
   }
 
   async function confirmActivation() {
     setActivating(true);
     try {
-      const next = await apiFetch('/magic-library/activation', { method: 'POST', body: JSON.stringify({ people: draftNames }) });
+      const next = await apiFetch('/magic-library/activation', {
+        method: 'POST',
+        body: JSON.stringify({ people: draftNames }),
+      });
       setActivation(next);
       setDraftNames(next.active || []);
       if (!activePerson && next.enabled?.length) setActivePerson(next.enabled[0]);
@@ -55,5 +62,50 @@ export default function useMagicLibrary() {
     }
   }
 
-  return { items, people, suggestions, activation, favoriteNames, draftNames, query, activePerson, busy, activating, visibleItems, bestItems, videos, photos, setQuery, setActivePerson, toggleDraft, confirmActivation, reload: load };
+  async function activatePerson(name) {
+    if (!name || activation.active.includes(name)) return activation;
+    if (activation.active.length >= activation.limit) {
+      const error = new Error(`Your plan supports ${activation.limit} active people.`);
+      error.code = 'active_people_limit';
+      throw error;
+    }
+
+    setActivating(true);
+    try {
+      const requested = [...activation.active, name];
+      const next = await apiFetch('/magic-library/activation', {
+        method: 'POST',
+        body: JSON.stringify({ people: requested }),
+      });
+      setActivation(next);
+      setDraftNames(next.active || []);
+      setActivePerson(name);
+      return next;
+    } finally {
+      setActivating(false);
+    }
+  }
+
+  return {
+    items,
+    people,
+    suggestions,
+    activation,
+    favoriteNames,
+    draftNames,
+    query,
+    activePerson,
+    busy,
+    activating,
+    visibleItems,
+    bestItems,
+    videos,
+    photos,
+    setQuery,
+    setActivePerson,
+    toggleDraft,
+    confirmActivation,
+    activatePerson,
+    reload: load,
+  };
 }
