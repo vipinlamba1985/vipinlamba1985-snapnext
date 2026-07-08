@@ -2,7 +2,8 @@ import { getUserFromRequest } from '@/lib/auth';
 import { isSuperUser } from '@/lib/entitlements';
 import { getDb } from '@/lib/db';
 import { runDevAI } from '@/lib/dev-ai';
-import { releaseAiSpendReservation, reserveAiSpend, settleAiSpend } from '@/lib/ai-profit-guard';
+import { externalAiBlockedError, releaseExternalAiSpend, reserveExternalAiSpend, settleExternalAiSpend } from '@/lib/ai-spend-gate';
+import { getUserAiWalletSnapshot } from '@/lib/ai-weekly-wallet';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -47,26 +48,24 @@ export async function POST(request) {
     return Response.json({ error: { code: 'daily_limit', message: `Dev AI daily request limit reached (${DAILY_LIMIT}).` } }, { status: 429 });
   }
 
-  const profitGuard = await reserveAiSpend({
+  const gate = await reserveExternalAiSpend({
     db,
+    user,
+    request: null,
     feature: 'dev_ai',
     agentId: 'dev-ai',
-    userId: user.id,
     estimatedCostUsd: MAX_REQUEST_COST_USD,
     essential: false,
     metadata: { requestType: 'repository_analysis' },
   });
 
-  if (!profitGuard.allowed) {
+  if (!gate.allowed) {
+    const blocked = externalAiBlockedError(gate);
     return Response.json({
-      error: {
-        code: 'profit_guard_blocked',
-        message: profitGuard.reason === 'no_recognized_revenue'
-          ? 'Dev AI is paused until SnapNext has recognized revenue available for AI spending.'
-          : 'Dev AI is paused to protect SnapNext profit margin.',
-      },
-      profitGuard: profitGuard.snapshot || null,
-    }, { status: 402 });
+      error: { code: blocked.code, message: blocked.message },
+      weeklyWallet: gate.wallet || null,
+      profitGuard: gate.profitGuard || null,
+    }, { status: blocked.status });
   }
 
   const startedAt = Date.now();
@@ -74,13 +73,13 @@ export async function POST(request) {
     const result = await runDevAI({ message, history });
     const actualCostUsd = estimateActualCost(result.usage);
 
-    await settleAiSpend({
+    await settleExternalAiSpend({
       db,
-      reservationId: profitGuard.reservationId,
+      reservation: gate,
+      actualCostUsd,
       feature: 'dev_ai',
       agentId: 'dev-ai',
       userId: user.id,
-      actualCostUsd,
       provider: 'openai',
       model: result.model,
       metadata: { inputTokens: Number(result.usage?.input_tokens || 0), outputTokens: Number(result.usage?.output_tokens || 0) },
@@ -99,18 +98,20 @@ export async function POST(request) {
       createdAt: new Date(),
     }).catch((error) => console.error('[dev-ai] usage log failed', error?.message));
 
+    const weeklyWallet = await getUserAiWalletSnapshot({ db, user, request: null });
     return Response.json({
       ok: true,
       ...result,
       estimatedCostUsd: actualCostUsd,
       limits: { usedToday: usedToday + 1, dailyLimit: DAILY_LIMIT },
+      weeklyWallet,
       profitGuard: {
-        remainingAiBudgetUsd: profitGuard.snapshot?.remainingAiBudgetUsd ?? null,
-        targetProfitMargin: profitGuard.snapshot?.targetProfitMargin ?? null,
+        remainingAiBudgetUsd: gate.profitGuard?.remainingAiBudgetUsd ?? null,
+        targetProfitMargin: gate.profitGuard?.targetProfitMargin ?? null,
       },
     });
   } catch (error) {
-    await releaseAiSpendReservation({ db, reservationId: profitGuard.reservationId, reason: 'dev_ai_failed' });
+    await releaseExternalAiSpend({ db, reservation: gate, reason: 'dev_ai_failed' });
     console.error('[dev-ai] request failed', error?.message);
     await collection.insertOne({
       userId: user.id,
