@@ -11,9 +11,11 @@ import MediaSection from '@/components/magic-library/MediaSection';
 import MediaViewer from '@/components/magic-library/MediaViewer';
 import LockedPersonPrompt from '@/components/magic-library/LockedPersonPrompt';
 import { buildLibrarySections, buildPersonSections, findConfirmedSelfLabel } from '@/lib/magic-library-sections';
+import { mediaCategory } from '@/lib/media-category';
 
 const NAME_KEY = 'snapnext.magicPersonNames.v1';
 const SKIP_KEY = 'snapnext.magicActivationSkipped.v1';
+const CATEGORY_TITLES = { photos: 'Photos', videos: 'Videos', screenshots: 'Screenshots', docs: 'Docs' };
 
 function cleanName(value) {
   const name = String(value || '').trim();
@@ -25,6 +27,7 @@ export default function MagicLibraryGallery() {
   const magic = useMagicLibrary();
   const [viewer, setViewer] = useState(null);
   const [openSection, setOpenSection] = useState(null);
+  const [openCategoryKey, setOpenCategoryKey] = useState(null);
   const [lockedPerson, setLockedPerson] = useState(null);
   const [draftQuery, setDraftQuery] = useState('');
   const [personNames, setPersonNames] = useState({});
@@ -76,14 +79,16 @@ export default function MagicLibraryGallery() {
 
   const runSearch = (value = draftQuery) => {
     setOpenSection(null);
+    setOpenCategoryKey(null);
     magic.setQuery(String(value || '').trim());
   };
 
-  function openCategory(sectionKey) {
+  function openCategory(category) {
     magic.setActivePerson('');
     magic.setQuery('');
     setDraftQuery('');
-    setOpenSection(sectionKey);
+    setOpenSection(null);
+    setOpenCategoryKey(category);
   }
 
   function showAll() {
@@ -91,6 +96,7 @@ export default function MagicLibraryGallery() {
     magic.setQuery('');
     setDraftQuery('');
     setOpenSection(null);
+    setOpenCategoryKey(null);
   }
 
   const selfLabel = useMemo(() => findConfirmedSelfLabel(magic.people), [magic.people]);
@@ -100,7 +106,16 @@ export default function MagicLibraryGallery() {
     return buildLibrarySections({ items: source, selfLabel, displayName });
   }, [magic.activePerson, magic.visibleItems, magic.query, magic.items, selfLabel, personNames]);
 
-  const expanded = sections.find((section) => section.key === openSection);
+  const categoryExpanded = useMemo(() => {
+    if (!openCategoryKey) return null;
+    return {
+      key: `category-${openCategoryKey}`,
+      title: CATEGORY_TITLES[openCategoryKey],
+      items: magic.items.filter((item) => mediaCategory(item) === openCategoryKey),
+    };
+  }, [openCategoryKey, magic.items]);
+
+  const expanded = categoryExpanded || sections.find((section) => section.key === openSection);
   const title = magic.activePerson ? displayName(magic.activePerson) : magic.query ? `Results for “${magic.query}”` : 'Magic Library';
   const resultCount = sections.reduce((total, section) => total + section.items.length, 0);
 
@@ -118,22 +133,22 @@ export default function MagicLibraryGallery() {
     <div className="space-y-8">
       <header>
         <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-full bg-pink-500/15 text-pink-200"><Sparkles className="h-5 w-5" /></span><div><p className="text-xs font-black uppercase tracking-[0.22em] text-pink-100/60">Your protected memories</p><h1 className="text-3xl font-black text-white md:text-4xl">Magic Library</h1></div></div>
-        <div className="mt-5 flex max-w-3xl gap-2"><div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" /><input value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} placeholder={magic.activePerson ? `Search memories with ${displayName(magic.activePerson)}...` : 'Search memories'} className="w-full rounded-full border border-white/10 bg-white/[0.05] py-3 pl-11 pr-11 text-sm text-white outline-none focus:border-pink-400/40" />{draftQuery && <button onClick={() => { setDraftQuery(''); magic.setQuery(''); setOpenSection(null); }} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/35"><X className="h-4 w-4" /></button>}</div><button onClick={() => runSearch()} className="rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-4 py-2 text-sm font-bold text-white">Search</button></div>
+        <div className="mt-5 flex max-w-3xl gap-2"><div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" /><input value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} placeholder={magic.activePerson ? `Search memories with ${displayName(magic.activePerson)}...` : 'Search memories'} className="w-full rounded-full border border-white/10 bg-white/[0.05] py-3 pl-11 pr-11 text-sm text-white outline-none focus:border-pink-400/40" />{draftQuery && <button onClick={() => { setDraftQuery(''); magic.setQuery(''); setOpenSection(null); setOpenCategoryKey(null); }} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/35"><X className="h-4 w-4" /></button>}</div><button onClick={() => runSearch()} className="rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-4 py-2 text-sm font-bold text-white">Search</button></div>
         {!!smartSuggestions.length && <div className="mt-3 flex flex-wrap gap-2">{smartSuggestions.map((label) => <button key={label} onClick={() => { setDraftQuery(label); runSearch(label); }} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/55">{label}</button>)}</div>}
       </header>
 
       {activationSkipped && magic.activation.active.length === 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-pink-400/15 bg-pink-500/[0.06] p-4"><div><div className="text-sm font-black text-white">People Search is waiting</div><p className="mt-1 text-xs text-white/45">Activate up to {magic.activation.limit} people whenever you are ready.</p></div><a href="/magic-library?activate=1" className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-black text-white">Activate People</a></div>}
 
-      {magic.people.length > 0 && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setOpenSection(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
+      {magic.people.length > 0 && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setOpenSection(null); setOpenCategoryKey(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
 
-      {!magic.activePerson && <div className="grid grid-cols-2 gap-2 md:grid-cols-4"><button onClick={() => openCategory('recent')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><Camera className="mb-2 h-4 w-4 text-pink-300" />Photos</button><button onClick={() => openCategory('videos')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><Film className="mb-2 h-4 w-4 text-purple-300" />Videos</button><button onClick={() => openCategory('screenshots')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><ImageIcon className="mb-2 h-4 w-4 text-sky-300" />Screenshots</button><button onClick={() => openCategory('docs')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><FileText className="mb-2 h-4 w-4 text-emerald-300" />Docs</button></div>}
+      {!magic.activePerson && <div className="grid grid-cols-2 gap-2 md:grid-cols-4"><button onClick={() => openCategory('photos')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><Camera className="mb-2 h-4 w-4 text-pink-300" />Photos</button><button onClick={() => openCategory('videos')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><Film className="mb-2 h-4 w-4 text-purple-300" />Videos</button><button onClick={() => openCategory('screenshots')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><ImageIcon className="mb-2 h-4 w-4 text-sky-300" />Screenshots</button><button onClick={() => openCategory('docs')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><FileText className="mb-2 h-4 w-4 text-emerald-300" />Docs</button></div>}
 
-      {(magic.activePerson || magic.query || openSection) && <button onClick={showAll} className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-bold text-white/65">Show all memories</button>}
+      {(magic.activePerson || magic.query || openSection || openCategoryKey) && <button onClick={showAll} className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-bold text-white/65">Show all memories</button>}
       {canAddMore && <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />}
 
       <div><h2 className="text-2xl font-black text-white">{expanded ? expanded.title : title}</h2><p className="mt-1 text-sm text-white/45">{expanded ? expanded.items.length : resultCount} matching protected memories</p></div>
 
-      {expanded ? <div><button onClick={() => setOpenSection(null)} className="mb-4 rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-bold text-white/65">Back to sections</button><div className="grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-6">{expanded.items.map((item, index) => <button key={item.id} onClick={() => openViewer(expanded, item, index)} className="aspect-square overflow-hidden rounded-xl bg-white/5">{item.kind === 'photo' ? <img src={`/api/media/${item.id}`} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={`/api/media/${item.id}`} className="h-full w-full object-cover" muted /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>)}</div></div> : sections.map((section) => <MediaSection key={section.key} title={section.title} items={section.items} onOpen={(item, index) => openViewer(section, item, index)} onExpand={() => setOpenSection(section.key)} emptyCopy="No matching memories yet." />)}
+      {expanded ? <div><button onClick={() => { setOpenSection(null); setOpenCategoryKey(null); }} className="mb-4 rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-bold text-white/65">Back to sections</button><div className="grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-6">{expanded.items.map((item, index) => <button key={item.id} onClick={() => openViewer(expanded, item, index)} className="aspect-square overflow-hidden rounded-xl bg-white/5">{item.kind === 'photo' ? <img src={`/api/media/${item.id}`} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={`/api/media/${item.id}`} className="h-full w-full object-cover" muted /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>)}</div></div> : sections.map((section) => <MediaSection key={section.key} title={section.title} items={section.items} onOpen={(item, index) => openViewer(section, item, index)} onExpand={() => { setOpenCategoryKey(null); setOpenSection(section.key); }} emptyCopy="No matching memories yet." />)}
 
       <MediaViewer item={viewer?.item} items={viewer?.items || []} index={viewer?.index || 0} onClose={() => setViewer(null)} onChanged={magic.reload} />
       <LockedPersonPrompt person={lockedPerson} onClose={() => setLockedPerson(null)} />
