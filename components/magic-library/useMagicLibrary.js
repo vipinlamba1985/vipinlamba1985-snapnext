@@ -4,13 +4,27 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { bestMagicItems, buildMagicPeople, buildMagicSuggestions, filterMagicItems } from '@/lib/magic-library-view';
 
+const ALL_MEMORY_COMMANDS = new Set([
+  'all',
+  'all memories',
+  'show all',
+  'show all memories',
+  'everything',
+  'my library',
+]);
+
+function isAllMemoriesCommand(value) {
+  return ALL_MEMORY_COMMANDS.has(String(value || '').trim().toLowerCase());
+}
+
 export default function useMagicLibrary() {
   const [items, setItems] = useState([]);
   const [activation, setActivation] = useState({ planId: 'free', limit: 4, active: [], enabled: [] });
   const [favoriteNames, setFavoriteNames] = useState([]);
   const [draftNames, setDraftNames] = useState([]);
-  const [query, setQuery] = useState('');
-  const [activePerson, setActivePerson] = useState('');
+  const [query, setQueryState] = useState('');
+  const [activePerson, setActivePersonState] = useState('');
+  const [explicitAllMemories, setExplicitAllMemories] = useState(false);
   const [busy, setBusy] = useState(true);
   const [activating, setActivating] = useState(false);
 
@@ -37,6 +51,23 @@ export default function useMagicLibrary() {
   const videos = useMemo(() => visibleItems.filter((item) => item.kind === 'video'), [visibleItems]);
   const photos = useMemo(() => visibleItems.filter((item) => item.kind === 'photo'), [visibleItems]);
 
+  function setActivePerson(value) {
+    const next = String(value || '');
+    setActivePersonState(next);
+    setExplicitAllMemories(!next);
+  }
+
+  function setQuery(value) {
+    const next = String(value || '').trim();
+    if (isAllMemoriesCommand(next)) {
+      setQueryState('');
+      setActivePersonState('');
+      setExplicitAllMemories(true);
+      return;
+    }
+    setQueryState(next);
+  }
+
   function toggleDraft(name) {
     if (activation.active.includes(name)) return;
     setDraftNames((current) => current.includes(name)
@@ -55,7 +86,7 @@ export default function useMagicLibrary() {
       });
       setActivation(next);
       setDraftNames(next.active || []);
-      if (!activePerson && next.enabled?.length) setActivePerson(next.enabled[0]);
+      if (!activePerson && !explicitAllMemories && next.enabled?.length) setActivePersonState(next.enabled[0]);
       return next;
     } finally {
       setActivating(false);
@@ -79,18 +110,31 @@ export default function useMagicLibrary() {
       });
       setActivation(next);
       setDraftNames(next.active || []);
-      setActivePerson(name);
+      setActivePersonState(name);
+      setExplicitAllMemories(false);
       return next;
     } finally {
       setActivating(false);
     }
   }
 
+  const activationForView = useMemo(() => {
+    if (!explicitAllMemories) return activation;
+    const enabled = activation.enabled || [];
+    return {
+      ...activation,
+      enabled: {
+        length: 0,
+        includes: (name) => enabled.includes(name),
+      },
+    };
+  }, [activation, explicitAllMemories]);
+
   return {
     items,
     people,
     suggestions,
-    activation,
+    activation: activationForView,
     favoriteNames,
     draftNames,
     query,
