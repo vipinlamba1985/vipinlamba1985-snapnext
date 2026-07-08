@@ -1,12 +1,13 @@
 {
-    "compilerOptions": {
-      "baseUrl": ".",
-      "paths": {
-        "@/*": ["./*"],
-        "@/components/*": ["./components/*"],
-        "@/lib/*": ["./lib/*"],
-        "@/app/*": ["./app/*"]
-      }
-    },
-    "exclude": ["node_modules", ".next"]
-  }
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/lib/ai-router": ["./lib/ai-router-budgeted.js"],
+      "@/*": ["./*"],
+      "@/components/*": ["./components/*"],
+      "@/lib/*": ["./lib/*"],
+      "@/app/*": ["./app/*"]
+    }
+  },
+  "exclude": ["node_modules", ".next"]
+}
