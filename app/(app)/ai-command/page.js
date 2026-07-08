@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { Brain, ShieldCheck, Activity, BarChart3, GraduationCap, AlertTriangle, Sparkles, ShieldAlert, LockKeyhole, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
+import DevAIWorkspace from '@/components/dev-ai/DevAIWorkspace';
 
 export default function AICommandCenter() {
   const [status, setStatus] = useState(null);
@@ -78,7 +79,7 @@ export default function AICommandCenter() {
               <Brain className="h-3.5 w-3.5 text-pink-300" /> SnapNext Intelligence OS
             </div>
             <h1 className="mt-4 text-3xl font-bold">AI Command Center</h1>
-            <p className="mt-2 max-w-2xl text-sm text-white/60">Monitor Chief AI, Guardian AI, specialist agents, feedback learning, cost signals, certification, governance, and business intelligence from one premium control room.</p>
+            <p className="mt-2 max-w-2xl text-sm text-white/60">Monitor Chief AI, Guardian AI, specialist agents, feedback learning, cost signals, certification, governance, business intelligence, and the internal coding brain from one control room.</p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-right">
             <div className="text-xs text-white/50">Version</div>
@@ -96,6 +97,8 @@ export default function AICommandCenter() {
         <Metric icon={GraduationCap} label="Learning" value="Shadow Mode" />
         <Metric icon={ShieldAlert} label="Alerts" value={String(alertList.length + recommendations.length)} />
       </div>
+
+      <DevAIWorkspace />
 
       {alertList.length > 0 && (
         <section className="rounded-3xl border border-amber-300/20 bg-amber-300/10 p-5">
