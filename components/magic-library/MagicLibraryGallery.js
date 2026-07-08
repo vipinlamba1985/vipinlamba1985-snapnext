@@ -79,11 +79,11 @@ export default function MagicLibraryGallery() {
     magic.setQuery(String(value || '').trim());
   };
 
-  function quickFilter(type) {
+  function openCategory(sectionKey) {
     magic.setActivePerson('');
-    setOpenSection(null);
-    const map = { photos: 'photo', videos: 'video', screenshots: 'screenshot', docs: 'doc' };
-    magic.setQuery(map[type] || '');
+    magic.setQuery('');
+    setDraftQuery('');
+    setOpenSection(sectionKey);
   }
 
   function showAll() {
@@ -95,9 +95,7 @@ export default function MagicLibraryGallery() {
 
   const selfLabel = useMemo(() => findConfirmedSelfLabel(magic.people), [magic.people]);
   const sections = useMemo(() => {
-    if (magic.activePerson) {
-      return buildPersonSections({ items: magic.visibleItems, personName: magic.activePerson, displayName });
-    }
+    if (magic.activePerson) return buildPersonSections({ items: magic.visibleItems, personName: magic.activePerson, displayName });
     const source = magic.query ? magic.visibleItems : magic.items;
     return buildLibrarySections({ items: source, selfLabel, displayName });
   }, [magic.activePerson, magic.visibleItems, magic.query, magic.items, selfLabel, personNames]);
@@ -106,9 +104,7 @@ export default function MagicLibraryGallery() {
   const title = magic.activePerson ? displayName(magic.activePerson) : magic.query ? `Results for “${magic.query}”` : 'Magic Library';
   const resultCount = sections.reduce((total, section) => total + section.items.length, 0);
 
-  function openViewer(section, item, index) {
-    setViewer({ item, items: section.items, index });
-  }
+  function openViewer(section, item, index) { setViewer({ item, items: section.items, index }); }
 
   if (magic.busy) return <div className="grid min-h-[50vh] place-items-center"><Loader2 className="h-8 w-8 animate-spin text-pink-300" /></div>;
 
@@ -130,7 +126,7 @@ export default function MagicLibraryGallery() {
 
       {magic.people.length > 0 && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setOpenSection(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
 
-      {!magic.activePerson && <div className="grid grid-cols-2 gap-2 md:grid-cols-4"><button onClick={() => quickFilter('photos')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><Camera className="mb-2 h-4 w-4 text-pink-300" />All recent photos</button><button onClick={() => quickFilter('videos')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><Film className="mb-2 h-4 w-4 text-purple-300" />All recent videos</button><button onClick={() => quickFilter('screenshots')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><ImageIcon className="mb-2 h-4 w-4 text-sky-300" />Screenshots</button><button onClick={() => quickFilter('docs')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><FileText className="mb-2 h-4 w-4 text-emerald-300" />Docs</button></div>}
+      {!magic.activePerson && <div className="grid grid-cols-2 gap-2 md:grid-cols-4"><button onClick={() => openCategory('recent')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><Camera className="mb-2 h-4 w-4 text-pink-300" />Photos</button><button onClick={() => openCategory('videos')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><Film className="mb-2 h-4 w-4 text-purple-300" />Videos</button><button onClick={() => openCategory('screenshots')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><ImageIcon className="mb-2 h-4 w-4 text-sky-300" />Screenshots</button><button onClick={() => openCategory('docs')} className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-left text-sm font-bold text-white/75"><FileText className="mb-2 h-4 w-4 text-emerald-300" />Docs</button></div>}
 
       {(magic.activePerson || magic.query || openSection) && <button onClick={showAll} className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-bold text-white/65">Show all memories</button>}
       {canAddMore && <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />}
