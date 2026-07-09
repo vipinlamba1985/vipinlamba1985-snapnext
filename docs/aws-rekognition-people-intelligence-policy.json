@@ -1,0 +1,40 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SnapNextPeopleRegionalActions",
+      "Effect": "Allow",
+      "Action": [
+        "rekognition:CreateCollection",
+        "rekognition:DetectFaces",
+        "rekognition:CompareFaces",
+        "rekognition:StartFaceDetection",
+        "rekognition:GetFaceDetection",
+        "rekognition:GetFaceSearch"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SnapNextPeopleCollectionActions",
+      "Effect": "Allow",
+      "Action": [
+        "rekognition:DescribeCollection",
+        "rekognition:DeleteCollection",
+        "rekognition:IndexFaces",
+        "rekognition:SearchFaces",
+        "rekognition:SearchFacesByImage",
+        "rekognition:ListFaces",
+        "rekognition:DeleteFaces",
+        "rekognition:CreateUser",
+        "rekognition:AssociateFaces",
+        "rekognition:DisassociateFaces",
+        "rekognition:SearchUsers",
+        "rekognition:SearchUsersByImage",
+        "rekognition:ListUsers",
+        "rekognition:DeleteUser",
+        "rekognition:StartFaceSearch"
+      ],
+      "Resource": "arn:aws:rekognition:us-east-1:750702272269:collection/snapnext_*"
+    }
+  ]
+}
