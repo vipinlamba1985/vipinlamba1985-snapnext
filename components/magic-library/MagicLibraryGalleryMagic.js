@@ -11,6 +11,7 @@ import MediaViewer from '@/components/magic-library/MediaViewer';
 import LockedPersonPrompt from '@/components/magic-library/LockedPersonPrompt';
 import { buildLibrarySections, buildPersonSections, findConfirmedSelfLabel } from '@/lib/magic-library-sections';
 import { isDocsItem, mediaCategory, screenshotType } from '@/lib/media-category';
+import { mediaSrc } from '@/lib/api-client';
 
 const NAME_KEY = 'snapnext.magicPersonNames.v1';
 const TITLES = { photos: 'Photos', videos: 'Videos', screenshots: 'Screenshots', docs: 'Docs' };
@@ -106,7 +107,7 @@ export default function MagicLibraryGalleryMagic() {
 
     {(magic.activePerson || magic.query || sectionKey || category) && <button onClick={showAll} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-bold text-white/65">Show all memories</button>}
 
-    {expanded ? <div><div className="mb-3"><h2 className="text-xl font-black text-white">{expanded.title}</h2><p className="text-xs text-white/40">{expanded.items.length} memories</p></div><div className="grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-6">{expanded.items.map((item, index) => <button key={item.id} onClick={() => setViewer({ item, items: expanded.items, index })} className="aspect-square overflow-hidden rounded-xl bg-white/5">{item.kind === 'photo' ? <img src={`/api/media/${item.id}`} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={`/api/media/${item.id}`} className="h-full w-full object-cover" muted /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>)}</div></div> : sections.map((section) => <MediaSection key={section.key} title={section.title} items={section.items} onOpen={(item, index) => setViewer({ item, items: section.items, index })} onExpand={() => { setCategory(null); setSectionKey(section.key); }} emptyCopy="No matching memories yet." />)}
+    {expanded ? <div><div className="mb-3"><h2 className="text-xl font-black text-white">{expanded.title}</h2><p className="text-xs text-white/40">{expanded.items.length} memories</p></div><div className="grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-6">{expanded.items.map((item, index) => <button key={item.id} onClick={() => setViewer({ item, items: expanded.items, index })} className="aspect-square overflow-hidden rounded-xl bg-white/5">{item.kind === 'photo' ? <img src={mediaSrc(item.id)} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline preload="metadata" /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>)}</div></div> : sections.map((section) => <MediaSection key={section.key} title={section.title} items={section.items} onOpen={(item, index) => setViewer({ item, items: section.items, index })} onExpand={() => { setCategory(null); setSectionKey(section.key); }} emptyCopy="No matching memories yet." />)}
 
     <MediaViewer item={viewer?.item} items={viewer?.items || []} index={viewer?.index || 0} onClose={() => setViewer(null)} onChanged={magic.reload} />
     <LockedPersonPrompt person={lockedPerson} onClose={() => setLockedPerson(null)} />
