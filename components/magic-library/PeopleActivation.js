@@ -5,16 +5,15 @@ import { mediaSrc } from '@/lib/api-client';
 import { faceCropStyle } from '@/lib/people-intelligence';
 
 export default function PeopleActivation({ people, limit, activeNames, draftNames, onToggle, onConfirm, busy }) {
-  const required = Math.min(limit, people.length);
   const firstActivation = activeNames.length === 0;
-  const ready = firstActivation ? draftNames.length === required : draftNames.length <= limit && draftNames.length > activeNames.length;
+  const ready = draftNames.length > 0 && draftNames.length <= limit;
 
   return (
     <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5 md:p-7">
       <div className="mx-auto max-w-3xl text-center">
         <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-pink-500/15 text-pink-200"><Sparkles className="h-5 w-5" /></div>
         <h1 className="mt-4 text-3xl font-black text-white">{firstActivation ? 'Choose the people who matter most' : 'Activate more people'}</h1>
-        <p className="mt-2 text-sm text-white/55">SnapNext found {people.length} real people clusters in your memories. All discovered people stay visible. Your plan lets you activate {limit} for one-tap search and full person views.</p>
+        <p className="mt-2 text-sm text-white/55">SnapNext found {people.length} real people clusters in your memories. All discovered people stay visible. Your plan lets you activate up to {limit} for one-tap search and full person views.</p>
         <p className="mt-2 text-xs text-white/35">{draftNames.length} of {limit} active people selected</p>
       </div>
 
@@ -25,7 +24,7 @@ export default function PeopleActivation({ people, limit, activeNames, draftName
           const label = person.displayName && person.displayName !== 'Add name' ? person.displayName : 'Add name';
           const crop = faceCropStyle(person.representativeFaceBox || {});
           return (
-            <button key={person.name} onClick={() => onToggle(person.name)} className="group min-w-0 text-center" disabled={permanent}>
+            <button key={person.name} type="button" onClick={() => onToggle(person.name)} className="group min-w-0 text-center" disabled={permanent || busy}>
               <span className={`relative mx-auto block aspect-square w-full max-w-24 overflow-hidden rounded-full border-2 ${selected ? 'border-pink-400 ring-4 ring-pink-500/20' : 'border-white/10'}`}>
                 {person.representativeMediaId ? <img src={mediaSrc(person.representativeMediaId)} alt="" className="h-full w-full object-cover" style={crop} /> : <span className="grid h-full w-full place-items-center bg-white/5 text-lg font-black text-white/60">?</span>}
                 {selected && <span className="absolute bottom-1 right-1 grid h-6 w-6 place-items-center rounded-full bg-pink-500 text-white"><Check className="h-3.5 w-3.5" /></span>}
@@ -37,7 +36,10 @@ export default function PeopleActivation({ people, limit, activeNames, draftName
         })}
       </div>
 
-      <div className="mt-7 flex justify-center"><button onClick={onConfirm} disabled={!ready || busy} className="rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-6 py-3 text-sm font-black text-white disabled:opacity-40">{busy ? 'Activating…' : `Activate ${draftNames.length} People`}</button></div>
+      <div className="mt-7 flex flex-col items-center justify-center gap-2">
+        <button type="button" onClick={onConfirm} disabled={!ready || busy} className="rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{busy ? 'Activating…' : draftNames.length ? `Activate ${draftNames.length} ${draftNames.length === 1 ? 'Person' : 'People'}` : 'Select at least 1 person'}</button>
+        <span className="text-[11px] text-white/35">You can activate any number from 1 to {limit}.</span>
+      </div>
     </section>
   );
 }
