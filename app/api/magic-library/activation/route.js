@@ -13,7 +13,11 @@ async function state(request) {
   const planId = entitlementForUser(user, request).planId || 'free';
   const limit = magicPeopleLimitForPlan(planId);
   const row = await db.collection('magic_library_activation').findOne({ userId: user.id });
-  return { user, db, planId, limit, active: normalizeMagicPeople(row?.active || []) };
+  const clusters = await db.collection('person_clusters').find({ userId: user.id, status: { $ne: 'hidden' } }, { projection: { clusterId: 1 } }).toArray();
+  const validIds = new Set(clusters.map((cluster) => cluster.clusterId));
+  const stored = normalizeMagicPeople(row?.active || []);
+  const active = stored.filter((clusterId) => validIds.has(clusterId));
+  return { user, db, planId, limit, active, validIds };
 }
 
 export async function GET(request) {
@@ -26,10 +30,16 @@ export async function POST(request) {
   const s = await state(request);
   if (s.error) return s.error;
   const body = await request.json().catch(() => ({}));
-  const requested = normalizeMagicPeople(body.people || []);
-  if (s.active.some((name) => !requested.includes(name))) return NextResponse.json({ error: 'Activated selections cannot be replaced.' }, { status: 409 });
+  const requested = normalizeMagicPeople(body.people || []).filter((clusterId) => s.validIds.has(clusterId));
+  if (s.active.some((clusterId) => !requested.includes(clusterId))) {
+    return NextResponse.json({ error: 'Activated selections cannot be replaced.' }, { status: 409 });
+  }
   const merged = normalizeMagicPeople([...s.active, ...requested]);
   if (merged.length > s.limit) return NextResponse.json({ error: `Your plan supports ${s.limit} active people.` }, { status: 403 });
-  await s.db.collection('magic_library_activation').updateOne({ userId: s.user.id }, { $set: { active: merged, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+  await s.db.collection('magic_library_activation').updateOne(
+    { userId: s.user.id },
+    { $set: { active: merged, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
+    { upsert: true },
+  );
   return NextResponse.json({ ok: true, planId: s.planId, limit: s.limit, active: merged, enabled: merged.slice(0, s.limit) });
 }
