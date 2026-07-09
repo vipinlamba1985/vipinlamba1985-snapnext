@@ -6,12 +6,13 @@ import { toast } from 'sonner';
 import useMagicLibrary from '@/components/magic-library/useMagicLibrary';
 import PeopleActivation from '@/components/magic-library/PeopleActivation';
 import PeopleRow from '@/components/magic-library/PeopleRow';
+import PersonProfileSheet from '@/components/magic-library/PersonProfileSheet';
 import MediaSection from '@/components/magic-library/MediaSection';
 import MediaViewer from '@/components/magic-library/MediaViewer';
 import LockedPersonPrompt from '@/components/magic-library/LockedPersonPrompt';
 import { buildLibrarySections, buildPersonSections, findConfirmedSelfLabel } from '@/lib/magic-library-sections';
 import { isDocsItem, mediaCategory, screenshotType } from '@/lib/media-category';
-import { mediaSrc } from '@/lib/api-client';
+import { apiFetch, mediaSrc } from '@/lib/api-client';
 
 const NAME_KEY = 'snapnext.magicPersonNames.v1';
 const TITLES = { photos: 'Photos', videos: 'Videos', screenshots: 'Screenshots', docs: 'Docs' };
@@ -29,6 +30,7 @@ export default function MagicLibraryGalleryMagic() {
   const [category, setCategory] = useState(null);
   const [shotFilter, setShotFilter] = useState('all');
   const [lockedPerson, setLockedPerson] = useState(null);
+  const [profilePerson, setProfilePerson] = useState(null);
   const [draftQuery, setDraftQuery] = useState('');
   const [personNames, setPersonNames] = useState({});
 
@@ -36,13 +38,10 @@ export default function MagicLibraryGalleryMagic() {
   useEffect(() => { setDraftQuery(magic.query || ''); }, [magic.query]);
   useEffect(() => { try { setPersonNames(JSON.parse(localStorage.getItem(NAME_KEY) || '{}')); } catch {} }, []);
 
-  const displayName = (name) => personNames[name] || cleanName(name);
-  const renamePerson = (name) => {
-    const nextName = window.prompt('Name this face', displayName(name) === 'Add name' ? '' : displayName(name));
-    if (!nextName?.trim()) return;
-    const next = { ...personNames, [name]: nextName.trim() };
-    setPersonNames(next);
-    try { localStorage.setItem(NAME_KEY, JSON.stringify(next)); } catch {}
+  const displayName = (name) => {
+    const live = magic.people.find((person) => person.name === name)?.displayName;
+    if (live && live !== 'Add name') return live;
+    return personNames[name] || cleanName(name);
   };
 
   async function confirmPeople() {
@@ -63,11 +62,21 @@ export default function MagicLibraryGalleryMagic() {
     magic.setActivePerson(''); magic.setQuery(''); setDraftQuery(''); setSectionKey(null); setCategory(null); setShotFilter('all');
   }
 
+  async function markAsPhoto(item) {
+    try {
+      await apiFetch(`/media/${item.id}/organize`, { method: 'PATCH', body: JSON.stringify({ category: 'photos' }) });
+      toast.success('Moved to Photos. SnapNext will remember your correction.');
+      await magic.reload();
+    } catch (error) {
+      toast.error(error.message || 'Could not correct this memory');
+    }
+  }
+
   const selfLabel = useMemo(() => findConfirmedSelfLabel(magic.people), [magic.people]);
   const sections = useMemo(() => {
     if (magic.activePerson) return buildPersonSections({ items: magic.visibleItems, personName: magic.activePerson, displayName });
     return buildLibrarySections({ items: magic.query ? magic.visibleItems : magic.items, selfLabel, displayName });
-  }, [magic.activePerson, magic.visibleItems, magic.query, magic.items, selfLabel, personNames]);
+  }, [magic.activePerson, magic.visibleItems, magic.query, magic.items, selfLabel, personNames, magic.people]);
 
   const categoryView = useMemo(() => {
     if (!category) return null;
@@ -99,18 +108,19 @@ export default function MagicLibraryGalleryMagic() {
       {!!suggestions.length && <div className="mt-2 flex flex-wrap gap-1.5">{suggestions.map((label) => <button key={label} onClick={() => { setDraftQuery(label); runSearch(label); }} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55">{label}</button>)}</div>}
     </header>
 
-    {!!magic.people.length && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setSectionKey(null); setCategory(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
+    {!!magic.people.length && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onEditProfile={setProfilePerson} onLocked={setLockedPerson} />}
 
     {!magic.activePerson && <div className="grid grid-cols-4 gap-1.5"><CategoryButton icon={Camera} label="Photos" onClick={() => openCategory('photos')} className="text-pink-300" /><CategoryButton icon={Film} label="Videos" onClick={() => openCategory('videos')} className="text-purple-300" /><CategoryButton icon={ImageIcon} label="Screenshots" onClick={() => openCategory('screenshots')} className="text-sky-300" /><CategoryButton icon={FileText} label="Docs" onClick={() => openCategory('docs')} className="text-emerald-300" /></div>}
 
-    {category === 'screenshots' && <div className="flex gap-2 overflow-x-auto pb-1">{SHOT_FILTERS.map(([key, label]) => <button key={key} onClick={() => setShotFilter(key)} className={`rounded-full border px-3 py-1.5 text-xs font-black ${shotFilter === key ? 'border-sky-300/50 bg-sky-400/15 text-sky-100' : 'border-white/10 bg-white/5 text-white/50'}`}>{label}</button>)}</div>}
+    {category === 'screenshots' && <div><div className="flex gap-2 overflow-x-auto pb-1">{SHOT_FILTERS.map(([key, label]) => <button key={key} onClick={() => setShotFilter(key)} className={`rounded-full border px-3 py-1.5 text-xs font-black ${shotFilter === key ? 'border-sky-300/50 bg-sky-400/15 text-sky-100' : 'border-white/10 bg-white/5 text-white/50'}`}>{label}</button>)}</div><p className="mt-2 text-[11px] text-white/35">See a normal photo here? Tap “Not screenshot” and SnapNext will remember your correction.</p></div>}
 
     {(magic.activePerson || magic.query || sectionKey || category) && <button onClick={showAll} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-bold text-white/65">Show all memories</button>}
 
-    {expanded ? <div><div className="mb-3"><h2 className="text-xl font-black text-white">{expanded.title}</h2><p className="text-xs text-white/40">{expanded.items.length} memories</p></div><div className="grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-6">{expanded.items.map((item, index) => <button key={item.id} onClick={() => setViewer({ item, items: expanded.items, index })} className="aspect-square overflow-hidden rounded-xl bg-white/5">{item.kind === 'photo' ? <img src={mediaSrc(item.id)} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline preload="metadata" /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>)}</div></div> : sections.map((section) => <MediaSection key={section.key} title={section.title} items={section.items} onOpen={(item, index) => setViewer({ item, items: section.items, index })} onExpand={() => { setCategory(null); setSectionKey(section.key); }} emptyCopy="No matching memories yet." />)}
+    {expanded ? <div><div className="mb-3"><h2 className="text-xl font-black text-white">{expanded.title}</h2><p className="text-xs text-white/40">{expanded.items.length} memories</p></div><div className="grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-6">{expanded.items.map((item, index) => <div key={item.id} className="relative aspect-square overflow-hidden rounded-xl bg-white/5"><button onClick={() => setViewer({ item, items: expanded.items, index })} className="h-full w-full">{item.kind === 'photo' ? <img src={mediaSrc(item.id)} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline preload="metadata" /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>{category === 'screenshots' && <button onClick={() => markAsPhoto(item)} className="absolute bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/75 px-2 py-1 text-[9px] font-black text-white shadow-lg">Not screenshot</button>}</div>)}</div></div> : sections.map((section) => <MediaSection key={section.key} title={section.title} items={section.items} onOpen={(item, index) => setViewer({ item, items: section.items, index })} onExpand={() => { setCategory(null); setSectionKey(section.key); }} emptyCopy="No matching memories yet." />)}
 
     <MediaViewer item={viewer?.item} items={viewer?.items || []} index={viewer?.index || 0} onClose={() => setViewer(null)} onChanged={magic.reload} />
     <LockedPersonPrompt person={lockedPerson} onClose={() => setLockedPerson(null)} />
+    <PersonProfileSheet person={profilePerson} people={magic.people} onClose={() => setProfilePerson(null)} onSaved={magic.reload} onViewMemories={(clusterId) => { setProfilePerson(null); setSectionKey(null); setCategory(null); magic.setActivePerson(clusterId); }} />
   </div>;
 }
 
