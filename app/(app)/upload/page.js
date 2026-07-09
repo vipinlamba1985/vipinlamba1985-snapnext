@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { AlertCircle, CheckCircle2, Cloud, FileImage, Image as ImageIcon, Loader2, RefreshCw, ShieldCheck, Sparkles, Upload, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Cloud, FileImage, Image as ImageIcon, Loader2, ShieldCheck, Upload, XCircle } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { formatBytes } from '@/lib/utils';
 
@@ -26,6 +26,8 @@ const REASON_COPY = {
   unrecognized_status: 'Unclear upload status',
 };
 
+const MEDIA_EXTENSION = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|png|tif|tiff|webp|3gp|avi|m4v|mkv|mov|mp4|mpeg|mpg|webm)$/i;
+
 function makeId() {
   return crypto.randomUUID?.() || Math.random().toString(36).slice(2);
 }
@@ -34,8 +36,28 @@ function itemStatus(item) {
   return STATUS[item.status] || STATUS.queued;
 }
 
+function isMediaFile(file) {
+  return file?.type?.startsWith('image/') || file?.type?.startsWith('video/') || MEDIA_EXTENSION.test(file?.name || '');
+}
+
+function NativeMediaPicker({ children, disabled, onSelect, className = '' }) {
+  return (
+    <label className={`relative cursor-pointer overflow-hidden ${disabled ? 'pointer-events-none opacity-60' : ''} ${className}`}>
+      {children}
+      <input
+        type="file"
+        multiple
+        accept="image/*,video/*"
+        onChange={onSelect}
+        disabled={disabled}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        aria-label="Choose photos and videos"
+      />
+    </label>
+  );
+}
+
 export default function UploadPage() {
-  const fileRef = useRef(null);
   const [usage, setUsage] = useState(null);
   const [queue, setQueue] = useState([]);
   const [previews, setPreviews] = useState({});
@@ -53,62 +75,94 @@ export default function UploadPage() {
 
   const stats = useMemo(() => {
     const total = queue.length;
-    const saved = queue.filter((i) => i.status === 'done').length;
-    const skipped = queue.filter((i) => i.status === 'skipped').length;
-    const failed = queue.filter((i) => i.status === 'error').length;
-    const active = queue.filter((i) => i.status === 'uploading').length;
-    const waiting = queue.filter((i) => i.status === 'queued' && i.checked).length;
-    const uploadableBytes = queue.filter((i) => i.checked && ['queued', 'error'].includes(i.status)).reduce((sum, i) => sum + i.size, 0);
-    const savedOrSkipped = saved + skipped + failed;
-    return { total, saved, skipped, failed, active, waiting, uploadableBytes, percent: total ? Math.round((savedOrSkipped / total) * 100) : 0 };
+    const saved = queue.filter((item) => item.status === 'done').length;
+    const skipped = queue.filter((item) => item.status === 'skipped').length;
+    const failed = queue.filter((item) => item.status === 'error').length;
+    const waiting = queue.filter((item) => item.status === 'queued' && item.checked).length;
+    const uploadableBytes = queue
+      .filter((item) => item.checked && ['queued', 'error'].includes(item.status))
+      .reduce((sum, item) => sum + item.size, 0);
+    const finished = saved + skipped + failed;
+    return { total, saved, skipped, failed, waiting, uploadableBytes, percent: total ? Math.round((finished / total) * 100) : 0 };
   }, [queue]);
 
   function addFiles(files) {
     const accepted = [];
     const nextPreviews = { ...previews };
+
     for (const file of files) {
-      if (!file.type?.startsWith('image/') && !file.type?.startsWith('video/')) continue;
-      if (queue.some((item) => item.name === file.name && item.size === file.size)) continue;
+      if (!isMediaFile(file)) continue;
+      if (queue.some((item) => item.name === file.name && item.size === file.size && item.file?.lastModified === file.lastModified)) continue;
+
       const id = makeId();
-      if (file.type.startsWith('image/')) {
+      if (file.type?.startsWith('image/') || /\.(heic|heif|jpeg|jpg|png|webp)$/i.test(file.name || '')) {
         try { nextPreviews[id] = URL.createObjectURL(file); } catch {}
       }
-      accepted.push({ id, file, name: file.name, size: file.size, type: file.type, checked: true, status: 'queued', progress: 0, reason: null, message: null, retryable: true });
+
+      accepted.push({
+        id,
+        file,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        checked: true,
+        status: 'queued',
+        progress: 0,
+        reason: null,
+        message: null,
+        retryable: true,
+      });
     }
-    if (!accepted.length) return toast.error('No new photos or videos selected.');
-    setQueue((prev) => [...prev, ...accepted]);
+
+    if (!accepted.length) {
+      toast.error('No new photos or videos selected.');
+      return;
+    }
+
+    setQueue((previous) => [...previous, ...accepted]);
     setPreviews(nextPreviews);
     setSummary(null);
     toast.success(`Added ${accepted.length} files`);
   }
 
   function onSelect(event) {
-    addFiles(Array.from(event.target.files || []));
-    event.target.value = '';
+    const input = event.currentTarget;
+    const files = Array.from(input.files || []);
+
+    if (files.length) addFiles(files);
+
+    // iOS Safari can keep the native Photos picker stuck when the file input is
+    // cleared synchronously inside the change event. Let the picker dismiss first.
+    window.setTimeout(() => {
+      try { input.value = ''; } catch {}
+    }, 350);
   }
 
   function updateItem(id, patch) {
-    setQueue((prev) => prev.map((item) => item.id === id ? { ...item, ...patch } : item));
+    setQueue((previous) => previous.map((item) => item.id === id ? { ...item, ...patch } : item));
   }
 
   function removeItem(id) {
-    setQueue((prev) => prev.filter((item) => item.id !== id));
+    setQueue((previous) => previous.filter((item) => item.id !== id));
     if (previews[id]) {
       try { URL.revokeObjectURL(previews[id]); } catch {}
-      const copy = { ...previews };
-      delete copy[id];
-      setPreviews(copy);
+      setPreviews((previous) => {
+        const copy = { ...previous };
+        delete copy[id];
+        return copy;
+      });
     }
   }
 
   function clearDone() {
-    setQueue((prev) => prev.filter((item) => !['done', 'skipped'].includes(item.status)));
+    setQueue((previous) => previous.filter((item) => !['done', 'skipped'].includes(item.status)));
   }
 
   async function uploadOne(item) {
     updateItem(item.id, { status: 'uploading', progress: 0, reason: null, message: null });
     const form = new FormData();
     form.append('files', item.file, item.name);
+
     try {
       const token = localStorage.getItem('snapnext_token');
       const response = await axios.post('/api/media/upload', form, {
@@ -118,18 +172,28 @@ export default function UploadPage() {
           updateItem(item.id, { progress: Math.min(99, Math.round(((event.loaded || 0) / total) * 100)) });
         },
       });
+
       const data = response.data || {};
-      const saved = new Set((data.saved || []).map((m) => m.name));
-      const skipped = (data.skipped || []).find((m) => m.name === item.name);
+      const saved = new Set((data.saved || []).map((media) => media.name));
+      const skipped = (data.skipped || []).find((media) => media.name === item.name);
+
       if (saved.has(item.name)) {
         updateItem(item.id, { status: 'done', progress: 100 });
         return 'saved';
       }
+
       if (skipped) {
         const reason = skipped.reason || 'storage_unavailable';
-        updateItem(item.id, { status: reason === 'duplicate' ? 'skipped' : 'error', progress: 100, reason, message: skipped.message, retryable: skipped.retryable !== false });
+        updateItem(item.id, {
+          status: reason === 'duplicate' ? 'skipped' : 'error',
+          progress: 100,
+          reason,
+          message: skipped.message,
+          retryable: skipped.retryable !== false,
+        });
         return reason === 'duplicate' ? 'skipped' : 'failed';
       }
+
       updateItem(item.id, { status: 'error', progress: 0, reason: 'unrecognized_status', retryable: true });
       return 'failed';
     } catch (error) {
@@ -145,17 +209,17 @@ export default function UploadPage() {
     const items = queue.filter((item) => item.checked && ['queued', 'error'].includes(item.status));
     if (!items.length) return toast.error('Choose files to back up first.');
 
-    // Important: do not reject the entire batch if selected size exceeds remaining storage.
-    // The server already greedily saves what fits and returns skip reasons for the rest.
     setUploading(true);
     setSummary(null);
     const counts = { saved: 0, skipped: 0, failed: 0, total: items.length };
+
     for (const item of items) {
       const outcome = await uploadOne(item);
       if (outcome === 'saved') counts.saved += 1;
       else if (outcome === 'skipped') counts.skipped += 1;
       else counts.failed += 1;
     }
+
     setUploading(false);
     setSummary(counts);
     apiFetch('/storage/usage').then(setUsage).catch(() => {});
@@ -167,9 +231,9 @@ export default function UploadPage() {
   const total = usage?.plan?.storageBytes || 0;
   const isSuper = !!usage?.isSuper;
   const usedPct = total && !isSuper ? Math.min(100, Math.round((used / total) * 100)) : 0;
-  const reasonCounts = queue.reduce((acc, item) => {
-    if (item.reason) acc[item.reason] = (acc[item.reason] || 0) + 1;
-    return acc;
+  const reasonCounts = queue.reduce((counts, item) => {
+    if (item.reason) counts[item.reason] = (counts[item.reason] || 0) + 1;
+    return counts;
   }, {});
 
   return (
@@ -181,12 +245,11 @@ export default function UploadPage() {
             <h1 className="mt-2 text-3xl font-black tracking-tight text-white md:text-5xl">Back up photos and videos</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">Keep your memories safe, forever. SnapNext uploads as much as fits and clearly explains anything skipped.</p>
           </div>
-          <button onClick={() => fileRef.current?.click()} disabled={uploading} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-6 py-3 text-sm font-black text-white shadow-xl shadow-pink-950/30 disabled:opacity-60">
+          <NativeMediaPicker disabled={uploading} onSelect={onSelect} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-6 py-3 text-sm font-black text-white shadow-xl shadow-pink-950/30">
             <Upload className="h-4 w-4" /> Choose specific files
-          </button>
+          </NativeMediaPicker>
         </div>
-        <input ref={fileRef} type="file" multiple accept="image/*,video/*" onChange={onSelect} className="hidden" />
-        <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/50">On mobile web, SnapNext can only see files you pick. The native app can quietly back up everything later when that platform support is available.</div>
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/50">On mobile web, choose the photos and videos you want, then tap Add/Done. SnapNext will return immediately to this screen and place them in your upload queue.</div>
       </section>
 
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
@@ -223,12 +286,24 @@ export default function UploadPage() {
       </section>
 
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-white">Current queue</h2><p className="mt-1 text-sm text-white/45">{stats.total} files · {formatBytes(stats.uploadableBytes)} selected for upload</p></div><div className="flex gap-2"><button onClick={() => setQueue((prev) => prev.map((i) => ['queued', 'error'].includes(i.status) ? { ...i, checked: true } : i))} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Select all</button><button onClick={clearDone} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Clear saved</button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-white">Current queue</h2><p className="mt-1 text-sm text-white/45">{stats.total} files · {formatBytes(stats.uploadableBytes)} selected for upload</p></div><div className="flex gap-2"><button onClick={() => setQueue((previous) => previous.map((item) => ['queued', 'error'].includes(item.status) ? { ...item, checked: true } : item))} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Select all</button><button onClick={clearDone} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Clear saved</button></div></div>
         <div className="mt-4 grid gap-3">
-          {queue.length === 0 ? <button onClick={() => fileRef.current?.click()} className="grid min-h-48 place-items-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center"><div><FileImage className="mx-auto h-8 w-8 text-pink-200" /><p className="mt-3 font-bold text-white">Choose photos and videos</p><p className="mt-1 text-sm text-white/45">SnapNext will show progress and skip reasons clearly.</p></div></button> : queue.map((item) => {
+          {queue.length === 0 ? (
+            <NativeMediaPicker disabled={uploading} onSelect={onSelect} className="grid min-h-48 place-items-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center">
+              <div><FileImage className="mx-auto h-8 w-8 text-pink-200" /><p className="mt-3 font-bold text-white">Choose photos and videos</p><p className="mt-1 text-sm text-white/45">Tap here, select your memories, then tap Add/Done.</p></div>
+            </NativeMediaPicker>
+          ) : queue.map((item) => {
             const status = itemStatus(item);
             const Icon = status.icon;
-            return <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/15 p-3"><input type="checkbox" checked={item.checked} disabled={uploading || !['queued', 'error'].includes(item.status)} onChange={(e) => updateItem(item.id, { checked: e.target.checked })} className="h-5 w-5 rounded" />{previews[item.id] ? <img src={previews[item.id]} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="grid h-14 w-14 place-items-center rounded-xl bg-white/[0.05]"><ImageIcon className="h-5 w-5 text-white/35" /></div>}<div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-white">{item.name}</p><p className="mt-1 text-xs text-white/42">{formatBytes(item.size)} · {REASON_COPY[item.reason] || item.message || ''}</p>{item.status === 'uploading' && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-cyan-300" style={{ width: `${item.progress}%` }} /></div>}</div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${status.cls}`}><Icon className={`h-3.5 w-3.5 ${item.status === 'uploading' ? 'animate-spin' : ''}`} />{status.label}</span><button onClick={() => removeItem(item.id)} disabled={uploading} className="rounded-full p-2 text-white/40 hover:bg-white/5"><XCircle className="h-4 w-4" /></button></div>;
+            return (
+              <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/15 p-3">
+                <input type="checkbox" checked={item.checked} disabled={uploading || !['queued', 'error'].includes(item.status)} onChange={(event) => updateItem(item.id, { checked: event.target.checked })} className="h-5 w-5 rounded" />
+                {previews[item.id] ? <img src={previews[item.id]} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="grid h-14 w-14 place-items-center rounded-xl bg-white/[0.05]"><ImageIcon className="h-5 w-5 text-white/35" /></div>}
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-white">{item.name}</p><p className="mt-1 text-xs text-white/42">{formatBytes(item.size)} · {REASON_COPY[item.reason] || item.message || ''}</p>{item.status === 'uploading' && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-cyan-300" style={{ width: `${item.progress}%` }} /></div>}</div>
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${status.cls}`}><Icon className={`h-3.5 w-3.5 ${item.status === 'uploading' ? 'animate-spin' : ''}`} />{status.label}</span>
+                <button onClick={() => removeItem(item.id)} disabled={uploading} className="rounded-full p-2 text-white/40 hover:bg-white/5"><XCircle className="h-4 w-4" /></button>
+              </div>
+            );
           })}
         </div>
       </section>
