@@ -39,16 +39,20 @@ export default function PersonProfileSheet({ person, people, onClose, onSaved, o
   }
 
   function patchCrop(key, value) {
-    setForm((current) => ({ ...current, thumbnailOverride: { ...current.thumbnailOverride, [key]: Number(value) } }));
+    setForm((current) => ({
+      ...current,
+      thumbnailOverride: { ...(current.thumbnailOverride || { scale: 2, offsetX: 0, offsetY: 0 }), [key]: Number(value) },
+    }));
   }
 
   async function save() {
-    if (!form.displayName.trim()) return toast.error('Add a name first.');
     setSaving(true);
     try {
+      const payload = { clusterId: person.clusterId, ...form };
+      if (!form.displayName.trim()) delete payload.displayName;
       await apiFetch('/magic-library/people', {
         method: 'PATCH',
-        body: JSON.stringify({ clusterId: person.clusterId, ...form }),
+        body: JSON.stringify(payload),
       });
       toast.success('Person profile saved');
       await onSaved?.();
@@ -99,6 +103,7 @@ export default function PersonProfileSheet({ person, people, onClose, onSaved, o
 
   const style = personThumbnailStyle(previewPerson || {});
   const others = people.filter((item) => item.clusterId !== person.clusterId);
+  const crop = form.thumbnailOverride || { scale: 2, offsetX: 0, offsetY: 0 };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 backdrop-blur-sm md:items-center" onClick={onClose}>
@@ -115,9 +120,9 @@ export default function PersonProfileSheet({ person, people, onClose, onSaved, o
             </div>
 
             <div className="mt-5 space-y-4">
-              <Slider label="Zoom" min="1" max="8" step="0.05" value={form.thumbnailOverride.scale} onChange={(value) => patchCrop('scale', value)} />
-              <Slider label="Move left / right" min="-100" max="100" step="1" value={form.thumbnailOverride.offsetX} onChange={(value) => patchCrop('offsetX', value)} />
-              <Slider label="Move up / down" min="-100" max="100" step="1" value={form.thumbnailOverride.offsetY} onChange={(value) => patchCrop('offsetY', value)} />
+              <Slider label="Zoom" min="1" max="8" step="0.05" value={crop.scale} onChange={(value) => patchCrop('scale', value)} />
+              <Slider label="Move left / right" min="-100" max="100" step="1" value={crop.offsetX} onChange={(value) => patchCrop('offsetX', value)} />
+              <Slider label="Move up / down" min="-100" max="100" step="1" value={crop.offsetY} onChange={(value) => patchCrop('offsetY', value)} />
               <button onClick={() => patch('thumbnailOverride', null)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/65"><RotateCcw className="h-3.5 w-3.5" /> Reset to automatic crop</button>
             </div>
           </div>
