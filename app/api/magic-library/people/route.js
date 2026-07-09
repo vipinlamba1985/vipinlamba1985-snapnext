@@ -62,7 +62,6 @@ export async function PATCH(request) {
     const mediaIds = Array.from(new Set([...(target.mediaIds || []), ...(source.mediaIds || [])]));
     const faceIds = Array.from(new Set([...(target.faceIds || []), ...(source.faceIds || [])]));
     const sourceWinsRepresentative = Number(source.representativeQuality || 0) > Number(target.representativeQuality || 0) && !target.thumbnailOverride;
-
     const targetSet = {
       mediaIds,
       faceIds,
@@ -75,15 +74,16 @@ export async function PATCH(request) {
       } : {}),
     };
 
-    await Promise.all([
-      db.collection('person_clusters').updateOne({ userId: user.id, clusterId: targetClusterId }, { $set: targetSet }),
-      db.collection('face_index').updateMany({ userId: user.id, clusterId }, { $set: { clusterId: targetClusterId } }),
-      db.collection('media').updateMany(
-        { userId: user.id, 'peopleIntelligence.clusterIds': clusterId },
-        { $set: { 'peopleIntelligence.updatedAt': new Date() }, $pull: { 'peopleIntelligence.clusterIds': clusterId }, $addToSet: { 'peopleIntelligence.clusterIds': targetClusterId } },
-      ),
-      db.collection('person_clusters').deleteOne({ userId: user.id, clusterId }),
-    ]);
+    await db.collection('person_clusters').updateOne({ userId: user.id, clusterId: targetClusterId }, { $set: targetSet });
+    await db.collection('face_index').updateMany({ userId: user.id, clusterId }, { $set: { clusterId: targetClusterId } });
+
+    const mediaFilter = { userId: user.id, 'peopleIntelligence.clusterIds': clusterId };
+    await db.collection('media').updateMany(mediaFilter, { $pull: { 'peopleIntelligence.clusterIds': clusterId } });
+    await db.collection('media').updateMany(
+      { userId: user.id, id: { $in: source.mediaIds || [] } },
+      { $addToSet: { 'peopleIntelligence.clusterIds': targetClusterId }, $set: { 'peopleIntelligence.updatedAt': new Date() } },
+    );
+    await db.collection('person_clusters').deleteOne({ userId: user.id, clusterId });
 
     const merged = await db.collection('person_clusters').findOne({ userId: user.id, clusterId: targetClusterId });
     return NextResponse.json({ ok: true, mergedInto: targetClusterId, person: cleanCluster(merged) });
