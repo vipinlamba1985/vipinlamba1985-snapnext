@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Heart, LockKeyhole, Pencil, Sparkles } from 'lucide-react';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
+import { faceCropStyle } from '@/lib/people-intelligence';
 
 export default function PeopleRow({ people, enabledNames, favoriteNames, activePerson, displayName, onRename, onOpen, onLocked }) {
   const [limit, setLimit] = useState(Math.max(4, enabledNames.length));
@@ -23,7 +24,7 @@ export default function PeopleRow({ people, enabledNames, favoriteNames, activeP
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-black text-white">People</h2>
-          <p className="text-xs text-white/40">Tap a face to open every related memory.</p>
+          <p className="text-xs text-white/40">Real faces grouped across your memories.</p>
         </div>
         <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-black text-white/65">Active {active.length}/{limit}</span>
       </div>
@@ -55,13 +56,15 @@ export default function PeopleRow({ people, enabledNames, favoriteNames, activeP
 function PersonTile({ person, enabled, favoriteNames, activePerson, displayName, onRename, onOpen, onLocked }) {
   const favorite = favoriteNames.includes(person.name);
   const selected = activePerson === person.name;
-  const label = displayName ? displayName(person.name) : person.name;
+  const localLabel = displayName ? displayName(person.name) : '';
+  const label = person.displayName && person.displayName !== 'Add name' ? person.displayName : (localLabel && !localLabel.includes('-') ? localLabel : 'Add name');
+  const crop = faceCropStyle(person.representativeFaceBox || {});
 
   return (
     <div className="w-16 shrink-0 text-center">
       <button onClick={() => enabled ? onOpen(person.name) : onLocked(person)} className="block w-full">
         <span className={`relative mx-auto block h-14 w-14 overflow-hidden rounded-full border-2 bg-white/5 ${selected ? 'border-pink-400 ring-4 ring-pink-500/20' : enabled ? 'border-white/25' : 'border-white/10'}`}>
-          {person.representativeMediaId ? <img src={mediaSrc(person.representativeMediaId)} alt="" className={`h-full w-full object-cover scale-[2.65] origin-top ${enabled ? '' : 'opacity-65'}`} style={{ objectPosition: '50% 18%' }} /> : <span className="grid h-full w-full place-items-center font-black text-white/60">{label.slice(0, 1).toUpperCase()}</span>}
+          {person.representativeMediaId ? <img src={mediaSrc(person.representativeMediaId)} alt="" className={`h-full w-full object-cover ${enabled ? '' : 'opacity-65'}`} style={crop} /> : <span className="grid h-full w-full place-items-center font-black text-white/60">?</span>}
           {favorite && <span className="absolute right-0 top-0 grid h-5 w-5 place-items-center rounded-full bg-pink-500 text-white"><Heart className="h-3 w-3 fill-current" /></span>}
           {!enabled && <span className="absolute bottom-0 right-0 grid h-5 w-5 place-items-center rounded-full border border-white/10 bg-black/75 text-white/70"><LockKeyhole className="h-2.5 w-2.5" /></span>}
         </span>
