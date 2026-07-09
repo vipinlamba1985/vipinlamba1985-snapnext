@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
-import { bestMagicItems, buildMagicPeople, buildMagicSuggestions, filterMagicItems } from '@/lib/magic-library-view';
+import { bestMagicItems, buildMagicSuggestions, filterMagicItems } from '@/lib/magic-library-view';
 
 const ALL_MEMORY_COMMANDS = new Set([
   'all',
@@ -19,6 +19,8 @@ function isAllMemoriesCommand(value) {
 
 export default function useMagicLibrary() {
   const [items, setItems] = useState([]);
+  const [people, setPeople] = useState([]);
+  const [peopleEngineReady, setPeopleEngineReady] = useState(false);
   const [activation, setActivation] = useState({ planId: 'free', limit: 4, active: [], enabled: [] });
   const [favoriteNames, setFavoriteNames] = useState([]);
   const [draftNames, setDraftNames] = useState([]);
@@ -30,12 +32,15 @@ export default function useMagicLibrary() {
 
   async function load() {
     setBusy(true);
-    const [media, state, favorites] = await Promise.all([
+    const [media, peopleState, state, favorites] = await Promise.all([
       apiFetch('/media').catch(() => ({ items: [] })),
+      apiFetch('/magic-library/people').catch(() => ({ people: [], engineReady: false })),
       apiFetch('/magic-library/activation').catch(() => ({ planId: 'free', limit: 4, active: [], enabled: [] })),
       apiFetch('/favorites').catch(() => ({ accepted: [] })),
     ]);
     setItems(media.items || []);
+    setPeople(peopleState.people || []);
+    setPeopleEngineReady(Boolean(peopleState.engineReady));
     setActivation(state);
     setDraftNames(state.active || []);
     setFavoriteNames((favorites.accepted || []).map((row) => row.other?.name).filter(Boolean));
@@ -44,7 +49,6 @@ export default function useMagicLibrary() {
 
   useEffect(() => { load(); }, []);
 
-  const people = useMemo(() => buildMagicPeople(items), [items]);
   const suggestions = useMemo(() => buildMagicSuggestions(items), [items]);
   const visibleItems = useMemo(() => filterMagicItems(items, query, activePerson), [items, query, activePerson]);
   const bestItems = useMemo(() => bestMagicItems(visibleItems), [visibleItems]);
@@ -133,6 +137,7 @@ export default function useMagicLibrary() {
   return {
     items,
     people,
+    peopleEngineReady,
     suggestions,
     activation: activationForView,
     favoriteNames,
