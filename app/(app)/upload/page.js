@@ -8,7 +8,8 @@ import { AlertCircle, CheckCircle2, Cloud, FileImage, Image as ImageIcon, Loader
 import { apiFetch } from '@/lib/api-client';
 import { formatBytes } from '@/lib/utils';
 
-const LARGE_BATCH_THRESHOLD = 20;
+const SMART_BATCH_THRESHOLD = 10;
+const WEB_SAFE_BATCH_MAX = 20;
 const LARGE_PREVIEW_LIMIT = 6;
 const LARGE_QUEUE_VISIBLE = 12;
 
@@ -86,9 +87,7 @@ export default function UploadPage() {
     const failed = queue.filter((item) => item.status === 'error').length;
     const uploadingCount = queue.filter((item) => item.status === 'uploading').length;
     const waiting = queue.filter((item) => item.status === 'queued' && item.checked).length;
-    const uploadableBytes = queue
-      .filter((item) => item.checked && ['queued', 'error'].includes(item.status))
-      .reduce((sum, item) => sum + item.size, 0);
+    const uploadableBytes = queue.filter((item) => item.checked && ['queued', 'error'].includes(item.status)).reduce((sum, item) => sum + item.size, 0);
     const finished = saved + skipped + failed;
     return { total, saved, skipped, failed, uploadingCount, waiting, uploadableBytes, finished, percent: total ? Math.round((finished / total) * 100) : 0 };
   }, [queue]);
@@ -103,7 +102,7 @@ export default function UploadPage() {
   function addFiles(files) {
     const accepted = [];
     const nextPreviews = { ...previews };
-    const largeSelection = files.length > LARGE_BATCH_THRESHOLD || queue.length + files.length > LARGE_BATCH_THRESHOLD;
+    const smartSelection = files.length > SMART_BATCH_THRESHOLD || queue.length + files.length > SMART_BATCH_THRESHOLD;
     let previewsCreated = 0;
 
     for (const file of files) {
@@ -112,7 +111,7 @@ export default function UploadPage() {
 
       const id = makeId();
       const mayPreview = file.type?.startsWith('image/') || /\.(heic|heif|jpeg|jpg|png|webp)$/i.test(file.name || '');
-      if (mayPreview && (!largeSelection || previewsCreated < LARGE_PREVIEW_LIMIT)) {
+      if (mayPreview && (!smartSelection || previewsCreated < LARGE_PREVIEW_LIMIT)) {
         try {
           nextPreviews[id] = URL.createObjectURL(file);
           previewsCreated += 1;
@@ -144,10 +143,10 @@ export default function UploadPage() {
     setPreviews(nextPreviews);
     setSummary(null);
 
-    if (largeSelection) {
+    if (smartSelection) {
       setLargeMode(true);
       setAutoStartRequested(true);
-      toast.success(`${accepted.length} memories ready · Smart Backup starting`);
+      toast.success(`${accepted.length} memories ready · backup starting`);
     } else {
       toast.success(`Added ${accepted.length} files`);
     }
@@ -158,8 +157,6 @@ export default function UploadPage() {
     const files = Array.from(input.files || []);
     if (files.length) addFiles(files);
 
-    // iOS Safari can keep the native Photos picker stuck when the file input is
-    // cleared synchronously inside the change event. Let the picker dismiss first.
     window.setTimeout(() => {
       try { input.value = ''; } catch {}
     }, 350);
@@ -226,13 +223,7 @@ export default function UploadPage() {
       if (skipped) {
         const reason = skipped.reason || 'storage_unavailable';
         const finalStatus = reason === 'duplicate' ? 'skipped' : 'error';
-        updateItem(item.id, {
-          status: finalStatus,
-          progress: 100,
-          reason,
-          message: skipped.message,
-          retryable: skipped.retryable !== false,
-        });
+        updateItem(item.id, { status: finalStatus, progress: 100, reason, message: skipped.message, retryable: skipped.retryable !== false });
         if (finalStatus === 'skipped' || skipped.retryable === false) releaseItemFile(item.id);
         return finalStatus === 'skipped' ? 'skipped' : 'failed';
       }
@@ -270,7 +261,6 @@ export default function UploadPage() {
     }
 
     await Promise.all(Array.from({ length: laneCount }, () => worker()));
-
     setUploading(false);
     setSummary(counts);
     apiFetch('/storage/usage').then(setUsage).catch(() => {});
@@ -308,13 +298,13 @@ export default function UploadPage() {
           <div>
             <p className="text-xs font-black uppercase tracking-[0.22em] text-pink-100/70">Safe backup</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-white md:text-5xl">Back up photos and videos</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">Choose a few memories for a visual queue, or select a large batch and SnapNext automatically switches to Smart Backup.</p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">Choose your memories in web-safe rounds. On mobile web, pick about 10–20 at a time, tap Add or Done, and SnapNext uploads them right away.</p>
           </div>
           <NativeMediaPicker disabled={uploading} onSelect={onSelect} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-6 py-3 text-sm font-black text-white shadow-xl shadow-pink-950/30">
             <Upload className="h-4 w-4" /> Choose memories
           </NativeMediaPicker>
         </div>
-        <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/50">Small selections stay visual. Large selections use fewer previews, controlled upload lanes and automatic memory release so the web app stays smooth.</div>
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/55"><b className="text-white/80">Best on web:</b> choose {WEB_SAFE_BATCH_MAX} or fewer photos/videos per round. Very large selections may stay inside the iPhone picker before SnapNext can receive them.</div>
       </section>
 
       {largeMode && stats.total > 0 && (
@@ -322,14 +312,14 @@ export default function UploadPage() {
           <div className="flex items-start gap-3">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/10 text-cyan-200"><Sparkles className="h-5 w-5" /></span>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-100/65">Smart Backup mode</p>
-              <h2 className="mt-1 text-2xl font-black text-white">{uploading ? `Backing up ${stats.total} memories` : stats.finished === stats.total ? 'Your backup is complete' : `${stats.total} memories ready`}</h2>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-100/65">Web-safe backup round</p>
+              <h2 className="mt-1 text-2xl font-black text-white">{uploading ? `Backing up ${stats.total} memories` : stats.finished === stats.total ? 'This round is complete' : `${stats.total} memories ready`}</h2>
               <p className="mt-2 text-sm text-white/50">{stats.saved} saved · {stats.uploadingCount} moving now · {stats.waiting} remaining · {stats.failed} need attention</p>
             </div>
             <span className="text-2xl font-black text-white">{stats.percent}%</span>
           </div>
           <div className="mt-5 h-3 overflow-hidden rounded-full bg-black/30"><div className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-pink-400 to-purple-500 transition-all duration-500" style={{ width: `${stats.percent}%` }} /></div>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-white/40"><span>SnapNext shows only a few live items to keep browser memory low.</span><span>{uploading ? 'Keep this tab open' : 'Ready'}</span></div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-white/40"><span>After this round, tap Add next batch and choose another 10–20.</span><span>{uploading ? 'Keep this tab open' : 'Ready for next round'}</span></div>
         </section>
       )}
 
@@ -345,6 +335,12 @@ export default function UploadPage() {
 
       {summary && <section className="rounded-[2rem] border border-emerald-400/20 bg-emerald-400/10 p-5 text-sm text-emerald-100"><CheckCircle2 className="mr-2 inline h-4 w-4" /> Backup complete: {summary.saved} saved, {summary.skipped + summary.failed} not saved.</section>}
 
+      {(summary || (largeMode && !uploading && stats.finished === stats.total && stats.total > 0)) && (
+        <NativeMediaPicker disabled={uploading} onSelect={onSelect} className="flex min-h-14 items-center justify-center gap-2 rounded-[1.5rem] border border-white/10 bg-white px-5 py-4 text-sm font-black text-black shadow-xl">
+          <Upload className="h-4 w-4" /> Add next batch
+        </NativeMediaPicker>
+      )}
+
       {!!Object.keys(reasonCounts).length && (
         <section className="rounded-[2rem] border border-amber-400/20 bg-amber-400/10 p-5"><h2 className="text-lg font-black text-white">Why some files were skipped</h2><div className="mt-3 grid gap-2 sm:grid-cols-2">{Object.entries(reasonCounts).map(([reason, count]) => <div key={reason} className="rounded-2xl bg-black/20 p-3 text-sm text-white/70"><AlertCircle className="mr-2 inline h-4 w-4 text-amber-200" />{REASON_COPY[reason] || reason}: <b>{count}</b></div>)}</div><p className="mt-3 text-xs text-white/45">Your original local files are never deleted by SnapNext.</p></section>
       )}
@@ -354,13 +350,13 @@ export default function UploadPage() {
         {!isSuper && <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-purple-500" style={{ width: `${usedPct}%` }} /></div>}
       </section>
 
-      <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5"><div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-emerald-200" /><div><h2 className="text-lg font-black text-white">Web backup, built honestly</h2><p className="mt-1 text-sm text-white/50">SnapNext keeps large web batches controlled and visible. True silent background backup belongs in the future native iOS and Android apps.</p></div></div></section>
+      <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5"><div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-emerald-200" /><div><h2 className="text-lg font-black text-white">Web-safe backup</h2><p className="mt-1 text-sm text-white/50">For very large libraries, use multiple web rounds today. Native iOS and Android apps will support deeper library access and background backup later.</p></div></div></section>
 
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-white">{largeMode ? 'Live backup activity' : 'Current queue'}</h2><p className="mt-1 text-sm text-white/45">{stats.total} files · {formatBytes(stats.uploadableBytes)} remaining to upload</p></div><div className="flex gap-2">{!largeMode && <button onClick={() => setQueue((previous) => previous.map((item) => ['queued', 'error'].includes(item.status) ? { ...item, checked: true } : item))} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Select all</button>}<button onClick={clearDone} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Clear saved</button></div></div>
         <div className="mt-4 grid gap-3">
           {queue.length === 0 ? (
-            <NativeMediaPicker disabled={uploading} onSelect={onSelect} className="grid min-h-48 place-items-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center"><div><FileImage className="mx-auto h-8 w-8 text-pink-200" /><p className="mt-3 font-bold text-white">Choose photos and videos</p><p className="mt-1 text-sm text-white/45">Choose a few or a large batch. SnapNext adapts automatically.</p></div></NativeMediaPicker>
+            <NativeMediaPicker disabled={uploading} onSelect={onSelect} className="grid min-h-48 place-items-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center"><div><FileImage className="mx-auto h-8 w-8 text-pink-200" /><p className="mt-3 font-bold text-white">Choose photos and videos</p><p className="mt-1 text-sm text-white/45">Select up to {WEB_SAFE_BATCH_MAX}, tap Add or Done, then repeat. SnapNext starts larger rounds automatically.</p></div></NativeMediaPicker>
           ) : visibleQueue.map((item) => {
             const status = itemStatus(item);
             const Icon = status.icon;
@@ -374,7 +370,7 @@ export default function UploadPage() {
               </div>
             );
           })}
-          {largeMode && queue.length > visibleQueue.length && <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-center text-sm text-white/45">{queue.length - visibleQueue.length} more memories continue safely in the background queue.</div>}
+          {largeMode && queue.length > visibleQueue.length && <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-center text-sm text-white/45">{queue.length - visibleQueue.length} more memories continue safely in this round.</div>}
         </div>
       </section>
     </div>
