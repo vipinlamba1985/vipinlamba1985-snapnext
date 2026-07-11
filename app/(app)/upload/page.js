@@ -10,6 +10,7 @@ import { formatBytes } from '@/lib/utils';
 
 const SMART_BATCH_THRESHOLD = 10;
 const WEB_SAFE_BATCH_MAX = 20;
+const FILELIST_INTAKE_CHUNK = 6;
 const LARGE_PREVIEW_LIMIT = 6;
 const LARGE_QUEUE_VISIBLE = 12;
 
@@ -32,6 +33,7 @@ const REASON_COPY = {
 };
 
 const MEDIA_EXTENSION = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|png|tif|tiff|webp|3gp|avi|m4v|mkv|mov|mp4|mpeg|mpg|webm)$/i;
+const PHOTO_EXTENSION = /\.(heic|heif|jpeg|jpg|png|webp)$/i;
 
 function makeId() {
   return crypto.randomUUID?.() || Math.random().toString(36).slice(2);
@@ -43,6 +45,10 @@ function itemStatus(item) {
 
 function isMediaFile(file) {
   return file?.type?.startsWith('image/') || file?.type?.startsWith('video/') || MEDIA_EXTENSION.test(file?.name || '');
+}
+
+function fileKey(file) {
+  return `${file?.name || ''}:${file?.size || 0}:${file?.lastModified || 0}`;
 }
 
 function NativeMediaPicker({ children, disabled, onSelect, className = '' }) {
@@ -70,6 +76,7 @@ export default function UploadPage() {
   const [summary, setSummary] = useState(null);
   const [largeMode, setLargeMode] = useState(false);
   const [autoStartRequested, setAutoStartRequested] = useState(false);
+  const [intake, setIntake] = useState({ active: false, processed: 0, total: 0 });
 
   useEffect(() => { apiFetch('/storage/usage').then(setUsage).catch(() => {}); }, []);
   useEffect(() => () => Object.values(previews).forEach((url) => { try { URL.revokeObjectURL(url); } catch {} }), [previews]);
@@ -93,73 +100,102 @@ export default function UploadPage() {
   }, [queue]);
 
   useEffect(() => {
-    if (!autoStartRequested || uploading || !stats.waiting) return;
+    if (!autoStartRequested || uploading || !stats.waiting || intake.active) return;
     setAutoStartRequested(false);
     const timer = window.setTimeout(() => startBackup(), 500);
     return () => window.clearTimeout(timer);
-  }, [autoStartRequested, uploading, stats.waiting]);
+  }, [autoStartRequested, uploading, stats.waiting, intake.active]);
 
-  function addFiles(files) {
-    const accepted = [];
-    const nextPreviews = { ...previews };
-    const smartSelection = files.length > SMART_BATCH_THRESHOLD || queue.length + files.length > SMART_BATCH_THRESHOLD;
+  async function addFileList(fileList) {
+    const totalSelected = Number(fileList?.length || 0);
+    if (!totalSelected) return;
+
+    const smartSelection = totalSelected > SMART_BATCH_THRESHOLD || queue.length + totalSelected > SMART_BATCH_THRESHOLD;
+    const existingKeys = new Set(queue.map((item) => item.key || `${item.name}:${item.size}:${item.lastModified || 0}`));
+    let acceptedCount = 0;
     let previewsCreated = 0;
 
-    for (const file of files) {
-      if (!isMediaFile(file)) continue;
-      if (queue.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) continue;
+    setSummary(null);
+    setIntake({ active: true, processed: 0, total: totalSelected });
+    if (smartSelection) setLargeMode(true);
 
-      const id = makeId();
-      const mayPreview = file.type?.startsWith('image/') || /\.(heic|heif|jpeg|jpg|png|webp)$/i.test(file.name || '');
-      if (mayPreview && (!smartSelection || previewsCreated < LARGE_PREVIEW_LIMIT)) {
-        try {
-          nextPreviews[id] = URL.createObjectURL(file);
-          previewsCreated += 1;
-        } catch {}
+    for (let start = 0; start < totalSelected; start += FILELIST_INTAKE_CHUNK) {
+      const accepted = [];
+      const nextPreviews = {};
+      const end = Math.min(totalSelected, start + FILELIST_INTAKE_CHUNK);
+
+      for (let index = start; index < end; index += 1) {
+        const file = fileList.item ? fileList.item(index) : fileList[index];
+        if (!file || !isMediaFile(file)) continue;
+        const key = fileKey(file);
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+
+        const id = makeId();
+        const mayPreview = file.type?.startsWith('image/') || PHOTO_EXTENSION.test(file.name || '');
+        if (mayPreview && (!smartSelection || previewsCreated < LARGE_PREVIEW_LIMIT)) {
+          try {
+            nextPreviews[id] = URL.createObjectURL(file);
+            previewsCreated += 1;
+          } catch {}
+        }
+
+        accepted.push({
+          id,
+          key,
+          file,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          lastModified: file.lastModified,
+          checked: true,
+          status: 'queued',
+          progress: 0,
+          reason: null,
+          message: null,
+          retryable: true,
+        });
       }
 
-      accepted.push({
-        id,
-        file,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        lastModified: file.lastModified,
-        checked: true,
-        status: 'queued',
-        progress: 0,
-        reason: null,
-        message: null,
-        retryable: true,
-      });
+      if (accepted.length) {
+        acceptedCount += accepted.length;
+        setQueue((previous) => [...previous, ...accepted]);
+        if (Object.keys(nextPreviews).length) setPreviews((previous) => ({ ...previous, ...nextPreviews }));
+      }
+
+      setIntake({ active: true, processed: end, total: totalSelected });
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
     }
 
-    if (!accepted.length) {
+    setIntake({ active: false, processed: totalSelected, total: totalSelected });
+
+    if (!acceptedCount) {
       toast.error('No new photos or videos selected.');
       return;
     }
 
-    setQueue((previous) => [...previous, ...accepted]);
-    setPreviews(nextPreviews);
-    setSummary(null);
-
     if (smartSelection) {
-      setLargeMode(true);
       setAutoStartRequested(true);
-      toast.success(`${accepted.length} memories ready · backup starting`);
+      toast.success(`${acceptedCount} memories ready · backup starting`);
     } else {
-      toast.success(`Added ${accepted.length} files`);
+      toast.success(`Added ${acceptedCount} files`);
     }
   }
 
   function onSelect(event) {
     const input = event.currentTarget;
-    const files = Array.from(input.files || []);
-    if (files.length) addFiles(files);
-
-    window.setTimeout(() => {
-      try { input.value = ''; } catch {}
-    }, 350);
+    const fileList = input.files;
+    if (fileList?.length) {
+      addFileList(fileList).finally(() => {
+        window.setTimeout(() => {
+          try { input.value = ''; } catch {}
+        }, 350);
+      });
+    } else {
+      window.setTimeout(() => {
+        try { input.value = ''; } catch {}
+      }, 350);
+    }
   }
 
   function updateItem(id, patch) {
@@ -290,6 +326,7 @@ export default function UploadPage() {
     if (item.reason) counts[item.reason] = (counts[item.reason] || 0) + 1;
     return counts;
   }, {});
+  const pickerDisabled = uploading || intake.active;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-36 md:pb-12">
@@ -300,12 +337,18 @@ export default function UploadPage() {
             <h1 className="mt-2 text-3xl font-black tracking-tight text-white md:text-5xl">Back up photos and videos</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">Choose your memories in web-safe rounds. On mobile web, pick about 10–20 at a time, tap Add or Done, and SnapNext uploads them right away.</p>
           </div>
-          <NativeMediaPicker disabled={uploading} onSelect={onSelect} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-6 py-3 text-sm font-black text-white shadow-xl shadow-pink-950/30">
-            <Upload className="h-4 w-4" /> Choose memories
+          <NativeMediaPicker disabled={pickerDisabled} onSelect={onSelect} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-6 py-3 text-sm font-black text-white shadow-xl shadow-pink-950/30">
+            {intake.active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} {intake.active ? 'Preparing…' : 'Choose memories'}
           </NativeMediaPicker>
         </div>
         <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/55"><b className="text-white/80">Best on web:</b> choose {WEB_SAFE_BATCH_MAX} or fewer photos/videos per round. Very large selections may stay inside the iPhone picker before SnapNext can receive them.</div>
       </section>
+
+      {intake.active && (
+        <section className="rounded-[2rem] border border-cyan-300/20 bg-cyan-400/10 p-5 text-sm text-cyan-100">
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Preparing selected memories {intake.processed} of {intake.total}. Keep SnapNext open.
+        </section>
+      )}
 
       {largeMode && stats.total > 0 && (
         <section className="overflow-hidden rounded-[2rem] border border-cyan-300/20 bg-gradient-to-br from-cyan-500/10 via-purple-500/10 to-pink-500/10 p-5 md:p-7">
@@ -327,7 +370,7 @@ export default function UploadPage() {
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div><h2 className="text-xl font-black text-white">{uploading ? 'Backing up now' : stats.total ? 'Ready to back up' : 'All caught up'}</h2><p className="mt-1 text-sm text-white/50">{stats.saved} saved · {stats.skipped} skipped · {stats.failed} failed · {stats.waiting} waiting</p></div>
-            <button onClick={startBackup} disabled={uploading || !stats.waiting} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-40">{uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />} {uploading ? 'Saving…' : 'Start backup'}</button>
+            <button onClick={startBackup} disabled={uploading || intake.active || !stats.waiting} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-40">{uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />} {uploading ? 'Saving…' : 'Start backup'}</button>
           </div>
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-pink-500 to-purple-600 transition-all" style={{ width: `${stats.percent}%` }} /></div>
         </section>
@@ -336,7 +379,7 @@ export default function UploadPage() {
       {summary && <section className="rounded-[2rem] border border-emerald-400/20 bg-emerald-400/10 p-5 text-sm text-emerald-100"><CheckCircle2 className="mr-2 inline h-4 w-4" /> Backup complete: {summary.saved} saved, {summary.skipped + summary.failed} not saved.</section>}
 
       {(summary || (largeMode && !uploading && stats.finished === stats.total && stats.total > 0)) && (
-        <NativeMediaPicker disabled={uploading} onSelect={onSelect} className="flex min-h-14 items-center justify-center gap-2 rounded-[1.5rem] border border-white/10 bg-white px-5 py-4 text-sm font-black text-black shadow-xl">
+        <NativeMediaPicker disabled={pickerDisabled} onSelect={onSelect} className="flex min-h-14 items-center justify-center gap-2 rounded-[1.5rem] border border-white/10 bg-white px-5 py-4 text-sm font-black text-black shadow-xl">
           <Upload className="h-4 w-4" /> Add next batch
         </NativeMediaPicker>
       )}
@@ -353,10 +396,10 @@ export default function UploadPage() {
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5"><div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-emerald-200" /><div><h2 className="text-lg font-black text-white">Web-safe backup</h2><p className="mt-1 text-sm text-white/50">For very large libraries, use multiple web rounds today. Native iOS and Android apps will support deeper library access and background backup later.</p></div></div></section>
 
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-white">{largeMode ? 'Live backup activity' : 'Current queue'}</h2><p className="mt-1 text-sm text-white/45">{stats.total} files · {formatBytes(stats.uploadableBytes)} remaining to upload</p></div><div className="flex gap-2">{!largeMode && <button onClick={() => setQueue((previous) => previous.map((item) => ['queued', 'error'].includes(item.status) ? { ...item, checked: true } : item))} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Select all</button>}<button onClick={clearDone} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Clear saved</button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-white">{largeMode ? 'Live backup activity' : 'Current queue'}</h2><p className="mt-1 text-sm text-white/45">{stats.total} files · {formatBytes(stats.uploadableBytes)} remaining to upload</p></div><div className="flex gap-2">{!largeMode && <button onClick={() => setQueue((previous) => previous.map((item) => ['queued', 'error'].includes(item.status) ? { ...item, checked: true } : item))} disabled={uploading || intake.active} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Select all</button>}<button onClick={clearDone} disabled={uploading || intake.active} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Clear saved</button></div></div>
         <div className="mt-4 grid gap-3">
           {queue.length === 0 ? (
-            <NativeMediaPicker disabled={uploading} onSelect={onSelect} className="grid min-h-48 place-items-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center"><div><FileImage className="mx-auto h-8 w-8 text-pink-200" /><p className="mt-3 font-bold text-white">Choose photos and videos</p><p className="mt-1 text-sm text-white/45">Select up to {WEB_SAFE_BATCH_MAX}, tap Add or Done, then repeat. SnapNext starts larger rounds automatically.</p></div></NativeMediaPicker>
+            <NativeMediaPicker disabled={pickerDisabled} onSelect={onSelect} className="grid min-h-48 place-items-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center"><div><FileImage className="mx-auto h-8 w-8 text-pink-200" /><p className="mt-3 font-bold text-white">Choose photos and videos</p><p className="mt-1 text-sm text-white/45">Select up to {WEB_SAFE_BATCH_MAX}, tap Add or Done, then repeat. SnapNext starts larger rounds automatically.</p></div></NativeMediaPicker>
           ) : visibleQueue.map((item) => {
             const status = itemStatus(item);
             const Icon = status.icon;
