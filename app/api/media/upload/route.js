@@ -7,7 +7,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { effectivePlan } from '@/lib/entitlements';
 import { storage } from '@/lib/storage';
-import { analyzeMediaWithBudget } from '@/lib/budgeted-direct-ai';
+import { analyzeMediaOnce } from '@/lib/cached-media-analysis';
 
 async function getStorageUsage(db, userId) {
   const rows = await db.collection('media').aggregate([
@@ -73,8 +73,9 @@ export async function POST(request) {
 
       let aiAnalysis = null;
       let aiAnalysisStatus = 'not_requested';
+      let aiAnalysisCached = false;
       try {
-        const budgeted = await analyzeMediaWithBudget({
+        const budgeted = await analyzeMediaOnce({
           db,
           user,
           request,
@@ -86,7 +87,8 @@ export async function POST(request) {
         });
         if (budgeted.ok) {
           aiAnalysis = budgeted.result;
-          aiAnalysisStatus = 'completed';
+          aiAnalysisCached = Boolean(budgeted.cached);
+          aiAnalysisStatus = budgeted.cached ? 'completed_cached' : 'completed';
         } else {
           aiAnalysisStatus = budgeted.error?.code || 'budget_blocked';
         }
@@ -109,6 +111,7 @@ export async function POST(request) {
         trashed: false,
         aiAnalysis,
         aiAnalysisStatus,
+        aiAnalysisCached,
         createdAt: new Date(),
       };
       await db.collection('media').insertOne(doc);
