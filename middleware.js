@@ -31,8 +31,39 @@ function previewAuthAllowed() {
   return process.env.NODE_ENV !== 'production' && process.env.VERCEL_ENV !== 'production';
 }
 
+function configuredOrigins() {
+  return new Set(
+    String(process.env.CORS_ORIGINS || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+}
+
+function isAllowedBrowserOrigin(request) {
+  const origin = request.headers.get('origin');
+  if (!origin) return true; // Native apps, webhooks, cron and server-to-server calls commonly omit Origin.
+
+  const allowed = configuredOrigins();
+  allowed.add(request.nextUrl.origin);
+  allowed.add('https://snapnext.ai');
+  allowed.add('https://www.snapnext.ai');
+
+  return allowed.has(origin);
+}
+
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
+
+  // Browser requests from unrelated websites must not reach SnapNext APIs.
+  // Requests without an Origin header remain allowed for trusted server-to-server integrations.
+  if (pathname.startsWith('/api/') && !isAllowedBrowserOrigin(request)) {
+    return NextResponse.json(
+      { error: { code: 'origin_not_allowed', message: 'Request origin is not allowed.' } },
+      { status: 403 },
+    );
+  }
+
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   if (!isProtected) return NextResponse.next();
 
@@ -62,6 +93,7 @@ export async function middleware(request) {
 
 export const config = {
   matcher: [
+    '/api/:path*',
     '/dashboard/:path*',
     '/upload/:path*',
     '/gallery/:path*',
