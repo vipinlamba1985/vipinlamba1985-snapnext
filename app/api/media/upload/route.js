@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import crypto from 'crypto';
+import { after } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
@@ -22,6 +23,59 @@ function clean(doc) {
   return rest;
 }
 
+async function enrichSavedMedia({ db, user, jobs }) {
+  for (const job of jobs) {
+    try {
+      const buffer = await storage.read({ provider: job.provider, storageKey: job.storageKey });
+      const budgeted = await analyzeMediaOnce({
+        db,
+        user,
+        request: null,
+        buffer,
+        name: job.name,
+        mimeType: job.mime,
+        kind: job.kind,
+        source: 'upload-background',
+      });
+
+      if (budgeted.ok) {
+        await db.collection('media').updateOne(
+          { id: job.id, userId: user.id },
+          {
+            $set: {
+              aiAnalysis: budgeted.result,
+              aiAnalysisCached: Boolean(budgeted.cached),
+              aiAnalysisStatus: budgeted.cached ? 'completed_cached' : 'completed',
+              aiAnalysisCompletedAt: new Date(),
+            },
+          },
+        );
+      } else {
+        await db.collection('media').updateOne(
+          { id: job.id, userId: user.id },
+          {
+            $set: {
+              aiAnalysisStatus: budgeted.error?.code || 'budget_blocked',
+              aiAnalysisCompletedAt: new Date(),
+            },
+          },
+        );
+      }
+    } catch (error) {
+      console.error('[upload-background] AI enrichment failed:', error?.message);
+      await db.collection('media').updateOne(
+        { id: job.id, userId: user.id },
+        {
+          $set: {
+            aiAnalysisStatus: error?.code || 'analysis_failed',
+            aiAnalysisCompletedAt: new Date(),
+          },
+        },
+      ).catch(() => {});
+    }
+  }
+}
+
 export async function POST(request) {
   const user = await getUserFromRequest(request);
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -38,6 +92,7 @@ export async function POST(request) {
 
   const saved = [];
   const skipped = [];
+  const enrichmentJobs = [];
 
   for (const file of files) {
     try {
@@ -71,32 +126,6 @@ export async function POST(request) {
         mime: file.type,
       });
 
-      let aiAnalysis = null;
-      let aiAnalysisStatus = 'not_requested';
-      let aiAnalysisCached = false;
-      try {
-        const budgeted = await analyzeMediaOnce({
-          db,
-          user,
-          request,
-          buffer,
-          name: file.name,
-          mimeType: file.type || '',
-          kind: isVideo ? 'video' : 'photo',
-          source: 'legacy-upload',
-        });
-        if (budgeted.ok) {
-          aiAnalysis = budgeted.result;
-          aiAnalysisCached = Boolean(budgeted.cached);
-          aiAnalysisStatus = budgeted.cached ? 'completed_cached' : 'completed';
-        } else {
-          aiAnalysisStatus = budgeted.error?.code || 'budget_blocked';
-        }
-      } catch (error) {
-        console.error('[legacy-upload] AI analysis failed:', error?.message);
-        aiAnalysisStatus = error?.code || 'analysis_failed';
-      }
-
       const doc = {
         id,
         userId: user.id,
@@ -109,18 +138,31 @@ export async function POST(request) {
         provider: stored.provider,
         favorite: false,
         trashed: false,
-        aiAnalysis,
-        aiAnalysisStatus,
-        aiAnalysisCached,
+        aiAnalysis: null,
+        aiAnalysisStatus: 'pending',
+        aiAnalysisCached: false,
+        aiAnalysisQueuedAt: new Date(),
         createdAt: new Date(),
       };
       await db.collection('media').insertOne(doc);
       saved.push(clean(doc));
+      enrichmentJobs.push({
+        id,
+        name: file.name,
+        mime: file.type || '',
+        kind: isVideo ? 'video' : 'photo',
+        storageKey: stored.storageKey,
+        provider: stored.provider,
+      });
       remaining -= size;
     } catch (error) {
-      console.error('[legacy-upload] failed:', error?.message);
+      console.error('[upload] failed:', error?.message);
       skipped.push({ name: file?.name || 'unknown', reason: 'error', message: 'Could not save this file.', retryable: true });
     }
+  }
+
+  if (enrichmentJobs.length) {
+    after(() => enrichSavedMedia({ db, user, jobs: enrichmentJobs }));
   }
 
   return Response.json({ saved, skipped, savedCount: saved.length, skippedCount: skipped.length });
