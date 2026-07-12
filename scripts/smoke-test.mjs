@@ -50,15 +50,15 @@ await check('Unknown browser origin is rejected', async () => {
 });
 
 await check('Oversized API write is rejected early', async () => {
+  const body = JSON.stringify({ probe: 'x'.repeat(2 * 1024 * 1024) });
   const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     redirect: 'manual',
     headers: {
       'Content-Type': 'application/json',
       Origin: baseUrl,
-      'Content-Length': String(2 * 1024 * 1024 + 1),
     },
-    body: JSON.stringify({ probe: true }),
+    body,
   });
   expect(response.status === 413, `received HTTP ${response.status}`);
 });
