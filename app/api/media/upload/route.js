@@ -9,14 +9,7 @@ import { getUserFromRequest } from '@/lib/auth';
 import { effectivePlan } from '@/lib/entitlements';
 import { storage } from '@/lib/storage';
 import { analyzeMediaOnce } from '@/lib/cached-media-analysis';
-
-async function getStorageUsage(db, userId) {
-  const rows = await db.collection('media').aggregate([
-    { $match: { userId, trashed: { $ne: true } } },
-    { $group: { _id: null, total: { $sum: '$size' } } },
-  ]).toArray();
-  return rows[0]?.total || 0;
-}
+import { resolveStorageScope, getStorageScopeUsage } from '@/lib/storage-scope';
 
 function clean(doc) {
   const { _id, ...rest } = doc;
@@ -82,8 +75,9 @@ export async function POST(request) {
 
   const db = await getDb();
   const plan = effectivePlan(user, request);
-  const usedBytes = await getStorageUsage(db, user.id);
-  let remaining = plan.id === 'super_user' ? Number.MAX_SAFE_INTEGER : Math.max(0, plan.storageBytes - usedBytes);
+  const storageScope = await resolveStorageScope({ db, user, plan });
+  const scopeUsage = await getStorageScopeUsage({ db, scope: storageScope });
+  let remaining = plan.id === 'super_user' ? Number.MAX_SAFE_INTEGER : Math.max(0, storageScope.storageBytes - scopeUsage.bytes);
   const singleUploadLimit = Math.min(storage.config.maxUploadBytes || Number.MAX_SAFE_INTEGER, plan.maxUploadBytes || Number.MAX_SAFE_INTEGER);
 
   const formData = await request.formData();
@@ -106,7 +100,12 @@ export async function POST(request) {
       }
 
       if (plan.id !== 'super_user' && size > remaining) {
-        skipped.push({ name: file.name, reason: 'storage_full', message: 'Storage quota exceeded.', retryable: false });
+        skipped.push({
+          name: file.name,
+          reason: 'storage_full',
+          message: storageScope.type === 'family' ? 'The shared Family storage is full.' : 'Storage quota exceeded.',
+          retryable: false,
+        });
         continue;
       }
       if (size > singleUploadLimit) {
@@ -129,6 +128,7 @@ export async function POST(request) {
       const doc = {
         id,
         userId: user.id,
+        householdId: storageScope.householdId || null,
         name: file.name,
         size,
         hash,
@@ -165,5 +165,12 @@ export async function POST(request) {
     after(() => enrichSavedMedia({ db, user, jobs: enrichmentJobs }));
   }
 
-  return Response.json({ saved, skipped, savedCount: saved.length, skippedCount: skipped.length });
+  return Response.json({
+    saved,
+    skipped,
+    savedCount: saved.length,
+    skippedCount: skipped.length,
+    storageScope: storageScope.type,
+    remainingBytes: Math.max(0, remaining),
+  });
 }
