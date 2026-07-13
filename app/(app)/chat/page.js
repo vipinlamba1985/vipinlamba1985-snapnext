@@ -2,210 +2,201 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
-import { Bot, Image as ImageIcon, Loader2, Mic, MicOff, Play, Send, Sparkles, User } from 'lucide-react';
+import { Bot, Brain, Image as ImageIcon, Loader2, Mic, MicOff, Play, Send, ShieldCheck, Sparkles, User, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
 const STARTERS = [
-  'Show my latest pics',
-  'Show my beach photos',
-  'Find my favorite memories',
+  'Show my latest photos',
+  'Find my beach memories',
   'What did I save last month?',
+  'Summarize my favorite memories',
 ];
 
-function wantsMedia(query) {
-  return /\b(show|find|latest|recent|photo|photos|picture|pictures|pics|pic|video|videos|gallery|favorite|favourite|beach|trip|birthday|wedding)\b/i.test(query || '');
+function messageId() {
+  return crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 }
 
-function wantsLastMonth(query) {
-  return /\b(last month|past month|previous month)\b/i.test(query || '');
-}
-
-function appHelpAnswer(query) {
-  const q = String(query || '').toLowerCase();
-  if (/\b(help|what can you do|how does snapnext work|features)\b/i.test(q)) {
-    return 'I can search your saved photos and videos, help you rediscover memories, prepare creative drafts, and guide you through SnapNext. Try “Show my latest pics”, “Find my favorite memories”, or ask me to help create something.';
+function formatDate(value) {
+  if (!value) return '';
+  try {
+    return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return '';
   }
-  if (/\b(how (do|can) i upload|where (do|can) i upload|back up photos|backup photos)\b/i.test(q)) {
-    return 'Open Upload from the bottom navigation. You can back up photos and videos or choose specific files. SnapNext will show real progress and explain anything that is skipped.';
-  }
-  if (/\b(where are my favorites|how (do|can) i share|trusted people|favorite sharing)\b/i.test(q)) {
-    return 'Open Favorites to manage trusted people and permission-based sharing. A trusted person only gets the access you explicitly allow, and you can revoke access later.';
-  }
-  return null;
-}
-
-function queryTerms(query) {
-  const stop = new Set(['show','find','my','me','the','a','an','photos','photo','pictures','picture','pics','pic','videos','video','latest','recent','saved','memories','memory','with','from','and','or','please']);
-  return String(query || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter((word) => word.length > 2 && !stop.has(word));
-}
-
-function searchableText(media) {
-  return [
-    media.name,
-    media.kind,
-    media.aiAnalysis?.autoAlbum,
-    media.aiAnalysis?.description,
-    ...(media.aiAnalysis?.tags || []),
-    ...(media.aiAnalysis?.locations || []),
-  ].filter(Boolean).join(' ').toLowerCase();
-}
-
-function previousMonthRange() {
-  const now = new Date();
-  return { start: new Date(now.getFullYear(), now.getMonth() - 1, 1), end: new Date(now.getFullYear(), now.getMonth(), 1) };
-}
-
-function filterMedia(items, query) {
-  const q = String(query || '').toLowerCase();
-  let matches = [...items];
-  if (/\b(photo|photos|picture|pictures|pics|pic)\b/i.test(q)) matches = matches.filter((m) => m.kind === 'photo');
-  if (/\b(video|videos)\b/i.test(q)) matches = matches.filter((m) => m.kind === 'video');
-  if (/\bfavorite|favourite|loved\b/i.test(q)) matches = matches.filter((m) => m.favorite || m.isFavorite);
-
-  if (wantsLastMonth(q)) {
-    const { start, end } = previousMonthRange();
-    matches = matches.filter((m) => {
-      const d = new Date(m.createdAt);
-      return d >= start && d < end;
-    });
-  }
-
-  const terms = queryTerms(q);
-  if (!/\b(latest|recent|newest|last month|past month|previous month)\b/i.test(q) && terms.length) {
-    matches = matches.filter((m) => terms.every((term) => searchableText(m).includes(term)));
-  }
-  return matches.slice(0, 12);
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState([{ id: 'welcome', role: 'assistant', text: 'Hello! I am SnapNext AI. I can help you search, organize, and understand the photos and videos you have saved — always grounded in your real library.\n\nTry: “Show my latest pics”, “Find my favorite memories”, or “What did I save last month?”', createdAt: new Date() }]);
+  const [messages, setMessages] = useState([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      text: 'Hello — I am LifeGPT, the private AI that understands your SnapNext memories. I answer from your saved photos, videos, dates, people, places, OCR, and existing AI intelligence. I will not invent facts about your life.',
+      matches: [],
+      grounded: true,
+      usedAi: false,
+      note: 'Searching existing indexed memories uses 0 AI Credits.',
+      createdAt: new Date(),
+    },
+  ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef(null);
   const recognitionRef = useRef(null);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
-    const rec = new SpeechRecognition();
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.lang = 'en-US';
-    rec.onresult = (e) => sendMessage(e.results[0][0].transcript);
-    rec.onerror = () => { setIsRecording(false); toast.error('Voice input error. Try again.'); };
-    rec.onend = () => setIsRecording(false);
-    recognitionRef.current = rec;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+    recognition.onresult = (event) => sendMessage(event.results[0][0].transcript);
+    recognition.onerror = () => {
+      setIsRecording(false);
+      toast.error('Voice input error. Try again.');
+    };
+    recognition.onend = () => setIsRecording(false);
+    recognitionRef.current = recognition;
   }, []);
 
   function toggleRecording() {
     if (!recognitionRef.current) return toast.error('Voice input is not supported in this browser.');
     if (isRecording) recognitionRef.current.stop();
-    else { setIsRecording(true); recognitionRef.current.start(); }
-  }
-
-  async function directMediaAnswer(queryText) {
-    const res = await apiFetch('/media');
-    const items = (res.items || res.media || res.data || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    const matches = filterMedia(items, queryText);
-    if (!matches.length) {
-      return { text: 'I could not find matching memories in your saved library yet. Try another word, or upload more photos and videos for SnapNext to search.', matchedMedia: [] };
+    else {
+      setIsRecording(true);
+      recognitionRef.current.start();
     }
-    if (wantsLastMonth(queryText)) {
-      const { start } = previousMonthRange();
-      const label = start.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-      const photos = matches.filter((m) => m.kind === 'photo').length;
-      const videos = matches.filter((m) => m.kind === 'video').length;
-      return { text: `In ${label}, I found ${matches.length} saved ${matches.length === 1 ? 'memory' : 'memories'} — ${photos} photos and ${videos} videos.`, matchedMedia: matches };
-    }
-    return { text: `I found ${matches.length} matching ${matches.length === 1 ? 'memory' : 'memories'} from your real library.`, matchedMedia: matches };
   }
 
   async function sendMessage(textToSend) {
-    const queryText = (textToSend || input).trim();
-    if (!queryText) return;
-    if (queryText.length > 2000) return toast.error('Please shorten your request to 2,000 characters or less.');
+    const query = String(textToSend || input).trim();
+    if (!query || loading) return;
+    if (query.length > 1200) return toast.error('Please shorten your LifeGPT request to 1,200 characters or less.');
+
     if (!textToSend) setInput('');
     setLoading(true);
-    setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'user', text: queryText, createdAt: new Date() }]);
+    setMessages((current) => [...current, { id: messageId(), role: 'user', text: query, createdAt: new Date() }]);
 
     try {
-      const help = appHelpAnswer(queryText);
-      if (help) {
-        setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: help, matchedMedia: [], createdAt: new Date() }]);
-        return;
-      }
-
-      if (wantsMedia(queryText) || wantsLastMonth(queryText)) {
-        const answer = await directMediaAnswer(queryText);
-        setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: answer.text, matchedMedia: answer.matchedMedia, createdAt: new Date() }]);
-        return;
-      }
-
-      // Only genuinely generative requests reach a model. This keeps common
-      // search/navigation/help intents deterministic and protects AI margins.
-      const res = await apiFetch('/ai-agent', { method: 'POST', body: JSON.stringify({ task: queryText, feature: 'postIdeas', qualityMode: 'balanced' }) });
-      const reply = res.result?.caption || res.result?.summary || 'I can help, but I need a little more detail.';
-      setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: reply, matchedMedia: [], createdAt: new Date() }]);
-    } catch (e) {
-      if (/prompt is too long/i.test(e.message || '')) {
-        setMessages((prev) => [...prev, { id: crypto.randomUUID?.() || String(Math.random()), role: 'assistant', text: 'That request is too large for one AI response. Please ask for one specific search, summary, or creation task at a time.', matchedMedia: [], createdAt: new Date() }]);
-      } else {
-        toast.error(e.message || 'An AI error occurred.');
-      }
+      const response = await apiFetch('/lifegpt', {
+        method: 'POST',
+        body: JSON.stringify({ query }),
+      });
+      setMessages((current) => [...current, {
+        id: messageId(),
+        role: 'assistant',
+        text: response.reply || 'I could not find enough grounded evidence for that request.',
+        matches: response.matches || [],
+        grounded: response.grounded !== false,
+        usedAi: !!response.usedAi,
+        creditsUsed: response.creditsUsed,
+        note: response.note || null,
+        aiDeferred: !!response.aiDeferred,
+        createdAt: new Date(),
+      }]);
+    } catch (error) {
+      const message = error?.message || 'LifeGPT could not complete that request.';
+      setMessages((current) => [...current, {
+        id: messageId(),
+        role: 'assistant',
+        text: message,
+        matches: [],
+        grounded: true,
+        usedAi: false,
+        createdAt: new Date(),
+      }]);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] rounded-3xl border border-white/10 bg-white/[0.02] overflow-hidden" id="chat-container">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
+    <div className="flex h-[calc(100vh-120px)] flex-col overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02]" id="lifegpt-container">
+      <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.02] px-5 py-4 md:px-6">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shadow-lg shadow-pink-500/20"><Sparkles className="h-5 w-5 text-white" /></div>
-          <div><h1 className="text-md font-semibold text-white">SnapNext AI</h1><p className="text-xs text-white/50">Grounded in your saved memories</p></div>
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-tr from-pink-500 to-purple-600 shadow-lg shadow-pink-500/20">
+            <Brain className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2"><h1 className="font-black text-white">LifeGPT</h1><span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-200">Grounded</span></div>
+            <p className="text-xs text-white/50">The AI that understands your life, not just your prompts</p>
+          </div>
+        </div>
+        <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] text-white/55 sm:flex">
+          <ShieldCheck className="h-3.5 w-3.5 text-emerald-200" /> Private library only
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 space-y-6 overflow-y-auto p-4 md:p-6">
         <AnimatePresence initial={false}>
-          {messages.map((m) => (
-            <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-4 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              {m.role === 'assistant' && <div className="h-9 w-9 rounded-full bg-purple-950/80 border border-purple-500/30 flex items-center justify-center shrink-0"><Bot className="h-4.5 w-4.5 text-purple-300" /></div>}
-              <div className={`space-y-3 max-w-[78%] ${m.role === 'user' ? 'order-1' : 'order-2'}`}>
-                <div className={`p-4 rounded-2xl text-sm leading-relaxed ${m.role === 'user' ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white rounded-tr-none shadow-md' : 'bg-white/[0.04] border border-white/10 text-white/90 rounded-tl-none'}`}><p className="whitespace-pre-wrap">{m.text}</p></div>
-                {m.matchedMedia?.length > 0 && (
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 space-y-2.5 shadow-lg">
-                    <div className="text-xs text-white/60 font-semibold uppercase tracking-wider flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5 text-pink-300" /> Matches Found ({m.matchedMedia.length})</div>
-                    <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-                      {m.matchedMedia.map((media) => (
-                        <div key={media.id} className="relative aspect-square rounded-xl overflow-hidden group bg-white/5 border border-white/10">
-                          {media.kind === 'photo' ? <img src={mediaSrc(media.id)} alt={media.name || 'Memory'} className="h-full w-full object-cover group-hover:scale-105 transition duration-300" /> : <video src={mediaSrc(media.id)} className="h-full w-full object-cover" muted />}
-                          {media.kind === 'video' && <div className="absolute inset-0 bg-black/35 flex items-center justify-center"><Play className="h-5 w-5 text-white fill-white" /></div>}
+          {messages.map((message) => (
+            <motion.div key={message.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={`flex gap-3 md:gap-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              {message.role === 'assistant' && <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-purple-500/30 bg-purple-950/80"><Bot className="h-4 w-4 text-purple-300" /></div>}
+              <div className={`max-w-[84%] space-y-3 md:max-w-[78%] ${message.role === 'user' ? 'order-1' : 'order-2'}`}>
+                <div className={`rounded-2xl p-4 text-sm leading-relaxed ${message.role === 'user' ? 'rounded-tr-none bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md' : 'rounded-tl-none border border-white/10 bg-white/[0.04] text-white/90'}`}>
+                  <p className="whitespace-pre-wrap">{message.text}</p>
+                </div>
+
+                {message.role === 'assistant' && (
+                  <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-wider">
+                    {message.grounded && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-emerald-200"><ShieldCheck className="h-3 w-3" /> Grounded in sources</span>}
+                    {!message.usedAi && <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-1 text-cyan-200"><Zap className="h-3 w-3" /> 0 AI Credits</span>}
+                    {message.usedAi && <span className="inline-flex items-center gap-1 rounded-full border border-purple-400/20 bg-purple-400/10 px-2 py-1 text-purple-200"><Sparkles className="h-3 w-3" /> Narrative AI{Number.isFinite(message.creditsUsed) ? ` · ${message.creditsUsed} credits` : ''}</span>}
+                  </div>
+                )}
+
+                {message.note && <p className="rounded-xl border border-white/8 bg-black/15 px-3 py-2 text-xs leading-5 text-white/45">{message.note}</p>}
+
+                {message.matches?.length > 0 && (
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4 shadow-lg">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-white/60"><ImageIcon className="h-3.5 w-3.5 text-pink-300" /> Source memories</div>
+                      <span className="text-[11px] text-white/35">{message.matches.length} verified matches</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+                      {message.matches.map((memory, index) => (
+                        <div key={memory.id} className="group overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                          <div className="relative aspect-square overflow-hidden">
+                            {memory.kind === 'photo' ? <img src={mediaSrc(memory.id)} alt={memory.name || 'Memory'} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" /> : <video src={mediaSrc(memory.id)} className="h-full w-full object-cover" muted />}
+                            {memory.kind === 'video' && <div className="absolute inset-0 grid place-items-center bg-black/35"><Play className="h-5 w-5 fill-white text-white" /></div>}
+                            <span className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-[10px] font-bold text-white">[{index + 1}]</span>
+                          </div>
+                          <div className="space-y-1 p-2.5">
+                            <p className="truncate text-xs font-bold text-white/85">{memory.name || 'Saved memory'}</p>
+                            <p className="text-[10px] text-white/40">{formatDate(memory.createdAt)}</p>
+                            {(memory.description || memory.album) && <p className="line-clamp-2 text-[10px] leading-4 text-white/45">{memory.description || memory.album}</p>}
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
               </div>
-              {m.role === 'user' && <div className="h-9 w-9 rounded-full bg-pink-950/80 border border-pink-500/30 flex items-center justify-center shrink-0 order-3"><User className="h-4.5 w-4.5 text-pink-300" /></div>}
+              {message.role === 'user' && <div className="order-3 grid h-9 w-9 shrink-0 place-items-center rounded-full border border-pink-500/30 bg-pink-950/80"><User className="h-4 w-4 text-pink-300" /></div>}
             </motion.div>
           ))}
         </AnimatePresence>
-        {loading && <div className="flex gap-4 justify-start"><div className="h-9 w-9 rounded-full bg-purple-950/80 border border-purple-500/30 flex items-center justify-center shrink-0"><Bot className="h-4.5 w-4.5 text-purple-300" /></div><div className="bg-white/[0.02] border border-white/15 px-4 py-3 rounded-2xl text-sm text-white/60 flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Working on it...</div></div>}
+
+        {loading && <div className="flex justify-start gap-4"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-purple-500/30 bg-purple-950/80"><Bot className="h-4 w-4 text-purple-300" /></div><div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.02] px-4 py-3 text-sm text-white/60"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching your private memory index…</div></div>}
         <div ref={messagesEndRef} />
       </div>
 
-      {messages.length === 1 && <div className="px-6 py-3 bg-white/[0.01] border-t border-white/5 flex gap-2 overflow-x-auto select-none no-scrollbar">{STARTERS.map((item) => <button key={item} onClick={() => sendMessage(item)} className="text-xs bg-white/5 border border-white/10 hover:border-pink-500/30 hover:bg-pink-500/5 px-3 py-1.5 rounded-full text-white/80 shrink-0 transition">{item}</button>)}</div>}
+      {messages.length === 1 && <div className="no-scrollbar flex select-none gap-2 overflow-x-auto border-t border-white/5 bg-white/[0.01] px-4 py-3 md:px-6">{STARTERS.map((starter) => <button key={starter} onClick={() => sendMessage(starter)} className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:border-pink-500/30 hover:bg-pink-500/5">{starter}</button>)}</div>}
 
-      <div className="p-4 border-t border-white/10 bg-white/[0.01] flex items-center gap-3">
-        <button onClick={toggleRecording} className={`p-3.5 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/30' : 'bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10'}`} title={isRecording ? 'Stop Recording' : 'Speak'}>{isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}</button>
-        <div className="flex-1 relative flex items-center">
-          <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()} placeholder={isRecording ? 'Listening...' : 'Ask SnapNext AI...'} disabled={isRecording} maxLength={2000} className="w-full bg-white/5 border border-white/10 focus:border-pink-500/50 rounded-2xl pl-4 pr-12 py-3.5 text-sm outline-none text-white transition placeholder-white/40" />
-          <button onClick={() => sendMessage()} disabled={!input.trim() || loading} className="absolute right-2.5 p-2 rounded-xl bg-pink-500 hover:bg-pink-600 disabled:opacity-30 disabled:hover:bg-pink-500 transition text-white"><Send className="h-4.5 w-4.5" /></button>
+      <div className="flex items-center gap-3 border-t border-white/10 bg-white/[0.01] p-4">
+        <button onClick={toggleRecording} className={`rounded-full p-3.5 transition-all ${isRecording ? 'animate-pulse bg-red-500 text-white shadow-lg shadow-red-500/30' : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'}`} title={isRecording ? 'Stop recording' : 'Speak'}>
+          {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+        </button>
+        <div className="relative flex flex-1 items-center">
+          <input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && sendMessage()} placeholder={isRecording ? 'Listening…' : 'Ask LifeGPT about your memories…'} disabled={isRecording || loading} maxLength={1200} className="w-full rounded-2xl border border-white/10 bg-white/5 py-3.5 pl-4 pr-12 text-sm text-white outline-none transition placeholder:text-white/40 focus:border-pink-500/50" />
+          <button onClick={() => sendMessage()} disabled={!input.trim() || loading} className="absolute right-2.5 rounded-xl bg-pink-500 p-2 text-white transition hover:bg-pink-600 disabled:opacity-30"><Send className="h-4 w-4" /></button>
         </div>
       </div>
     </div>
