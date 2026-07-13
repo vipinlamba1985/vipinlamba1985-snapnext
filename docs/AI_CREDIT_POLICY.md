@@ -1,0 +1,1 @@
+AI Credits reset weekly. Free includes 20, Plus 80, Pro 180, and Family 280 shared credits. Cached results cost zero credits. Optional external AI pauses when credits are exhausted, while uploads and core library features continue.
