@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { runAiTask } from '@/lib/ai-router';
 import { searchMemoryBrain } from '@/lib/memory-brain';
+import { loadMemoryContext, resolveQueryContext } from '@/lib/memory-context';
 
 export const runtime = 'nodejs';
 
@@ -14,9 +15,9 @@ function normalize(value) {
   return String(value || '').trim().toLowerCase();
 }
 
-function deterministicReply(query, matches, range) {
+function deterministicReply(query, matches, range, context) {
   if (!matches.length) {
-    return 'I could not find evidence for that in your saved library yet. Try a different person, place, event, year, or upload more memories for LifeGPT to understand.';
+    return 'I could not find evidence for that in your saved library yet. Try a different person, place, event, year, or confirm a relationship or event label first.';
   }
   const photos = matches.filter((item) => item.kind === 'photo').length;
   const videos = matches.filter((item) => item.kind === 'video').length;
@@ -24,16 +25,17 @@ function deterministicReply(query, matches, range) {
   const first = chronological[0];
   const latest = chronological[chronological.length - 1];
   const q = normalize(query);
+  const contextNote = context.relationships.length || context.events.length ? ' I used your confirmed labels to understand the request.' : '';
   if (/\bwhen\b/.test(q) && first?.createdAt) {
     const date = new Date(first.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    return `The earliest matching memory I found is from ${date}. I found ${matches.length} grounded source ${matches.length === 1 ? 'item' : 'items'} in total.`;
+    return `The earliest matching memory I found is from ${date}. I found ${matches.length} grounded source ${matches.length === 1 ? 'item' : 'items'} in total.${contextNote}`;
   }
   if (/\b(latest|recent|newest)\b/.test(q) && latest?.createdAt) {
     const date = new Date(latest.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    return `Your latest matching memory is from ${date}. I found ${matches.length} matching ${matches.length === 1 ? 'memory' : 'memories'}.`;
+    return `Your latest matching memory is from ${date}. I found ${matches.length} matching ${matches.length === 1 ? 'memory' : 'memories'}.${contextNote}`;
   }
   const period = range ? ` for ${range.label}` : '';
-  return `I found ${matches.length} grounded ${matches.length === 1 ? 'memory' : 'memories'}${period}: ${photos} ${photos === 1 ? 'photo' : 'photos'} and ${videos} ${videos === 1 ? 'video' : 'videos'}. Each result includes why it matched and a confidence score.`;
+  return `I found ${matches.length} grounded ${matches.length === 1 ? 'memory' : 'memories'}${period}: ${photos} ${photos === 1 ? 'photo' : 'photos'} and ${videos} ${videos === 1 ? 'video' : 'videos'}. Each result includes why it matched and a confidence score.${contextNote}`;
 }
 
 function wantsNarrative(query) {
@@ -51,23 +53,35 @@ export async function POST(request) {
     if (query.length > 1200) return json({ error: 'Please shorten your LifeGPT request to 1,200 characters or less.' }, 400);
 
     const db = await getDb();
-    const items = await db.collection('media')
-      .find({ userId: user.id, trashed: { $ne: true } })
-      .sort({ createdAt: -1 })
-      .limit(1000)
-      .toArray();
+    const [items, savedContext] = await Promise.all([
+      db.collection('media').find({ userId: user.id, trashed: { $ne: true } }).sort({ createdAt: -1 }).limit(1000).toArray(),
+      loadMemoryContext(db, user.id),
+    ]);
 
-    const { matches, range, terms } = searchMemoryBrain(items, query, { limit: 12 });
+    const resolved = resolveQueryContext(query, savedContext);
+    const result = searchMemoryBrain(items, resolved.expandedQuery, { limit: 30 });
+    const confirmedIds = new Set(resolved.matchedEvents.flatMap((event) => event.memoryIds || []));
+    const matches = [...result.matches]
+      .sort((a, b) => Number(confirmedIds.has(b.id)) - Number(confirmedIds.has(a.id)) || b.relevanceScore - a.relevanceScore)
+      .slice(0, 12)
+      .map((item) => confirmedIds.has(item.id)
+        ? { ...item, reasons: ['confirmed event', ...(item.reasons || [])].slice(0, 5), confidence: Math.max(item.confidence || 0, 95) }
+        : item);
+    const queryContext = {
+      relationships: resolved.matchedRelationships,
+      events: resolved.matchedEvents.map(({ memoryIds, ...event }) => ({ ...event, memoryCount: memoryIds.length })),
+    };
 
     if (!wantsNarrative(query) || !matches.length) {
       return json({
-        reply: deterministicReply(query, matches, range),
+        reply: deterministicReply(query, matches, result.range, queryContext),
         matches,
         grounded: true,
         usedAi: false,
         creditsUsed: 0,
-        memoryBrain: { indexed: items.length, queryTerms: terms, explainable: true },
-        note: 'Memory Brain search, scoring, grouping signals and retrieval use existing intelligence and consume 0 AI Credits.',
+        queryContext,
+        memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true },
+        note: 'Confirmed relationship and event resolution, search, scoring and retrieval consume 0 AI Credits.',
       });
     }
 
@@ -91,46 +105,50 @@ export async function POST(request) {
 
     const strictPrompt = [
       'You are LifeGPT, SnapNext\'s private memory assistant.',
-      'Answer ONLY from the evidence JSON below.',
+      'Answer ONLY from the evidence JSON and confirmed context below.',
       'Never invent people, relationships, places, dates, feelings, events, or facts.',
+      'Confirmed relationship labels were explicitly saved by the user and may be used exactly as provided.',
+      'Confirmed events were explicitly saved by the user and may be used exactly as provided.',
       'If evidence is insufficient, say so plainly.',
       'Use concise, warm language and cite evidence inline as [1], [2], etc.',
-      'Do not treat a detected face label as a family relationship unless the evidence explicitly contains that relationship label.',
       `User request: ${query}`,
+      `Confirmed context: ${JSON.stringify(queryContext).slice(0, 4000)}`,
       `Evidence JSON: ${JSON.stringify(evidence).slice(0, 14000)}`,
     ].join('\n');
 
-    const result = await runAiTask({
+    const aiResult = await runAiTask({
       db,
       user,
       feature: 'chat',
-      input: { query, groundedMemoryIds: matches.map((item) => item.id) },
+      input: { query, groundedMemoryIds: matches.map((item) => item.id), confirmedContext: queryContext },
       prompt: strictPrompt,
       request,
     });
 
-    if (!result.ok) {
+    if (!aiResult.ok) {
       return json({
-        reply: deterministicReply(query, matches, range),
+        reply: deterministicReply(query, matches, result.range, queryContext),
         matches,
         grounded: true,
         usedAi: false,
         creditsUsed: 0,
         aiDeferred: true,
-        memoryBrain: { indexed: items.length, queryTerms: terms, explainable: true },
-        note: result.error?.message || 'Narrative AI is temporarily unavailable; grounded Memory Brain results are still shown.',
+        queryContext,
+        memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true },
+        note: aiResult.error?.message || 'Narrative AI is temporarily unavailable; grounded Memory Brain results are still shown.',
       });
     }
 
-    const reply = result.result?.reply || result.result?.summary || result.result?.caption || deterministicReply(query, matches, range);
+    const reply = aiResult.result?.reply || aiResult.result?.summary || aiResult.result?.caption || deterministicReply(query, matches, result.range, queryContext);
     return json({
       reply,
       matches,
       grounded: true,
       usedAi: true,
-      creditsUsed: result.meta?.creditsUsed ?? result.meta?.credits ?? null,
-      memoryBrain: { indexed: items.length, queryTerms: terms, explainable: true },
-      meta: result.meta || null,
+      creditsUsed: aiResult.meta?.creditsUsed ?? aiResult.meta?.credits ?? null,
+      queryContext,
+      memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true },
+      meta: aiResult.meta || null,
     });
   } catch (error) {
     console.error('[lifegpt] query failed', error?.message);
