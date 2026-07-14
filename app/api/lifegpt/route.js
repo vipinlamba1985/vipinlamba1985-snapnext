@@ -4,6 +4,7 @@ import { getUserFromRequest } from '@/lib/auth';
 import { runAiTask } from '@/lib/ai-router';
 import { searchMemoryBrain } from '@/lib/memory-brain';
 import { loadMemoryContext, resolveQueryContext } from '@/lib/memory-context';
+import { averageMatchConfidence, recordLifeGptAudit, validateLifeGptCitations } from '@/lib/lifegpt-trust';
 
 export const runtime = 'nodejs';
 
@@ -43,6 +44,7 @@ function wantsNarrative(query) {
 }
 
 export async function POST(request) {
+  const startedAt = Date.now();
   try {
     const user = await getUserFromRequest(request);
     if (!user) return json({ error: 'Unauthorized' }, 401);
@@ -71,8 +73,19 @@ export async function POST(request) {
       relationships: resolved.matchedRelationships,
       events: resolved.matchedEvents.map(({ memoryIds, ...event }) => ({ ...event, memoryCount: memoryIds.length })),
     };
+    const baseAudit = {
+      userId: user.id,
+      queryLength: query.length,
+      indexedCount: items.length,
+      matchCount: matches.length,
+      queryTermCount: result.terms?.length || 0,
+      confirmedRelationshipCount: queryContext.relationships.length,
+      confirmedEventCount: queryContext.events.length,
+      averageConfidence: averageMatchConfidence(matches),
+    };
 
     if (!wantsNarrative(query) || !matches.length) {
+      await recordLifeGptAudit(db, { ...baseAudit, mode: 'retrieval', usedAi: false, creditsUsed: 0, citationValid: null, fallbackReason: null, durationMs: Date.now() - startedAt });
       return json({
         reply: deterministicReply(query, matches, result.range, queryContext),
         matches,
@@ -80,7 +93,7 @@ export async function POST(request) {
         usedAi: false,
         creditsUsed: 0,
         queryContext,
-        memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true },
+        memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
         note: 'Confirmed relationship and event resolution, search, scoring and retrieval consume 0 AI Credits.',
       });
     }
@@ -126,6 +139,7 @@ export async function POST(request) {
     });
 
     if (!aiResult.ok) {
+      await recordLifeGptAudit(db, { ...baseAudit, mode: 'narrative', usedAi: false, creditsUsed: 0, citationValid: null, fallbackReason: aiResult.error?.code || 'provider_unavailable', durationMs: Date.now() - startedAt });
       return json({
         reply: deterministicReply(query, matches, result.range, queryContext),
         matches,
@@ -134,20 +148,41 @@ export async function POST(request) {
         creditsUsed: 0,
         aiDeferred: true,
         queryContext,
-        memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true },
+        memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
         note: aiResult.error?.message || 'Narrative AI is temporarily unavailable; grounded Memory Brain results are still shown.',
       });
     }
 
-    const reply = aiResult.result?.reply || aiResult.result?.summary || aiResult.result?.caption || deterministicReply(query, matches, result.range, queryContext);
+    const generatedReply = aiResult.result?.reply || aiResult.result?.summary || aiResult.result?.caption || '';
+    const citationCheck = validateLifeGptCitations(generatedReply, evidence.length);
+    const creditsUsed = aiResult.meta?.creditsUsed ?? aiResult.meta?.credits ?? null;
+
+    if (!citationCheck.valid) {
+      await recordLifeGptAudit(db, { ...baseAudit, mode: 'narrative', usedAi: true, creditsUsed, citationValid: false, citationCount: citationCheck.citations.length, invalidCitationCount: citationCheck.invalid.length, fallbackReason: 'citation_validation_failed', provider: aiResult.meta?.provider || null, durationMs: Date.now() - startedAt });
+      return json({
+        reply: deterministicReply(query, matches, result.range, queryContext),
+        matches,
+        grounded: true,
+        usedAi: true,
+        creditsUsed,
+        citationFallback: true,
+        queryContext,
+        memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
+        note: 'The generated narrative did not pass SnapNext source validation, so only the verified Memory Brain result is shown.',
+        meta: aiResult.meta || null,
+      });
+    }
+
+    await recordLifeGptAudit(db, { ...baseAudit, mode: 'narrative', usedAi: true, creditsUsed, citationValid: true, citationCount: citationCheck.citations.length, invalidCitationCount: 0, fallbackReason: null, provider: aiResult.meta?.provider || null, durationMs: Date.now() - startedAt });
     return json({
-      reply,
+      reply: generatedReply,
       matches,
       grounded: true,
       usedAi: true,
-      creditsUsed: aiResult.meta?.creditsUsed ?? aiResult.meta?.credits ?? null,
+      creditsUsed,
+      citationValid: true,
       queryContext,
-      memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true },
+      memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
       meta: aiResult.meta || null,
     });
   } catch (error) {
