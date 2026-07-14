@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { runAiTask } from '@/lib/ai-router';
-import { searchMemoryBrain } from '@/lib/memory-brain';
-import { loadMemoryContext, resolveQueryContext } from '@/lib/memory-context';
+import { buildLifeIntelligenceContext, contextPromptSummary } from '@/lib/life-intelligence-context';
 import { averageMatchConfidence, recordLifeGptAudit, validateLifeGptCitations } from '@/lib/lifegpt-trust';
 
 export const runtime = 'nodejs';
@@ -47,33 +46,19 @@ export async function POST(request) {
   try {
     const user = await getUserFromRequest(request);
     if (!user) return json({ error: 'Unauthorized' }, 401);
-
     const body = await request.json().catch(() => ({}));
     const query = String(body.query || '').trim();
     if (!query) return json({ error: 'Query is required' }, 400);
     if (query.length > 1200) return json({ error: 'Please shorten your LifeGPT request to 1,200 characters or less.' }, 400);
 
     const db = await getDb();
-    const [items, savedContext] = await Promise.all([
-      db.collection('media').find({ userId: user.id, trashed: { $ne: true } }).sort({ createdAt: -1 }).limit(1000).toArray(),
-      loadMemoryContext(db, user.id),
-    ]);
-
-    const resolved = resolveQueryContext(query, savedContext);
-    const result = searchMemoryBrain(items, resolved.expandedQuery, { limit: 30 });
-    const confirmedIds = new Set(resolved.matchedEvents.flatMap((event) => event.memoryIds || []));
-    const matches = [...result.matches]
-      .sort((a, b) => Number(confirmedIds.has(b.id)) - Number(confirmedIds.has(a.id)) || b.relevanceScore - a.relevanceScore)
-      .slice(0, 12)
-      .map((item) => confirmedIds.has(item.id) ? { ...item, reasons: ['confirmed event', ...(item.reasons || [])].slice(0, 5), confidence: Math.max(item.confidence || 0, 95) } : item);
-    const queryContext = {
-      relationships: resolved.matchedRelationships,
-      events: resolved.matchedEvents.map(({ memoryIds, ...event }) => ({ ...event, memoryCount: memoryIds.length })),
-    };
+    const intelligence = await buildLifeIntelligenceContext(db, user.id, query, { mediaLimit: 1000, matchLimit: 12 });
+    const { items, matches, search: result, resolved, queryContext, graph } = intelligence;
     const baseAudit = {
       userId: user.id, queryLength: query.length, indexedCount: items.length, matchCount: matches.length,
       queryTermCount: result.terms?.length || 0, confirmedRelationshipCount: queryContext.relationships.length,
       confirmedEventCount: queryContext.events.length, averageConfidence: averageMatchConfidence(matches),
+      contextEngineVersion: 1, graphCached: graph.cached,
     };
 
     if (needsCreationClarification(query, resolved)) {
@@ -82,7 +67,8 @@ export async function POST(request) {
         reply: 'I can create that. Which memories should I use—your latest photos, favorites, a person, or a confirmed event?',
         matches: [], grounded: true, usedAi: false, creditsUsed: 0, clarificationNeeded: true,
         suggestions: ['Use my latest photos', 'Use my favorites', 'Choose a person', 'Choose an event'],
-        queryContext, note: 'No AI Credits were used while I asked for the missing details.',
+        queryContext, intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) },
+        note: 'No AI Credits were used while I asked for the missing details.',
       });
     }
 
@@ -91,7 +77,8 @@ export async function POST(request) {
       return json({
         reply: deterministicReply(query, matches, result.range, queryContext), matches, grounded: true, usedAi: false, creditsUsed: 0, queryContext,
         memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
-        note: 'Confirmed relationship and event resolution, search, scoring and retrieval consume 0 AI Credits.',
+        intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) },
+        note: 'Context assembly, confirmed-label resolution, graph lookup and retrieval consume 0 AI Credits.',
       });
     }
 
@@ -101,20 +88,22 @@ export async function POST(request) {
       locations: item.locations, album: item.album, textInside: item.textInside,
       memoryScore: item.qualityScore, matchConfidence: item.confidence, matchReasons: item.reasons,
     }));
-
     const strictPrompt = [
       'You are LifeGPT, SnapNext\'s private memory assistant.',
       'Answer ONLY from the evidence JSON and confirmed context below.',
       'Never invent people, relationships, places, dates, feelings, events, or facts.',
       'If evidence is insufficient, say so plainly.',
+      'Respect saved product preferences only as style defaults; never treat them as facts.',
       'Use concise, warm language and cite evidence inline as [1], [2], etc.',
       `User request: ${query}`,
-      `Confirmed context: ${JSON.stringify(queryContext).slice(0, 1000)}`,
+      `Life Intelligence context: ${JSON.stringify(contextPromptSummary(intelligence)).slice(0, 1600)}`,
       `Evidence JSON: ${JSON.stringify(evidence).slice(0, 4200)}`,
     ].join('\n');
 
     const aiResult = await runAiTask({
-      db, user, feature: 'chat', input: { query, groundedMemoryIds: matches.map((item) => item.id), confirmedContext: queryContext }, prompt: strictPrompt, request,
+      db, user, feature: 'chat',
+      input: { query, groundedMemoryIds: matches.map((item) => item.id), confirmedContext: queryContext, contextEngineVersion: 1 },
+      prompt: strictPrompt, request,
     });
 
     if (!aiResult.ok) {
@@ -122,19 +111,19 @@ export async function POST(request) {
       return json({
         reply: deterministicReply(query, matches, result.range, queryContext), matches, grounded: true, usedAi: false, creditsUsed: 0, aiDeferred: true, queryContext,
         memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
-        note: safeAiUnavailableMessage(),
+        intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) }, note: safeAiUnavailableMessage(),
       });
     }
 
     const generatedReply = aiResult.result?.reply || aiResult.result?.summary || aiResult.result?.caption || '';
     const citationCheck = validateLifeGptCitations(generatedReply, evidence.length);
     const creditsUsed = aiResult.meta?.creditsUsed ?? aiResult.meta?.credits ?? null;
-
     if (!citationCheck.valid) {
       await recordLifeGptAudit(db, { ...baseAudit, mode: 'narrative', usedAi: true, creditsUsed, citationValid: false, citationCount: citationCheck.citations.length, invalidCitationCount: citationCheck.invalid.length, fallbackReason: 'citation_validation_failed', provider: aiResult.meta?.provider || null, durationMs: Date.now() - startedAt });
       return json({
         reply: deterministicReply(query, matches, result.range, queryContext), matches, grounded: true, usedAi: true, creditsUsed, citationFallback: true, queryContext,
         memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
+        intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) },
         note: 'The generated draft did not pass source validation, so only verified memory results are shown.', meta: aiResult.meta || null,
       });
     }
@@ -142,7 +131,8 @@ export async function POST(request) {
     await recordLifeGptAudit(db, { ...baseAudit, mode: 'narrative', usedAi: true, creditsUsed, citationValid: true, citationCount: citationCheck.citations.length, invalidCitationCount: 0, fallbackReason: null, provider: aiResult.meta?.provider || null, durationMs: Date.now() - startedAt });
     return json({
       reply: generatedReply, matches, grounded: true, usedAi: true, creditsUsed, citationValid: true, queryContext,
-      memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence }, meta: aiResult.meta || null,
+      memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
+      intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) }, meta: aiResult.meta || null,
     });
   } catch (error) {
     console.error('[lifegpt] query failed', error?.message);
