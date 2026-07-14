@@ -16,10 +16,12 @@ import { mediaSrc } from '@/lib/api-client';
 const NAME_KEY = 'snapnext.magicPersonNames.v1';
 const TITLES = { photos: 'Photos', videos: 'Videos', screenshots: 'Screenshots', docs: 'Docs' };
 const SHOT_FILTERS = [['all', 'All'], ['visual', 'Visual'], ['info', 'Info'], ['docs', 'Docs']];
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function cleanName(value) {
   const name = String(value || '').trim();
-  return !name || /^person\s*\d+$/i.test(name) || ['person', 'people', 'unknown', 'face', 'user'].includes(name.toLowerCase()) ? 'Add name' : name;
+  const generic = !name || UUID_PATTERN.test(name) || /^person\s*\d+$/i.test(name) || ['person', 'people', 'unknown', 'face', 'user'].includes(name.toLowerCase());
+  return generic ? 'Add name' : name;
 }
 
 export default function MagicLibraryGalleryMagic() {
@@ -36,7 +38,7 @@ export default function MagicLibraryGalleryMagic() {
   useEffect(() => { setDraftQuery(magic.query || ''); }, [magic.query]);
   useEffect(() => { try { setPersonNames(JSON.parse(localStorage.getItem(NAME_KEY) || '{}')); } catch {} }, []);
 
-  const displayName = (name) => personNames[name] || cleanName(name);
+  const displayName = (name) => cleanName(personNames[name] || name);
   const renamePerson = (name) => {
     const nextName = window.prompt('Name this face', displayName(name) === 'Add name' ? '' : displayName(name));
     if (!nextName?.trim()) return;
@@ -81,11 +83,16 @@ export default function MagicLibraryGalleryMagic() {
   }, [category, shotFilter, magic.items]);
 
   const expanded = categoryView || sections.find((section) => section.key === sectionKey);
+  const activePersonLabel = magic.activePerson ? displayName(magic.activePerson) : '';
+  const searchPlaceholder = activePersonLabel && activePersonLabel !== 'Add name' ? `Search memories with ${activePersonLabel}` : 'Search your memories';
   const suggestions = useMemo(() => {
     const typed = draftQuery.trim().toLowerCase();
     if (!typed) return [];
-    const values = new Set(magic.suggestions);
-    magic.people.forEach((person) => values.add(displayName(person.name)));
+    const values = new Set(magic.suggestions.filter((value) => !UUID_PATTERN.test(String(value || '').trim())));
+    magic.people.forEach((person) => {
+      const label = displayName(person.name);
+      if (label !== 'Add name') values.add(label);
+    });
     return Array.from(values).filter((value) => value.toLowerCase().includes(typed)).slice(0, 6);
   }, [draftQuery, magic.people, magic.suggestions, personNames]);
 
@@ -95,7 +102,7 @@ export default function MagicLibraryGalleryMagic() {
   return <div className="space-y-5">
     <header>
       <div className="flex items-center gap-2.5"><span className="grid h-9 w-9 place-items-center rounded-full bg-pink-500/15 text-pink-200"><Sparkles className="h-4 w-4" /></span><div><h1 className="text-2xl font-black text-white md:text-3xl">Magic Library</h1><p className="text-xs text-white/40">Your organized memories</p></div></div>
-      <div className="mt-3 flex max-w-3xl gap-2"><div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" /><input value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} placeholder={magic.activePerson ? `Search with ${displayName(magic.activePerson)}...` : 'Search memories'} className="w-full rounded-full border border-white/10 bg-white/[0.05] py-2.5 pl-10 pr-10 text-sm text-white outline-none focus:border-pink-400/40" />{draftQuery && <button onClick={() => { setDraftQuery(''); magic.setQuery(''); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/35"><X className="h-4 w-4" /></button>}</div><button onClick={() => runSearch()} className="rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-4 py-2 text-sm font-bold text-white">Search</button></div>
+      <div className="mt-3 flex max-w-3xl gap-2"><div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" /><input value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} placeholder={searchPlaceholder} className="w-full rounded-full border border-white/10 bg-white/[0.05] py-2.5 pl-10 pr-10 text-sm text-white outline-none focus:border-pink-400/40" />{draftQuery && <button onClick={() => { setDraftQuery(''); magic.setQuery(''); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/35"><X className="h-4 w-4" /></button>}</div><button onClick={() => runSearch()} className="rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-4 py-2 text-sm font-bold text-white">Search</button></div>
       {!!suggestions.length && <div className="mt-2 flex flex-wrap gap-1.5">{suggestions.map((label) => <button key={label} onClick={() => { setDraftQuery(label); runSearch(label); }} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55">{label}</button>)}</div>}
     </header>
 
