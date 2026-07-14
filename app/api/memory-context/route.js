@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { loadMemoryContext } from '@/lib/memory-context';
+import { publishIntelligenceEvent } from '@/lib/intelligence-event-bus';
 
 export const runtime = 'nodejs';
 
@@ -64,6 +65,7 @@ export async function POST(request) {
       ...(existing ? {} : { createdAt: now }),
     };
     await db.collection('memory_relationships').updateOne({ userId: user.id, id }, { $set: doc }, { upsert: true });
+    await publishIntelligenceEvent(db, user.id, 'memory.relationship_changed', { entityId: id, entityType: 'relationship', action: existing ? 'updated' : 'created', source: 'user_confirmed' });
     return json({ ok: true, relationship: Object.fromEntries(Object.entries(doc).filter(([key]) => key !== 'userId')) });
   }
 
@@ -88,6 +90,7 @@ export async function POST(request) {
     ...(existing ? {} : { createdAt: now }),
   };
   await db.collection('memory_events').updateOne({ userId: user.id, id }, { $set: doc }, { upsert: true });
+  await publishIntelligenceEvent(db, user.id, 'memory.event_changed', { entityId: id, entityType: 'event', action: existing ? 'updated' : 'created', memoryCount: memoryIds.length, source: 'user_confirmed' });
   return json({ ok: true, event: Object.fromEntries(Object.entries(doc).filter(([key]) => key !== 'userId')) });
 }
 
@@ -102,5 +105,6 @@ export async function DELETE(request) {
   const collection = type === 'event' ? 'memory_events' : 'memory_relationships';
   const result = await db.collection(collection).updateOne({ userId: user.id, id }, { $set: { deleted: true, deletedAt: new Date(), updatedAt: new Date() } });
   if (!result.matchedCount) return json({ error: 'Not found.' }, 404);
+  await publishIntelligenceEvent(db, user.id, type === 'event' ? 'memory.event_changed' : 'memory.relationship_changed', { entityId: id, entityType: type, action: 'deleted', source: 'user_confirmed' });
   return json({ ok: true });
 }
