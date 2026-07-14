@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -62,6 +63,7 @@ export default function MemoryBrainPage() {
         <p className="text-xs font-black uppercase tracking-[0.22em] text-pink-100/70">Memory Brain controls</p>
         <h1 className="mt-2 text-3xl font-black text-white">Teach LifeGPT safely</h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-white/55">LifeGPT uses only relationships and events you confirm here. Detected names are never treated as family roles automatically.</p>
+        <Link href="/memory-stories" className="mt-5 inline-flex rounded-2xl bg-white px-4 py-3 text-sm font-black text-black">Open grounded Story Builder</Link>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
