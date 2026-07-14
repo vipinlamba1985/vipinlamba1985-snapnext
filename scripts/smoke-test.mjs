@@ -2,6 +2,10 @@ import process from 'node:process';
 
 const baseUrl = (process.env.SNAPNEXT_BASE_URL || 'https://snapnext.ai').replace(/\/$/, '');
 const failures = [];
+const mobileAgents = {
+  'iPhone Safari': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  'Android Chrome': 'Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
+};
 
 function pass(name) { console.log(`✓ ${name}`); }
 function fail(name, details) { failures.push(`${name}: ${details}`); console.error(`✗ ${name} — ${details}`); }
@@ -30,6 +34,47 @@ for (const path of ['/dashboard', '/upload', '/billing']) {
     expect(location.includes('/login'), `redirect location was ${location || 'missing'}`);
   });
 }
+
+for (const [device, userAgent] of Object.entries(mobileAgents)) {
+  await check(`${device} receives mobile-ready login HTML`, async () => {
+    const response = await fetch(`${baseUrl}/login`, { headers: { 'User-Agent': userAgent } });
+    expect(response.ok, `received HTTP ${response.status}`);
+    const html = await response.text();
+    expect(/name=["']viewport["']/i.test(html), 'viewport metadata is missing');
+    expect(/width=device-width/i.test(html), 'device-width viewport is missing');
+    expect(!/Application error|Internal Server Error/i.test(html), 'rendered an application error');
+  });
+
+  await check(`${device} protected upload route redirects safely`, async () => {
+    const response = await fetch(`${baseUrl}/upload`, { redirect: 'manual', headers: { 'User-Agent': userAgent } });
+    expect([301, 302, 303, 307, 308].includes(response.status), `received HTTP ${response.status}`);
+    expect((response.headers.get('location') || '').includes('/login'), 'did not redirect to login');
+  });
+}
+
+await check('PWA manifest is reachable and valid', async () => {
+  const response = await fetch(`${baseUrl}/manifest.json`);
+  expect(response.ok, `received HTTP ${response.status}`);
+  const manifest = await response.json();
+  expect(Boolean(manifest.name || manifest.short_name), 'manifest name is missing');
+  expect(Boolean(manifest.start_url), 'manifest start_url is missing');
+  expect(Array.isArray(manifest.icons) && manifest.icons.length > 0, 'manifest icons are missing');
+  expect(['standalone', 'fullscreen', 'minimal-ui'].includes(manifest.display), `unexpected display mode ${manifest.display}`);
+});
+
+await check('Service worker is reachable', async () => {
+  const response = await fetch(`${baseUrl}/sw.js`);
+  expect(response.ok, `received HTTP ${response.status}`);
+  const body = await response.text();
+  expect(body.length > 20, 'service worker is empty');
+});
+
+await check('Legal launch pages are reachable', async () => {
+  for (const path of ['/privacy', '/terms', '/ai-policy', '/family-safety']) {
+    const response = await fetch(`${baseUrl}${path}`, { redirect: 'manual' });
+    expect(response.status >= 200 && response.status < 400, `${path} returned HTTP ${response.status}`);
+  }
+});
 
 await check('Security headers are present', async () => {
   const response = await fetch(`${baseUrl}/`, { redirect: 'manual' });
@@ -69,4 +114,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`\nAll smoke checks passed for ${baseUrl}`);
+console.log(`\nAll launch and mobile smoke checks passed for ${baseUrl}`);
