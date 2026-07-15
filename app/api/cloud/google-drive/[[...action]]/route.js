@@ -10,8 +10,10 @@ export const runtime = 'nodejs';
 
 const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
+const GOOGLE_REVOKE = 'https://oauth2.googleapis.com/revoke';
 const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+const OAUTH_COOKIE = 'snapnext_cloud_state';
 const MAX_IMPORT_FILES = 10;
 const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
 
@@ -34,6 +36,13 @@ function readState(state) {
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     return parsed.exp > Date.now() ? parsed : null;
   } catch { return null; }
+}
+function clearStateCookie(response) {
+  response.cookies.set(OAUTH_COOKIE, '', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 0 });
+  return response;
+}
+function cloudRedirect(request, result) {
+  return clearStateCookie(NextResponse.redirect(`${appUrl(request)}/imports?cloud=${result}`));
 }
 function encryptionKey() { return crypto.createHash('sha256').update(connectorSecret()).digest(); }
 function encrypt(value) {
@@ -84,19 +93,24 @@ export async function GET(request, context) {
 
   if (action === 'callback') {
     const url = new URL(request.url);
-    const parsed = readState(url.searchParams.get('state'));
-    if (!parsed || url.searchParams.get('error')) return NextResponse.redirect(`${appUrl(request)}/imports?cloud=cancelled`);
+    const returnedState = url.searchParams.get('state') || '';
+    const expectedState = request.cookies.get(OAUTH_COOKIE)?.value || '';
+    const parsed = readState(returnedState);
+    const sameBrowser = returnedState && expectedState && crypto.timingSafeEqual(Buffer.from(returnedState), Buffer.from(expectedState));
+    if (!parsed || !sameBrowser || url.searchParams.get('error')) return cloudRedirect(request, 'cancelled');
+
     const response = await fetch(GOOGLE_TOKEN, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ code: url.searchParams.get('code') || '', client_id: process.env.GOOGLE_DRIVE_CLIENT_ID, client_secret: process.env.GOOGLE_DRIVE_CLIENT_SECRET, redirect_uri: redirectUri(request), grant_type: 'authorization_code' }),
     });
     const data = await response.json();
-    if (!response.ok || !data.access_token) return NextResponse.redirect(`${appUrl(request)}/imports?cloud=failed`);
+    if (!response.ok || !data.access_token) return cloudRedirect(request, 'failed');
+
     const set = { userId: parsed.userId, provider: 'google_drive', accessToken: encrypt(data.access_token), expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000), connectedAt: new Date(), updatedAt: new Date() };
     if (data.refresh_token) set.refreshToken = encrypt(data.refresh_token);
     await db.collection('cloud_connections').updateOne({ userId: parsed.userId, provider: 'google_drive' }, { $set: set }, { upsert: true });
-    return NextResponse.redirect(`${appUrl(request)}/imports?cloud=connected`);
+    return cloudRedirect(request, 'connected');
   }
 
   const user = await getUserFromRequest(request);
@@ -104,8 +118,11 @@ export async function GET(request, context) {
 
   if (action === 'start') {
     if (!configured()) return json({ error: 'Google Drive connection is coming soon.' }, 503);
-    const params = new URLSearchParams({ client_id: process.env.GOOGLE_DRIVE_CLIENT_ID, redirect_uri: redirectUri(request), response_type: 'code', scope: DRIVE_SCOPE, access_type: 'offline', prompt: 'consent', state: createState(user.id), include_granted_scopes: 'true' });
-    return json({ authorizationUrl: `${GOOGLE_AUTH}?${params}` });
+    const state = createState(user.id);
+    const params = new URLSearchParams({ client_id: process.env.GOOGLE_DRIVE_CLIENT_ID, redirect_uri: redirectUri(request), response_type: 'code', scope: DRIVE_SCOPE, access_type: 'offline', prompt: 'consent', state, include_granted_scopes: 'true' });
+    const response = json({ authorizationUrl: `${GOOGLE_AUTH}?${params}` });
+    response.cookies.set(OAUTH_COOKIE, state, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 10 * 60 });
+    return response;
   }
 
   const connection = await getConnection(db, user.id);
@@ -171,6 +188,15 @@ export async function DELETE(request) {
   const user = await getUserFromRequest(request);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
   const db = await getDb();
+  const connection = await getConnection(db, user.id);
+  if (connection) {
+    try {
+      const token = connection.refreshToken ? decrypt(connection.refreshToken) : connection.accessToken ? decrypt(connection.accessToken) : '';
+      if (token) await fetch(GOOGLE_REVOKE, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token }) });
+    } catch (error) {
+      console.error('[cloud-sync] Google revocation failed', error?.message || error);
+    }
+  }
   await db.collection('cloud_connections').deleteOne({ userId: user.id, provider: 'google_drive' });
   return json({ ok: true });
 }
