@@ -23,6 +23,11 @@ function redirectUri(request) { return `${appUrl(request)}/api/cloud/google-driv
 function configured() { return Boolean(process.env.GOOGLE_DRIVE_CLIENT_ID && process.env.GOOGLE_DRIVE_CLIENT_SECRET && process.env.CLOUD_CONNECTOR_SECRET); }
 function connectorSecret() { return process.env.CLOUD_CONNECTOR_SECRET || ''; }
 function sign(value) { return crypto.createHmac('sha256', connectorSecret()).update(value).digest('base64url'); }
+function safeEqual(left, right) {
+  const a = Buffer.from(String(left || ''));
+  const b = Buffer.from(String(right || ''));
+  return a.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 function createState(userId) {
   const payload = Buffer.from(JSON.stringify({ userId, nonce: crypto.randomUUID(), exp: Date.now() + 10 * 60 * 1000 })).toString('base64url');
   return `${payload}.${sign(payload)}`;
@@ -32,7 +37,7 @@ function readState(state) {
     const [payload, signature] = String(state || '').split('.');
     if (!payload || !signature) return null;
     const expected = sign(payload);
-    if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+    if (!safeEqual(signature, expected)) return null;
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     return parsed.exp > Date.now() ? parsed : null;
   } catch { return null; }
@@ -96,7 +101,7 @@ export async function GET(request, context) {
     const returnedState = url.searchParams.get('state') || '';
     const expectedState = request.cookies.get(OAUTH_COOKIE)?.value || '';
     const parsed = readState(returnedState);
-    const sameBrowser = returnedState && expectedState && crypto.timingSafeEqual(Buffer.from(returnedState), Buffer.from(expectedState));
+    const sameBrowser = safeEqual(returnedState, expectedState);
     if (!parsed || !sameBrowser || url.searchParams.get('error')) return cloudRedirect(request, 'cancelled');
 
     const response = await fetch(GOOGLE_TOKEN, {
