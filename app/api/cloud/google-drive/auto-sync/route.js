@@ -24,11 +24,14 @@ export async function POST(request) {
   if (!user) return json({ error: 'Please sign in again.' }, 401);
   const body = await request.json().catch(() => ({}));
   const enabled = Boolean(body.enabled);
+  const now = new Date();
   const db = await getDb();
+  const update = { autoSyncEnabled: enabled, autoSyncUpdatedAt: now, updatedAt: now };
+  if (enabled) update.autoSyncCursorAt = now;
   const result = await db.collection('cloud_connections').updateOne(
     { userId: user.id, provider: 'google_drive' },
-    { $set: { autoSyncEnabled: enabled, autoSyncUpdatedAt: new Date(), updatedAt: new Date() } },
+    { $set: update },
   );
   if (!result.matchedCount) return json({ error: 'Connect Google Drive first.' }, 400);
-  return json({ ok: true, enabled });
+  return json({ ok: true, enabled, startsFrom: enabled ? now : null });
 }
