@@ -11,6 +11,7 @@ function json(data, status = 200) { return NextResponse.json(data, { status }); 
 function text(value, max = 2000) { return String(value || '').trim().slice(0, max); }
 function publicUser(user) { return { id: user.id, name: user.name || user.displayName || user.email?.split('@')[0] || 'SnapNext user', email: user.email || '' }; }
 function publicMemory(memory) { return { id: memory.id, name: memory.name || 'Shared memory', kind: memory.kind, mime: memory.mime, createdAt: memory.createdAt, favorite: Boolean(memory.favorite), caption: memory.aiAnalysis?.caption || memory.aiAnalysis?.description || '', album: memory.aiAnalysis?.autoAlbum || '' }; }
+function threadView(thread, userId) { const { _id, ...safe } = thread; return { ...safe, currentUserPermission: permissionFor(thread, userId), canPost: canPost(thread, userId), isRequestRecipient: thread.requestRecipientId === userId, unreadCount: Number(thread.unreadCounts?.[userId] || 0) }; }
 async function context(request, routeContext) { const user = await getUserFromRequest(request); if (!user) return { error: json({ error: 'Please sign in again.' }, 401) }; const db = await getDb(); const action = (await routeContext.params).action || []; const familySafety = await familySafetyForUser(db, user.id); return { user, db, action, familySafety }; }
 async function memberThread(db, userId, threadId) { return db.collection('chat_threads').findOne({ id: threadId, memberIds: userId, archivedFor: { $ne: userId } }); }
 function minorBlocked(familySafety) { return familySafety.isMinor && !familySafety.active; }
@@ -21,12 +22,12 @@ export async function GET(request, routeContext) {
   if (minorBlocked(familySafety)) return json({ error: 'Family Safety approval is required before this minor account can use chats or communities.' }, 403);
   if (resource === 'threads' && !id) {
     const threads = await db.collection('chat_threads').find({ memberIds: user.id, archivedFor: { $ne: user.id } }).sort({ lastMessageAt: -1, updatedAt: -1 }).limit(100).toArray();
-    return json({ currentUserId: user.id, familySafety: familySafety.isMinor ? { isMinor: true, ageBand: familySafety.profile.ageBand } : { isMinor: false }, threads: threads.map(({ _id, ...thread }) => ({ ...thread, currentUserPermission: permissionFor(thread, user.id), canPost: canPost(thread, user.id), isRequestRecipient: thread.requestRecipientId === user.id })) });
+    return json({ currentUserId: user.id, familySafety: familySafety.isMinor ? { isMinor: true, ageBand: familySafety.profile.ageBand } : { isMinor: false }, threads: threads.map(thread => threadView(thread, user.id)) });
   }
   if (resource === 'threads' && id) {
     const thread = await memberThread(db, user.id, id); if (!thread) return json({ error: 'Conversation not found.' }, 404);
     const messages = thread.type === 'direct' && thread.status !== 'active' ? [] : await db.collection('chat_messages').find({ threadId: id }).sort({ createdAt: 1 }).limit(300).toArray();
-    return json({ currentUserId: user.id, thread: { ...thread, _id: undefined, currentUserPermission: permissionFor(thread, user.id), canPost: canPost(thread, user.id), isRequestRecipient: thread.requestRecipientId === user.id }, messages: messages.map(({ _id, ...message }) => message) });
+    return json({ currentUserId: user.id, thread: threadView(thread, user.id), messages: messages.map(({ _id, ...message }) => message) });
   }
   return json({ error: 'Not found.' }, 404);
 }
@@ -44,14 +45,21 @@ export async function POST(request, routeContext) {
       target = await db.collection('users').findOne({ email }); if (!target) return json({ error: 'No SnapNext account was found with that email.' }, 404);
       if (familySafety.isMinor && !familySafety.profile.trustedContactIds?.includes(target.id)) return json({ error: 'This person must be approved as a trusted contact by the guardian first.' }, 403);
       const memberIds = [user.id, target.id].sort(); const existing = await db.collection('chat_threads').findOne({ type: 'direct', memberKey: memberIds.join(':') });
-      if (existing) return json({ thread: { ...existing, _id: undefined }, existing: true }); members.push(publicUser(target));
+      if (existing) return json({ thread: threadView(existing, user.id), existing: true }); members.push(publicUser(target));
     } else if (!name) return json({ error: 'Give your community a name.' }, 400);
-    const now = new Date(); const memberPermissions = Object.fromEntries(members.map(member => [member.id, member.id === user.id ? 'owner' : type === 'direct' ? 'post' : 'view']));
+    const now = new Date(); const memberPermissions = Object.fromEntries(members.map(member => [member.id, member.id === user.id ? 'owner' : type === 'direct' ? 'post' : 'view'])); const unreadCounts = Object.fromEntries(members.map(member => [member.id, 0]));
     const needsGuardian = familySafety.isMinor && type === 'direct';
-    const thread = { id: uuidv4(), type, name: type === 'community' ? name : '', ownerId: user.id, members, memberIds: members.map(member => member.id), memberPermissions, memberKey: type === 'direct' ? members.map(member => member.id).sort().join(':') : undefined, status: type === 'direct' ? needsGuardian ? 'pending_guardian' : 'pending' : 'active', requestSenderId: type === 'direct' ? user.id : undefined, requestRecipientId: type === 'direct' ? target.id : undefined, guardianUserId: needsGuardian ? familySafety.profile.guardianUserId : undefined, private: true, purpose: type === 'community' ? 'memory_discussion' : 'private_chat', createdAt: now, updatedAt: now, lastMessageAt: now, lastMessage: needsGuardian ? 'Waiting for guardian approval' : type === 'direct' ? 'Chat request pending' : '', archivedFor: [] };
+    const thread = { id: uuidv4(), type, name: type === 'community' ? name : '', ownerId: user.id, members, memberIds: members.map(member => member.id), memberPermissions, unreadCounts, lastReadAt: { [user.id]: now }, memberKey: type === 'direct' ? members.map(member => member.id).sort().join(':') : undefined, status: type === 'direct' ? needsGuardian ? 'pending_guardian' : 'pending' : 'active', requestSenderId: type === 'direct' ? user.id : undefined, requestRecipientId: type === 'direct' ? target.id : undefined, guardianUserId: needsGuardian ? familySafety.profile.guardianUserId : undefined, private: true, purpose: type === 'community' ? 'memory_discussion' : 'private_chat', createdAt: now, updatedAt: now, lastMessageAt: now, lastMessage: needsGuardian ? 'Waiting for guardian approval' : type === 'direct' ? 'Chat request pending' : '', archivedFor: [] };
     await db.collection('chat_threads').insertOne(thread);
     if (needsGuardian) await writeFamilyAudit(db, { minorProfileId: familySafety.profile.id, actorUserId: user.id, action: 'minor_chat_requested', details: { threadId: thread.id, targetUserId: target.id } });
-    return json({ thread: { ...thread, _id: undefined } }, 201);
+    return json({ thread: threadView(thread, user.id) }, 201);
+  }
+
+  if (resource === 'threads' && id && subresource === 'read') {
+    const thread = await memberThread(db, user.id, id); if (!thread) return json({ error: 'Conversation not found.' }, 404);
+    const now = new Date();
+    await db.collection('chat_threads').updateOne({ id, memberIds: user.id }, { $set: { [`unreadCounts.${user.id}`]: 0, [`lastReadAt.${user.id}`]: now, updatedAt: now } });
+    return json({ ok: true, readAt: now });
   }
 
   if (resource === 'threads' && id && subresource === 'respond') {
@@ -68,14 +76,18 @@ export async function POST(request, routeContext) {
     const recentCount = await db.collection('chat_messages').countDocuments({ threadId: id, senderId: user.id, createdAt: { $gt: new Date(Date.now() - 60_000) } }); if (recentCount >= 20) return json({ error: 'You are sending messages too quickly. Please pause briefly.' }, 429);
     let memories = []; if (memoryIds.length) { const found = await db.collection('media').find({ id: { $in: memoryIds }, userId: user.id, trashed: { $ne: true }, kind: { $in: ['photo', 'video'] } }).toArray(); const byId = new Map(found.map(memory => [memory.id, memory])); if (found.length !== memoryIds.length) return json({ error: 'One or more memories could not be shared.' }, 400); memories = memoryIds.map(memoryId => publicMemory(byId.get(memoryId))); }
     const message = { id: uuidv4(), threadId: id, senderId: user.id, sender: publicUser(user), content, memories, memoryIds: memories.map(memory => memory.id), createdAt: new Date(), editedAt: null };
-    await db.collection('chat_messages').insertOne(message); const preview = content || (memories.length === 1 ? 'Shared a memory' : `Shared ${memories.length} memories`); await db.collection('chat_threads').updateOne({ id }, { $set: { lastMessage: preview.slice(0, 160), lastMessageAt: message.createdAt, updatedAt: message.createdAt } }); return json({ message: { ...message, _id: undefined } }, 201);
+    await db.collection('chat_messages').insertOne(message);
+    const preview = content || (memories.length === 1 ? 'Shared a memory' : `Shared ${memories.length} memories`);
+    const inc = Object.fromEntries(thread.memberIds.filter(memberId => memberId !== user.id).map(memberId => [`unreadCounts.${memberId}`, 1]));
+    await db.collection('chat_threads').updateOne({ id }, { $set: { lastMessage: preview.slice(0, 160), lastMessageAt: message.createdAt, updatedAt: message.createdAt, [`lastReadAt.${user.id}`]: message.createdAt, [`unreadCounts.${user.id}`]: 0 }, ...(Object.keys(inc).length ? { $inc: inc } : {}) });
+    return json({ message: { ...message, _id: undefined } }, 201);
   }
 
   if (resource === 'threads' && id && subresource === 'members') {
     const thread = await memberThread(db, user.id, id); if (!thread || thread.type !== 'community') return json({ error: 'Community not found.' }, 404); if (thread.ownerId !== user.id) return json({ error: 'Only the community owner can invite members.' }, 403);
     const email = text(body.email, 320).toLowerCase(); const target = await db.collection('users').findOne({ email }); if (!target) return json({ error: 'No SnapNext account was found with that email.' }, 404); if (thread.memberIds.includes(target.id)) return json({ error: 'This person is already a member.' }, 400);
     const targetSafety = await familySafetyForUser(db, target.id); if (targetSafety.isMinor && (!targetSafety.active || !targetSafety.profile.approvedCommunityIds?.includes(thread.id))) return json({ error: 'This minor needs guardian approval for this community before they can be invited.' }, 403);
-    const permission = body.permission === 'post' ? 'post' : 'view'; const member = publicUser(target); await db.collection('chat_threads').updateOne({ id }, { $push: { members: member, memberIds: member.id }, $set: { [`memberPermissions.${member.id}`]: permission, updatedAt: new Date() } }); return json({ ok: true, member, permission });
+    const permission = body.permission === 'post' ? 'post' : 'view'; const member = publicUser(target); await db.collection('chat_threads').updateOne({ id }, { $push: { members: member, memberIds: member.id }, $set: { [`memberPermissions.${member.id}`]: permission, [`unreadCounts.${member.id}`]: 0, [`lastReadAt.${member.id}`]: new Date(), updatedAt: new Date() } }); return json({ ok: true, member, permission });
   }
 
   if (resource === 'threads' && id && subresource === 'permissions') {
