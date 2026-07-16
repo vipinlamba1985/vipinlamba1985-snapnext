@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { familySafetyForUser, writeFamilyAudit } from '@/lib/family-safety';
+import { canPost, permissionFor } from '@/lib/social-chat-policy';
 
 export const runtime = 'nodejs';
 
@@ -12,8 +13,6 @@ function publicUser(user) { return { id: user.id, name: user.name || user.displa
 function publicMemory(memory) { return { id: memory.id, name: memory.name || 'Shared memory', kind: memory.kind, mime: memory.mime, createdAt: memory.createdAt, favorite: Boolean(memory.favorite), caption: memory.aiAnalysis?.caption || memory.aiAnalysis?.description || '', album: memory.aiAnalysis?.autoAlbum || '' }; }
 async function context(request, routeContext) { const user = await getUserFromRequest(request); if (!user) return { error: json({ error: 'Please sign in again.' }, 401) }; const db = await getDb(); const action = (await routeContext.params).action || []; const familySafety = await familySafetyForUser(db, user.id); return { user, db, action, familySafety }; }
 async function memberThread(db, userId, threadId) { return db.collection('chat_threads').findOne({ id: threadId, memberIds: userId, archivedFor: { $ne: userId } }); }
-function permissionFor(thread, userId) { if (thread.ownerId === userId) return 'owner'; return thread.memberPermissions?.[userId] || (thread.type === 'direct' ? 'post' : 'view'); }
-function canPost(thread, userId) { if (thread.type === 'direct') return thread.status === 'active' && thread.memberIds?.includes(userId); return ['owner', 'post'].includes(permissionFor(thread, userId)); }
 function minorBlocked(familySafety) { return familySafety.isMinor && !familySafety.active; }
 
 export async function GET(request, routeContext) {
