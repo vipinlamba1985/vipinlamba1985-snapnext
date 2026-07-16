@@ -33,6 +33,16 @@ async function memberThread(db, userId, threadId) {
   return db.collection('chat_threads').findOne({ id: threadId, memberIds: userId, archivedFor: { $ne: userId } });
 }
 
+function permissionFor(thread, userId) {
+  if (thread.ownerId === userId) return 'owner';
+  return thread.memberPermissions?.[userId] || (thread.type === 'direct' ? 'post' : 'view');
+}
+
+function canPost(thread, userId) {
+  if (thread.type === 'direct') return thread.status === 'active' && thread.memberIds?.includes(userId);
+  return ['owner', 'post'].includes(permissionFor(thread, userId));
+}
+
 export async function GET(request, routeContext) {
   const ctx = await context(request, routeContext); if (ctx.error) return ctx.error;
   const { user, db, action } = ctx;
@@ -40,14 +50,19 @@ export async function GET(request, routeContext) {
 
   if (resource === 'threads' && !id) {
     const threads = await db.collection('chat_threads').find({ memberIds: user.id, archivedFor: { $ne: user.id } }).sort({ lastMessageAt: -1, updatedAt: -1 }).limit(100).toArray();
-    return json({ threads: threads.map(({ _id, ...thread }) => thread) });
+    return json({ threads: threads.map(({ _id, ...thread }) => ({ ...thread, currentUserPermission: permissionFor(thread, user.id), canPost: canPost(thread, user.id) })) });
   }
 
   if (resource === 'threads' && id) {
     const thread = await memberThread(db, user.id, id);
     if (!thread) return json({ error: 'Conversation not found.' }, 404);
-    const messages = await db.collection('chat_messages').find({ threadId: id }).sort({ createdAt: 1 }).limit(300).toArray();
-    return json({ thread: { ...thread, _id: undefined }, messages: messages.map(({ _id, ...message }) => message) });
+    const messages = thread.type === 'direct' && thread.status !== 'active'
+      ? []
+      : await db.collection('chat_messages').find({ threadId: id }).sort({ createdAt: 1 }).limit(300).toArray();
+    return json({
+      thread: { ...thread, _id: undefined, currentUserPermission: permissionFor(thread, user.id), canPost: canPost(thread, user.id), isRequestRecipient: thread.requestRecipientId === user.id },
+      messages: messages.map(({ _id, ...message }) => message),
+    });
   }
 
   return json({ error: 'Not found.' }, 404);
@@ -64,10 +79,11 @@ export async function POST(request, routeContext) {
     const email = text(body.email, 320).toLowerCase();
     const name = text(body.name, 80);
     let members = [publicUser(user)];
+    let target = null;
 
     if (type === 'direct') {
       if (!email || email === String(user.email || '').toLowerCase()) return json({ error: 'Enter another SnapNext member’s email.' }, 400);
-      const target = await db.collection('users').findOne({ email });
+      target = await db.collection('users').findOne({ email });
       if (!target) return json({ error: 'No SnapNext account was found with that email.' }, 404);
       const memberIds = [user.id, target.id].sort();
       const existing = await db.collection('chat_threads').findOne({ type: 'direct', memberKey: memberIds.join(':') });
@@ -76,19 +92,44 @@ export async function POST(request, routeContext) {
     } else if (!name) return json({ error: 'Give your community a name.' }, 400);
 
     const now = new Date();
+    const memberPermissions = Object.fromEntries(members.map(member => [member.id, member.id === user.id ? 'owner' : type === 'direct' ? 'post' : 'view']));
     const thread = {
       id: uuidv4(), type, name: type === 'community' ? name : '', ownerId: user.id,
-      members, memberIds: members.map(member => member.id), memberKey: type === 'direct' ? members.map(member => member.id).sort().join(':') : undefined,
+      members, memberIds: members.map(member => member.id), memberPermissions,
+      memberKey: type === 'direct' ? members.map(member => member.id).sort().join(':') : undefined,
+      status: type === 'direct' ? 'pending' : 'active',
+      requestSenderId: type === 'direct' ? user.id : undefined,
+      requestRecipientId: type === 'direct' ? target.id : undefined,
       private: true, purpose: type === 'community' ? 'memory_discussion' : 'private_chat',
-      createdAt: now, updatedAt: now, lastMessageAt: now, lastMessage: '', archivedFor: [],
+      createdAt: now, updatedAt: now, lastMessageAt: now,
+      lastMessage: type === 'direct' ? 'Chat request pending' : '', archivedFor: [],
     };
     await db.collection('chat_threads').insertOne(thread);
     return json({ thread: { ...thread, _id: undefined } }, 201);
   }
 
+  if (resource === 'threads' && id && subresource === 'respond') {
+    const thread = await memberThread(db, user.id, id);
+    if (!thread || thread.type !== 'direct' || thread.status !== 'pending') return json({ error: 'Chat request not found.' }, 404);
+    if (thread.requestRecipientId !== user.id) return json({ error: 'Only the invited person can respond.' }, 403);
+    const decision = body.decision === 'accept' ? 'accept' : body.decision === 'decline' ? 'decline' : '';
+    if (!decision) return json({ error: 'Choose accept or decline.' }, 400);
+    const now = new Date();
+    if (decision === 'decline') {
+      await db.collection('chat_threads').updateOne({ id }, { $set: { status: 'declined', lastMessage: 'Chat request declined', updatedAt: now, lastMessageAt: now } });
+      return json({ ok: true, status: 'declined' });
+    }
+    await db.collection('chat_threads').updateOne({ id }, { $set: { status: 'active', acceptedAt: now, acceptedBy: user.id, lastMessage: 'Chat request accepted', updatedAt: now, lastMessageAt: now } });
+    return json({ ok: true, status: 'active' });
+  }
+
   if (resource === 'threads' && id && subresource === 'messages') {
     const thread = await memberThread(db, user.id, id);
     if (!thread) return json({ error: 'Conversation not found.' }, 404);
+    if (!canPost(thread, user.id)) {
+      if (thread.type === 'direct' && thread.status !== 'active') return json({ error: 'This private chat must be accepted before messages or memories can be shared.' }, 403);
+      return json({ error: 'You can view this community, but the owner has not given you posting permission.' }, 403);
+    }
     const content = text(body.content, 2000);
     const memoryIds = [...new Set(Array.isArray(body.memoryIds) ? body.memoryIds.map(String) : [])].slice(0, 10);
     if (!content && !memoryIds.length) return json({ error: 'Write a message or share a memory first.' }, 400);
@@ -121,9 +162,24 @@ export async function POST(request, routeContext) {
     const target = await db.collection('users').findOne({ email });
     if (!target) return json({ error: 'No SnapNext account was found with that email.' }, 404);
     if (thread.memberIds.includes(target.id)) return json({ error: 'This person is already a member.' }, 400);
+    const permission = body.permission === 'post' ? 'post' : 'view';
     const member = publicUser(target);
-    await db.collection('chat_threads').updateOne({ id }, { $push: { members: member, memberIds: member.id }, $set: { updatedAt: new Date() } });
-    return json({ ok: true, member });
+    await db.collection('chat_threads').updateOne({ id }, {
+      $push: { members: member, memberIds: member.id },
+      $set: { [`memberPermissions.${member.id}`]: permission, updatedAt: new Date() },
+    });
+    return json({ ok: true, member, permission });
+  }
+
+  if (resource === 'threads' && id && subresource === 'permissions') {
+    const thread = await memberThread(db, user.id, id);
+    if (!thread || thread.type !== 'community') return json({ error: 'Community not found.' }, 404);
+    if (thread.ownerId !== user.id) return json({ error: 'Only the community owner can change posting permissions.' }, 403);
+    const memberId = text(body.memberId, 120);
+    if (!memberId || memberId === thread.ownerId || !thread.memberIds.includes(memberId)) return json({ error: 'Choose a valid community member.' }, 400);
+    const permission = body.permission === 'post' ? 'post' : 'view';
+    await db.collection('chat_threads').updateOne({ id }, { $set: { [`memberPermissions.${memberId}`]: permission, updatedAt: new Date() } });
+    return json({ ok: true, memberId, permission });
   }
 
   return json({ error: 'Not found.' }, 404);
