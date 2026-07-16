@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { canPost } from '@/lib/social-chat-policy';
+import { CHAT_E2EE_MODE, isChatE2eeEnabled, isValidEncryptedEnvelope } from '@/lib/chat-e2ee-policy';
 
 export const runtime = 'nodejs';
 
@@ -14,22 +15,8 @@ function clean(value, max = 160) {
   return String(value || '').trim().slice(0, max);
 }
 
-function validEnvelope(envelope) {
-  return Boolean(
-    envelope
-    && envelope.version === 1
-    && envelope.algorithm === 'A256GCM'
-    && Number.isInteger(Number(envelope.keyVersion))
-    && clean(envelope.senderDeviceId, 120)
-    && typeof envelope.iv === 'string'
-    && envelope.iv.length <= 64
-    && typeof envelope.ciphertext === 'string'
-    && envelope.ciphertext.length > 0
-    && envelope.ciphertext.length <= 120000,
-  );
-}
-
 async function context(request) {
+  if (!isChatE2eeEnabled()) return { error: json({ error: 'Encrypted chat is not enabled for this environment.' }, 503) };
   const user = await getUserFromRequest(request);
   if (!user) return { error: json({ error: 'Please sign in again.' }, 401) };
   const db = await getDb();
@@ -44,7 +31,7 @@ export async function GET(request) {
   const before = url.searchParams.get('before');
   const thread = await ctx.db.collection('chat_threads').findOne({ id: threadId, memberIds: ctx.user.id });
   if (!thread) return json({ error: 'Conversation not found.' }, 404);
-  const query = { threadId, encryption: 'e2ee-v1' };
+  const query = { threadId, encryption: CHAT_E2EE_MODE };
   if (before) query.createdAt = { $lt: new Date(before) };
   const messages = await ctx.db.collection('chat_messages')
     .find(query)
@@ -63,7 +50,7 @@ export async function POST(request) {
   const thread = await ctx.db.collection('chat_threads').findOne({ id: threadId, memberIds: ctx.user.id });
   if (!thread) return json({ error: 'Conversation not found.' }, 404);
   if (!canPost(thread, ctx.user.id)) return json({ error: 'Posting is not available in this conversation.' }, 403);
-  if (!validEnvelope(body.envelope)) return json({ error: 'Encrypted message envelope is invalid.' }, 400);
+  if (!isValidEncryptedEnvelope(body.envelope)) return json({ error: 'Encrypted message envelope is invalid.' }, 400);
 
   const senderDeviceId = clean(body.envelope.senderDeviceId, 120);
   const device = await ctx.db.collection('chat_e2ee_devices').findOne({
@@ -93,7 +80,7 @@ export async function POST(request) {
       id: ctx.user.id,
       name: ctx.user.name || ctx.user.displayName || ctx.user.email?.split('@')[0] || 'SnapNext user',
     },
-    encryption: 'e2ee-v1',
+    encryption: CHAT_E2EE_MODE,
     envelope: {
       version: 1,
       algorithm: 'A256GCM',
@@ -115,7 +102,8 @@ export async function POST(request) {
     { id: threadId },
     {
       $set: {
-        encryptionMode: 'e2ee-v1',
+        encryptionMode: CHAT_E2EE_MODE,
+        e2eeReadyAt: thread.e2eeReadyAt || now,
         lastMessage: 'Encrypted message',
         lastMessageAt: now,
         updatedAt: now,
