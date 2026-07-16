@@ -8,6 +8,18 @@ export const runtime = 'nodejs';
 function json(data, status = 200) { return NextResponse.json(data, { status }); }
 function text(value, max = 2000) { return String(value || '').trim().slice(0, max); }
 function publicUser(user) { return { id: user.id, name: user.name || user.displayName || user.email?.split('@')[0] || 'SnapNext user', email: user.email || '' }; }
+function publicMemory(memory) {
+  return {
+    id: memory.id,
+    name: memory.name || 'Shared memory',
+    kind: memory.kind,
+    mime: memory.mime,
+    createdAt: memory.createdAt,
+    favorite: Boolean(memory.favorite),
+    caption: memory.aiAnalysis?.caption || memory.aiAnalysis?.description || '',
+    album: memory.aiAnalysis?.autoAlbum || '',
+  };
+}
 
 async function context(request, routeContext) {
   const user = await getUserFromRequest(request);
@@ -55,7 +67,7 @@ export async function POST(request, routeContext) {
 
     if (type === 'direct') {
       if (!email || email === String(user.email || '').toLowerCase()) return json({ error: 'Enter another SnapNext member’s email.' }, 400);
-      const target = await db.collection('users').findOne({ email: email });
+      const target = await db.collection('users').findOne({ email });
       if (!target) return json({ error: 'No SnapNext account was found with that email.' }, 404);
       const memberIds = [user.id, target.id].sort();
       const existing = await db.collection('chat_threads').findOne({ type: 'direct', memberKey: memberIds.join(':') });
@@ -67,7 +79,8 @@ export async function POST(request, routeContext) {
     const thread = {
       id: uuidv4(), type, name: type === 'community' ? name : '', ownerId: user.id,
       members, memberIds: members.map(member => member.id), memberKey: type === 'direct' ? members.map(member => member.id).sort().join(':') : undefined,
-      private: true, createdAt: now, updatedAt: now, lastMessageAt: now, lastMessage: '', archivedFor: [],
+      private: true, purpose: type === 'community' ? 'memory_discussion' : 'private_chat',
+      createdAt: now, updatedAt: now, lastMessageAt: now, lastMessage: '', archivedFor: [],
     };
     await db.collection('chat_threads').insertOne(thread);
     return json({ thread: { ...thread, _id: undefined } }, 201);
@@ -77,12 +90,26 @@ export async function POST(request, routeContext) {
     const thread = await memberThread(db, user.id, id);
     if (!thread) return json({ error: 'Conversation not found.' }, 404);
     const content = text(body.content, 2000);
-    if (!content) return json({ error: 'Write a message first.' }, 400);
+    const memoryIds = [...new Set(Array.isArray(body.memoryIds) ? body.memoryIds.map(String) : [])].slice(0, 10);
+    if (!content && !memoryIds.length) return json({ error: 'Write a message or share a memory first.' }, 400);
     const recentCount = await db.collection('chat_messages').countDocuments({ threadId: id, senderId: user.id, createdAt: { $gt: new Date(Date.now() - 60_000) } });
     if (recentCount >= 20) return json({ error: 'You are sending messages too quickly. Please pause briefly.' }, 429);
-    const message = { id: uuidv4(), threadId: id, senderId: user.id, sender: publicUser(user), content, createdAt: new Date(), editedAt: null };
+
+    let memories = [];
+    if (memoryIds.length) {
+      const found = await db.collection('media').find({ id: { $in: memoryIds }, userId: user.id, trashed: { $ne: true }, kind: { $in: ['photo', 'video'] } }).toArray();
+      const byId = new Map(found.map(memory => [memory.id, memory]));
+      if (found.length !== memoryIds.length) return json({ error: 'One or more memories could not be shared.' }, 400);
+      memories = memoryIds.map(memoryId => publicMemory(byId.get(memoryId)));
+    }
+
+    const message = {
+      id: uuidv4(), threadId: id, senderId: user.id, sender: publicUser(user), content,
+      memories, memoryIds: memories.map(memory => memory.id), createdAt: new Date(), editedAt: null,
+    };
     await db.collection('chat_messages').insertOne(message);
-    await db.collection('chat_threads').updateOne({ id }, { $set: { lastMessage: content.slice(0, 160), lastMessageAt: message.createdAt, updatedAt: message.createdAt } });
+    const preview = content || (memories.length === 1 ? 'Shared a memory' : `Shared ${memories.length} memories`);
+    await db.collection('chat_threads').updateOne({ id }, { $set: { lastMessage: preview.slice(0, 160), lastMessageAt: message.createdAt, updatedAt: message.createdAt } });
     return json({ message: { ...message, _id: undefined } }, 201);
   }
 
