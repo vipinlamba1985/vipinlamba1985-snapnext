@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { encryptCloudToken, decryptCloudToken } from '../lib/cloud-token-crypto.js';
 import { ageFromBirthDate, ageBandFor, sanitizeMinorPermissions, validConsentRecord } from '../lib/family-safety.js';
 import { canPost, canRead, directChatState, permissionFor } from '../lib/social-chat-policy.js';
+import { jobProgress, nextJobState } from '../lib/smart-sync/jobs.js';
 
 test('cloud token encryption round-trips and does not expose plaintext', () => {
   const previous = process.env.CLOUD_CONNECTOR_SECRET;
@@ -31,15 +32,7 @@ test('minor age calculation and bands honor birthdays', () => {
 });
 
 test('minor permissions cannot enable prohibited public or advertising settings', () => {
-  const permissions = sanitizeMinorPermissions({
-    publicProfile: true,
-    publicCommunities: true,
-    unknownContacts: true,
-    behavioralAds: true,
-    dataSale: true,
-    directChat: 'allowed',
-    faceRecognition: true,
-  });
+  const permissions = sanitizeMinorPermissions({ publicProfile: true, publicCommunities: true, unknownContacts: true, behavioralAds: true, dataSale: true, directChat: 'allowed', faceRecognition: true });
   assert.equal(permissions.publicProfile, false);
   assert.equal(permissions.publicCommunities, false);
   assert.equal(permissions.unknownContacts, false);
@@ -66,14 +59,24 @@ test('direct chats remain blocked until accepted and then become two-way', () =>
 });
 
 test('community owner controls view-only and posting permissions', () => {
-  const thread = {
-    type: 'community', ownerId: 'owner', memberIds: ['owner', 'poster', 'viewer'], archivedFor: [],
-    memberPermissions: { owner: 'owner', poster: 'post', viewer: 'view' },
-  };
+  const thread = { type: 'community', ownerId: 'owner', memberIds: ['owner', 'poster', 'viewer'], archivedFor: [], memberPermissions: { owner: 'owner', poster: 'post', viewer: 'view' } };
   assert.equal(permissionFor(thread, 'owner'), 'owner');
   assert.equal(canPost(thread, 'poster'), true);
   assert.equal(canPost(thread, 'viewer'), false);
   assert.equal(canRead(thread, 'viewer'), true);
   thread.archivedFor.push('viewer');
   assert.equal(canRead(thread, 'viewer'), false);
+});
+
+test('Smart Sync job progress is stable and capped', () => {
+  assert.deepEqual(jobProgress({ estimatedItems: 100, processedItems: 25 }), { total: 100, processed: 25, remaining: 75, percent: 25 });
+  assert.equal(jobProgress({ estimatedItems: 5, processedItems: 10 }).percent, 100);
+});
+
+test('Smart Sync jobs support pause, resume, stop, and retry only from valid states', () => {
+  assert.equal(nextJobState({ status: 'running' }, 'pause')?.status, 'paused');
+  assert.equal(nextJobState({ status: 'paused' }, 'resume')?.status, 'queued');
+  assert.equal(nextJobState({ status: 'running' }, 'stop')?.status, 'stopped');
+  assert.equal(nextJobState({ status: 'failed', retryCount: 2 }, 'retry')?.retryCount, 3);
+  assert.equal(nextJobState({ status: 'completed' }, 'resume'), null);
 });
