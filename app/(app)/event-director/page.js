@@ -3,11 +3,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api-client';
-import { CalendarDays, CheckCircle2, ChevronRight, Gift, Loader2, Plus, Sparkles, Users } from 'lucide-react';
+import { CalendarDays, CheckCircle2, Gift, Loader2, Sparkles, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 const EMPTY_PROFILE = { name: '', relationship: '', birthday: '', anniversary: '', currentCountry: '', originCountries: '', celebrations: '', favourite: true };
 const EMPTY_EVENT = { title: '', type: 'festival', date: '', annual: true, countries: '', cultureTags: '' };
+const EMPTY_DATA = { profiles: [], events: [], drafts: [], upcoming: [], incompleteProfiles: [] };
+
+function normalizeDirectorData(value) {
+  const next = value && typeof value === 'object' ? value : {};
+  return {
+    ...next,
+    profiles: Array.isArray(next.profiles) ? next.profiles : [],
+    events: Array.isArray(next.events) ? next.events : [],
+    drafts: Array.isArray(next.drafts) ? next.drafts : [],
+    upcoming: Array.isArray(next.upcoming) ? next.upcoming : [],
+    incompleteProfiles: Array.isArray(next.incompleteProfiles) ? next.incompleteProfiles : [],
+  };
+}
 
 function daysLabel(value) {
   if (value === 0) return 'Today';
@@ -16,7 +29,7 @@ function daysLabel(value) {
 }
 
 export default function EventDirectorPage() {
-  const [data, setData] = useState({ profiles: [], events: [], drafts: [], upcoming: [], incompleteProfiles: [] });
+  const [data, setData] = useState(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [event, setEvent] = useState(EMPTY_EVENT);
@@ -25,7 +38,7 @@ export default function EventDirectorPage() {
   async function load() {
     try {
       const next = await apiFetch('/life-event-director');
-      setData(next);
+      setData(normalizeDirectorData(next));
     } catch (error) {
       toast.error(error.message || 'Event Director could not load.');
     } finally {
