@@ -25,6 +25,27 @@ async function context(request) {
   return { user, db };
 }
 
+async function resolveEvent(db, userId, eventId) {
+  const saved = await db.collection('life_events').findOne({ userId, id: eventId, archivedAt: null });
+  if (saved) return saved;
+  const [kind, profileId] = String(eventId || '').split(':');
+  if (!['birthday', 'anniversary'].includes(kind) || !profileId) return null;
+  const profile = await db.collection('life_profiles').findOne({ userId, id: profileId, archivedAt: null });
+  const date = kind === 'birthday' ? profile?.birthday : profile?.anniversary;
+  if (!profile || !date) return null;
+  return {
+    id: eventId,
+    userId,
+    type: kind,
+    title: `${profile.name}'s ${kind}`,
+    date,
+    annual: true,
+    personId: profile.id,
+    cultureTags: profile.celebrations || [],
+    countries: [...(profile.originCountries || []), profile.currentCountry].filter(Boolean),
+  };
+}
+
 export async function GET(request) {
   const ctx = await context(request);
   if (ctx.error) return ctx.error;
@@ -102,16 +123,20 @@ export async function POST(request) {
 
   if (action === 'prepare-package') {
     const eventId = clean(body.eventId, 120);
-    const event = await ctx.db.collection('life_events').findOne({ userId: ctx.user.id, id: eventId, archivedAt: null });
+    const event = await resolveEvent(ctx.db, ctx.user.id, eventId);
     if (!event) return json({ error: 'Event not found.' }, 404);
     const formats = cleanArray(body.formats, 10);
     const draft = {
       id: uuidv4(),
       userId: ctx.user.id,
       eventId,
+      personId: event.personId || null,
+      eventType: event.type,
       title: event.title,
       formats: formats.length ? formats : ['reel', 'collage', 'whatsapp-status', 'image-post'],
       tone: clean(body.tone, 60) || 'warm',
+      cultureTags: event.cultureTags || [],
+      countries: event.countries || [],
       status: 'planned',
       autoPost: false,
       approvalRequired: true,
