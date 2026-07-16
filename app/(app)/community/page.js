@@ -2,12 +2,37 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
-import { Check, Eye, ImagePlus, Loader2, MessageCircle, Plus, Send, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
+import { Check, Eye, ImagePlus, Loader2, MessageCircle, Plus, Send, Share2, ShieldCheck, SmilePlus, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 function title(thread) {
   if (thread.type === 'community') return thread.name;
-  return thread.members?.map(member => member.name).filter(Boolean).join(' & ') || 'Private chat';
+  return thread.members?.filter(member => member.id !== thread.currentUserId).map(member => member.name).filter(Boolean).join(' & ') || thread.members?.map(member => member.name).filter(Boolean).join(' & ') || 'Private chat';
+}
+
+async function shareStickerOutsideSnapNext(memory) {
+  const response = await fetch(mediaSrc(memory.id), { credentials: 'include' });
+  if (!response.ok) throw new Error('Sticker image could not be prepared.');
+  const blob = await response.blob();
+  const type = blob.type || 'image/jpeg';
+  const extension = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : 'jpg';
+  const safeName = String(memory.name || 'SnapNext-memory-sticker').replace(/[^a-z0-9-_]+/gi, '-').slice(0, 60);
+  const file = new File([blob], `${safeName || 'memory-sticker'}.${extension}`, { type });
+
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+    await navigator.share({ title: 'SnapNext Memory Sticker', text: 'A Memory Sticker from SnapNext', files: [file] });
+    return 'shared';
+  }
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = file.name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return 'downloaded';
 }
 
 export default function Community() {
@@ -26,8 +51,10 @@ export default function Community() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePermission, setInvitePermission] = useState('post');
   const [showMemories, setShowMemories] = useState(false);
+  const [showStickers, setShowStickers] = useState(false);
   const [memoryOptions, setMemoryOptions] = useState([]);
   const [selectedMemories, setSelectedMemories] = useState([]);
+  const [sharingStickerId, setSharingStickerId] = useState('');
   const endRef = useRef(null);
 
   async function loadThreads(selectFirst = false) {
@@ -42,20 +69,35 @@ export default function Community() {
     try {
       const data = await apiFetch(`/social-chat/threads/${id}`);
       setCurrentUserId(data.currentUserId || '');
-      setActiveThread(data.thread);
+      setActiveThread({ ...data.thread, currentUserId: data.currentUserId || '' });
       setMessages(data.messages || []);
+      if (data.thread?.unreadCount) {
+        await apiFetch(`/social-chat/threads/${id}/read`, { method: 'POST', body: '{}' });
+        setThreads(current => current.map(thread => thread.id === id ? { ...thread, unreadCount: 0 } : thread));
+      }
     } catch (error) {
       if (!quiet) toast.error(error.message || 'We could not open this conversation.');
     }
   }
 
+  async function loadPhotoOptions() {
+    if (memoryOptions.length) return memoryOptions;
+    const data = await apiFetch('/media?filter=all');
+    const items = (data.items || []).filter(item => ['photo', 'video'].includes(item.kind)).slice(0, 100);
+    setMemoryOptions(items);
+    return items;
+  }
+
   async function openMemoryPicker() {
     if (!activeThread?.canPost) return toast.message('Posting is not available in this conversation yet.');
-    try {
-      const data = await apiFetch('/media?filter=all');
-      setMemoryOptions((data.items || []).filter(item => ['photo', 'video'].includes(item.kind)).slice(0, 100));
-      setShowMemories(true);
-    } catch (error) { toast.error(error.message || 'We could not open your memories.'); }
+    try { await loadPhotoOptions(); setShowMemories(true); setShowStickers(false); }
+    catch (error) { toast.error(error.message || 'We could not open your memories.'); }
+  }
+
+  async function openStickerTray() {
+    if (!activeThread?.canPost) return toast.message('Stickers become available after chat approval or posting permission.');
+    try { await loadPhotoOptions(); setShowStickers(current => !current); }
+    catch (error) { toast.error(error.message || 'We could not open your Memory Stickers.'); }
   }
 
   useEffect(() => {
@@ -69,6 +111,7 @@ export default function Community() {
     if (!activeId) return;
     loadThread(activeId);
     setSelectedMemories([]);
+    setShowStickers(false);
     const timer = setInterval(() => loadThread(activeId, true), 5000);
     return () => clearInterval(timer);
   }, [activeId]);
@@ -77,6 +120,7 @@ export default function Community() {
 
   const personal = useMemo(() => threads.filter(thread => thread.type === 'direct'), [threads]);
   const communities = useMemo(() => threads.filter(thread => thread.type === 'community'), [threads]);
+  const stickerOptions = useMemo(() => memoryOptions.filter(item => item.kind === 'photo').slice(0, 40), [memoryOptions]);
   const isOwner = activeThread?.ownerId === currentUserId;
 
   async function createThread() {
@@ -107,6 +151,28 @@ export default function Community() {
     finally { setSending(false); }
   }
 
+  async function sendSticker(memory) {
+    if (!activeId || sending || !activeThread?.canPost) return;
+    setSending(true);
+    try {
+      const data = await apiFetch(`/social-chat/threads/${activeId}/messages`, { method: 'POST', body: JSON.stringify({ stickerId: memory.id }) });
+      setMessages(current => [...current, data.message]);
+      setShowStickers(false);
+      await loadThreads();
+    } catch (error) { toast.error(error.message || 'Sticker not sent.'); }
+    finally { setSending(false); }
+  }
+
+  async function shareSticker(memory) {
+    setSharingStickerId(memory.id);
+    try {
+      const result = await shareStickerOutsideSnapNext(memory);
+      toast.success(result === 'shared' ? 'Choose WhatsApp or another app from the share sheet.' : 'Sticker image saved. You can attach it in any chat app.');
+    } catch (error) {
+      if (error?.name !== 'AbortError') toast.error(error.message || 'Sticker could not be shared.');
+    } finally { setSharingStickerId(''); }
+  }
+
   async function invite() {
     if (!inviteEmail.trim()) return;
     try {
@@ -129,7 +195,7 @@ export default function Community() {
   return (
     <div className="space-y-5 pb-16">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div><h1 className="text-3xl font-black">Memory Communities</h1><p className="mt-2 max-w-2xl text-sm text-white/55">Share travel and life memories with invited people. Private chats require mutual acceptance and are always two-way.</p></div>
+        <div><h1 className="text-3xl font-black">Memory Communities</h1><p className="mt-2 max-w-2xl text-sm text-white/55">Premium private messaging built around your memories, with photo stickers you can also share to WhatsApp and other apps.</p></div>
         <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-black"><Plus className="h-4 w-4" /> New chat or community</button>
       </header>
 
@@ -145,15 +211,13 @@ export default function Community() {
           {activeThread ? <>
             <div className="border-b border-white/10 px-5 py-4">
               <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-black">{title(activeThread)}</h2><p className="mt-1 text-xs text-white/45">{activeThread.type === 'community' ? `${activeThread.memberIds?.length || 1} members · ${activeThread.currentUserPermission === 'view' ? 'view only' : 'can share and discuss'}` : activeThread.status === 'active' ? 'Accepted two-way private conversation' : activeThread.status === 'declined' ? 'Chat request declined' : 'Waiting for mutual chat approval'}</p></div></div>
-
-              {activeThread.type === 'direct' && activeThread.status === 'pending' && <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm"><p className="font-bold">Private chat request</p><p className="mt-1 text-white/60">No messages or memories can be shared until the invited person accepts. Once accepted, both people can always reply.</p>{activeThread.isRequestRecipient ? <div className="mt-3 flex gap-2"><button onClick={() => respond('accept')} className="rounded-full bg-emerald-400 px-4 py-2 text-xs font-black text-black">Accept</button><button onClick={() => respond('decline')} className="rounded-full bg-white/10 px-4 py-2 text-xs font-black">Decline</button></div> : <p className="mt-2 text-xs text-white/45">Request sent. Waiting for acceptance.</p>}</div>}
-
+              {activeThread.type === 'direct' && activeThread.status === 'pending' && <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm"><p className="font-bold">Private chat request</p><p className="mt-1 text-white/60">No messages, memories, or stickers can be shared until the invited person accepts. Once accepted, both people can always reply.</p>{activeThread.isRequestRecipient ? <div className="mt-3 flex gap-2"><button onClick={() => respond('accept')} className="rounded-full bg-emerald-400 px-4 py-2 text-xs font-black text-black">Accept</button><button onClick={() => respond('decline')} className="rounded-full bg-white/10 px-4 py-2 text-xs font-black">Decline</button></div> : <p className="mt-2 text-xs text-white/45">Request sent. Waiting for acceptance.</p>}</div>}
               {activeThread.type === 'community' && isOwner && <div className="mt-4 space-y-3 rounded-2xl border border-white/10 bg-white/[0.025] p-3"><div className="flex flex-wrap gap-2"><input value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="Invite by exact email" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none" /><select value={invitePermission} onChange={event => setInvitePermission(event.target.value)} className="rounded-xl border border-white/10 bg-[#160c21] px-3 py-2 text-xs"><option value="post">Can post</option><option value="view">View only</option></select><button onClick={invite} className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold"><UserPlus className="h-4 w-4" /> Add</button></div><div className="space-y-2">{activeThread.members?.filter(member => member.id !== activeThread.ownerId).map(member => { const permission = activeThread.memberPermissions?.[member.id] || 'view'; return <div key={member.id} className="flex items-center justify-between gap-3 rounded-xl bg-black/15 px-3 py-2"><div className="min-w-0"><div className="truncate text-xs font-bold">{member.name}</div><div className="truncate text-[10px] text-white/35">{member.email}</div></div><button onClick={() => changePermission(member.id, permission === 'post' ? 'view' : 'post')} className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] font-bold">{permission === 'post' ? 'Can post' : 'View only'}</button></div>; })}</div></div>}
             </div>
 
-            <div className="flex-1 space-y-4 overflow-y-auto p-5">{messages.map(message => <div key={message.id} className="max-w-[92%] rounded-2xl border border-white/10 bg-white/[0.04] p-3"><div className="text-[11px] font-bold text-pink-200">{message.sender?.name || 'Member'}</div>{message.memories?.length > 0 && <div className="mt-2 grid gap-2 sm:grid-cols-2">{message.memories.map(memory => <div key={memory.id} className="overflow-hidden rounded-2xl border border-white/10 bg-black/20"><div className="aspect-video bg-black">{memory.kind === 'video' ? <video src={mediaSrc(memory.id)} className="h-full w-full object-cover" controls /> : <img src={mediaSrc(memory.id)} alt={memory.name || 'Shared memory'} className="h-full w-full object-cover" />}</div><div className="p-3"><div className="truncate text-xs font-black">{memory.name || 'Shared memory'}</div>{(memory.caption || memory.album) && <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-white/45">{memory.caption || memory.album}</div>}</div></div>)}</div>}{message.content && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/85">{message.content}</p>}<div className="mt-1 text-[10px] text-white/30">{new Date(message.createdAt).toLocaleString()}</div></div>)}{!messages.length && <div className="grid h-full place-items-center text-center text-sm text-white/40"><div>{activeThread.canPost ? <><ImagePlus className="mx-auto mb-3 h-8 w-8 text-purple-300" />Share the first memory and start the discussion.</> : <><Eye className="mx-auto mb-3 h-8 w-8 text-cyan-300" />You can view this community. The owner controls posting permission.</>}</div></div>}<div ref={endRef} /></div>
+            <div className="flex-1 space-y-4 overflow-y-auto p-5">{messages.map(message => <div key={message.id} className={`max-w-[92%] ${message.type === 'sticker' ? '' : 'rounded-2xl border border-white/10 bg-white/[0.04] p-3'}`}><div className="text-[11px] font-bold text-pink-200">{message.sender?.name || 'Member'}</div>{message.sticker && <div className="mt-1 flex items-end gap-2"><img src={mediaSrc(message.sticker.id)} alt={message.sticker.name || 'Memory Sticker'} className="h-28 w-28 rounded-[2rem] object-cover shadow-xl ring-2 ring-white/10" /><button onClick={() => shareSticker(message.sticker)} className="grid h-9 w-9 place-items-center rounded-full bg-white/10" aria-label="Share sticker to another app">{sharingStickerId === message.sticker.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}</button></div>}{message.memories?.length > 0 && <div className="mt-2 grid gap-2 sm:grid-cols-2">{message.memories.map(memory => <div key={memory.id} className="overflow-hidden rounded-2xl border border-white/10 bg-black/20"><div className="aspect-video bg-black">{memory.kind === 'video' ? <video src={mediaSrc(memory.id)} className="h-full w-full object-cover" controls /> : <img src={mediaSrc(memory.id)} alt={memory.name || 'Shared memory'} className="h-full w-full object-cover" />}</div><div className="p-3"><div className="truncate text-xs font-black">{memory.name || 'Shared memory'}</div>{(memory.caption || memory.album) && <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-white/45">{memory.caption || memory.album}</div>}</div></div>)}</div>}{message.content && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/85">{message.content}</p>}<div className="mt-1 text-[10px] text-white/30">{new Date(message.createdAt).toLocaleString()}</div></div>)}{!messages.length && <div className="grid h-full place-items-center text-center text-sm text-white/40"><div>{activeThread.canPost ? <><SmilePlus className="mx-auto mb-3 h-8 w-8 text-purple-300" />Send a Memory Sticker or share the first memory.</> : <><Eye className="mx-auto mb-3 h-8 w-8 text-cyan-300" />You can view this community. The owner controls posting permission.</>}</div></div>}<div ref={endRef} /></div>
 
-            {activeThread.canPost ? <>{selectedMemories.length > 0 && <div className="border-t border-white/10 px-4 py-3"><div className="flex flex-wrap gap-2">{selectedMemories.map(id => { const memory = memoryOptions.find(item => item.id === id); return <div key={id} className="flex items-center gap-2 rounded-full bg-cyan-500/10 px-3 py-1.5 text-xs"><span className="max-w-40 truncate">{memory?.name || 'Memory selected'}</span><button onClick={() => toggleMemory(id)}><X className="h-3.5 w-3.5" /></button></div>; })}</div></div>}<div className="flex gap-2 border-t border-white/10 p-4"><button onClick={openMemoryPicker} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5"><ImagePlus className="h-4 w-4" /></button><input value={content} onChange={event => setContent(event.target.value)} onKeyDown={event => event.key === 'Enter' && !event.shiftKey && send()} maxLength={2000} placeholder="Write a message or share a memory…" className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none" /><button onClick={send} disabled={(!content.trim() && !selectedMemories.length) || sending} className="grid h-12 w-12 place-items-center rounded-2xl bg-pink-500 disabled:opacity-35">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button></div></> : <div className="border-t border-white/10 p-4 text-center text-xs text-white/45">{activeThread.type === 'direct' ? 'Messaging becomes available after the chat request is accepted.' : 'This community is view only for you.'}</div>}
+            {activeThread.canPost ? <>{showStickers && <div className="border-t border-white/10 bg-black/20 p-3"><div className="mb-2 flex items-center justify-between"><div><div className="text-xs font-black">Memory Stickers</div><div className="text-[10px] text-white/40">Tap to send. Use the share button for WhatsApp and other apps.</div></div><button onClick={() => setShowStickers(false)}><X className="h-4 w-4" /></button></div><div className="flex gap-2 overflow-x-auto pb-1">{stickerOptions.map(memory => <div key={memory.id} className="relative shrink-0"><button onClick={() => sendSticker(memory)} disabled={sending} className="block h-16 w-16 overflow-hidden rounded-2xl border border-white/10 bg-white/5"><img src={mediaSrc(memory.id)} alt={memory.name || 'Memory Sticker'} className="h-full w-full object-cover" /></button><button onClick={() => shareSticker(memory)} className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-white text-black shadow" aria-label="Share sticker outside SnapNext">{sharingStickerId === memory.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Share2 className="h-3 w-3" />}</button></div>)}</div></div>}{selectedMemories.length > 0 && <div className="border-t border-white/10 px-4 py-3"><div className="flex flex-wrap gap-2">{selectedMemories.map(id => { const memory = memoryOptions.find(item => item.id === id); return <div key={id} className="flex items-center gap-2 rounded-full bg-cyan-500/10 px-3 py-1.5 text-xs"><span className="max-w-40 truncate">{memory?.name || 'Memory selected'}</span><button onClick={() => toggleMemory(id)}><X className="h-3.5 w-3.5" /></button></div>; })}</div></div>}<div className="flex gap-2 border-t border-white/10 p-4"><button onClick={openMemoryPicker} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-white/10 bg-white/5" aria-label="Share memories"><ImagePlus className="h-4 w-4" /></button><button onClick={openStickerTray} className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl border ${showStickers ? 'border-pink-300 bg-pink-500/20' : 'border-white/10 bg-white/5'}`} aria-label="Open Memory Stickers"><SmilePlus className="h-4 w-4" /></button><input value={content} onChange={event => setContent(event.target.value)} onKeyDown={event => event.key === 'Enter' && !event.shiftKey && send()} maxLength={2000} placeholder="Message…" className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none" /><button onClick={send} disabled={(!content.trim() && !selectedMemories.length) || sending} className="grid h-12 w-12 place-items-center rounded-2xl bg-pink-500 disabled:opacity-35">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button></div></> : <div className="border-t border-white/10 p-4 text-center text-xs text-white/45">{activeThread.type === 'direct' ? 'Messaging becomes available after the chat request is accepted.' : 'This community is view only for you.'}</div>}
           </> : <div className="grid flex-1 place-items-center p-8 text-center"><div><Users className="mx-auto h-10 w-10 text-purple-300" /><h2 className="mt-3 text-xl font-black">Choose a conversation</h2></div></div>}
         </main>
       </div>
@@ -166,5 +230,5 @@ export default function Community() {
 }
 
 function Section({ label, icon, items, activeId, onSelect }) {
-  return <div><div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-white/40">{icon}{label}</div><div className="space-y-1">{items.map(thread => <button key={thread.id} onClick={() => onSelect(thread.id)} className={`w-full rounded-2xl p-3 text-left ${activeId === thread.id ? 'bg-white/10' : 'hover:bg-white/5'}`}><div className="flex items-center justify-between gap-2"><div className="truncate text-sm font-bold">{title(thread)}</div>{thread.type === 'direct' && thread.status === 'pending' && <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[9px] font-black text-amber-200">REQUEST</span>}</div><div className="mt-1 truncate text-xs text-white/35">{thread.lastMessage || (thread.type === 'community' ? 'Memory community' : 'New conversation')}</div></button>)}</div></div>;
+  return <div><div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-white/40">{icon}{label}</div><div className="space-y-1">{items.map(thread => <button key={thread.id} onClick={() => onSelect(thread.id)} className={`w-full rounded-2xl p-3 text-left ${activeId === thread.id ? 'bg-white/10' : 'hover:bg-white/5'}`}><div className="flex items-center justify-between gap-2"><div className="truncate text-sm font-bold">{title(thread)}</div><div className="flex items-center gap-1">{thread.unreadCount > 0 && <span className="grid min-w-5 place-items-center rounded-full bg-pink-500 px-1.5 py-0.5 text-[10px] font-black">{thread.unreadCount > 99 ? '99+' : thread.unreadCount}</span>}{thread.type === 'direct' && thread.status === 'pending' && <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[9px] font-black text-amber-200">REQUEST</span>}</div></div><div className="mt-1 truncate text-xs text-white/35">{thread.lastMessage || (thread.type === 'community' ? 'Memory community' : 'New conversation')}</div></button>)}</div></div>;
 }
