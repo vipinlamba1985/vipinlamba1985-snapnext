@@ -13,10 +13,19 @@ const CLOUD_OPTIONS = [
   { id: 'apple-photos', name: 'Apple Photos', icon: '☁️', description: 'Choose memories from your iPhone or iPad in the SnapNext mobile app.', available: false },
 ];
 
+const IMPORT_BATCH_SIZE = 10;
+const MAX_SELECTED_FILES = 500;
+
 function readableSize(bytes) {
   if (!bytes) return '';
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / 1024 / 1024).toFixed(bytes > 10 * 1024 * 1024 ? 0 : 1)} MB`;
+}
+
+function chunk(items, size) {
+  const groups = [];
+  for (let index = 0; index < items.length; index += size) groups.push(items.slice(index, index + size));
+  return groups;
 }
 
 export default function ImportsPage() {
@@ -25,18 +34,37 @@ export default function ImportsPage() {
   const [selected, setSelected] = useState([]);
   const [busy, setBusy] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextPageToken, setNextPageToken] = useState(null);
   const [showChoices, setShowChoices] = useState(false);
+  const [progress, setProgress] = useState(null);
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const allLoadedSelected = items.length > 0 && items.every(item => selectedSet.has(item.id));
+
+  async function loadFiles(pageToken = '', append = false) {
+    const query = pageToken ? `?pageToken=${encodeURIComponent(pageToken)}` : '';
+    const files = await apiFetch(`/cloud/google-drive/files${query}`);
+    setItems(current => {
+      if (!append) return files.items || [];
+      const map = new Map(current.map(item => [item.id, item]));
+      for (const item of files.items || []) map.set(item.id, item);
+      return [...map.values()];
+    });
+    setNextPageToken(files.nextPageToken || null);
+    return files;
+  }
 
   async function loadStatus() {
     setLoading(true);
     try {
       const next = await apiFetch('/cloud/google-drive/status');
       setStatus(next);
-      if (next.connected) {
-        const files = await apiFetch('/cloud/google-drive/files');
-        setItems(files.items || []);
+      if (next.connected) await loadFiles('', false);
+      else {
+        setItems([]);
+        setSelected([]);
+        setNextPageToken(null);
       }
     } catch (error) {
       toast.error(error.message || 'We could not open Cloud Sync.');
@@ -80,6 +108,7 @@ export default function ImportsPage() {
       setStatus({ ...status, connected: false });
       setItems([]);
       setSelected([]);
+      setNextPageToken(null);
       toast.success('Your cloud was disconnected. Memories already saved in SnapNext are still safe.');
     } catch (error) {
       toast.error(error.message);
@@ -88,26 +117,93 @@ export default function ImportsPage() {
     }
   }
 
+  async function loadMore() {
+    if (!nextPageToken || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      await loadFiles(nextPageToken, true);
+    } catch (error) {
+      toast.error(error.message || 'We could not load more memories.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function loadAll() {
+    if (!nextPageToken || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      let token = nextPageToken;
+      let pages = 0;
+      while (token && pages < 100) {
+        const files = await loadFiles(token, true);
+        token = files.nextPageToken || null;
+        pages += 1;
+      }
+      toast.success(token ? 'We loaded a large part of your Drive. You can continue loading more.' : 'Your complete available Drive library is loaded.');
+    } catch (error) {
+      toast.error(error.message || 'We could not load the complete library.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   async function importSelected() {
     if (!selected.length) return toast.error('Choose at least one photo or video.');
     setBusy('import');
+    const batches = chunk(selected, IMPORT_BATCH_SIZE);
+    const totals = { saved: 0, skipped: 0, failed: 0 };
+    setProgress({ completed: 0, total: selected.length, saved: 0, skipped: 0, failed: 0 });
+
     try {
-      const result = await apiFetch('/cloud/google-drive/import', { method: 'POST', body: JSON.stringify({ fileIds: selected }) });
+      for (const batch of batches) {
+        const result = await apiFetch('/cloud/google-drive/import', {
+          method: 'POST',
+          body: JSON.stringify({ fileIds: batch }),
+        });
+        totals.saved += result.saved || 0;
+        totals.skipped += result.skipped || 0;
+        totals.failed += result.failed || 0;
+        setProgress({
+          completed: Math.min(selected.length, totals.saved + totals.skipped + totals.failed),
+          total: selected.length,
+          ...totals,
+        });
+      }
+
       const parts = [];
-      if (result.saved) parts.push(`${result.saved} saved`);
-      if (result.skipped) parts.push(`${result.skipped} already safe`);
-      if (result.failed) parts.push(`${result.failed} could not be copied`);
+      if (totals.saved) parts.push(`${totals.saved} saved`);
+      if (totals.skipped) parts.push(`${totals.skipped} already safe`);
+      if (totals.failed) parts.push(`${totals.failed} could not be copied`);
       toast.success(parts.join(' · ') || 'Your import is complete.');
       setSelected([]);
     } catch (error) {
-      toast.error(error.message || 'We could not finish this import.');
+      toast.error(error.message || 'We could not finish this import. Files already completed remain safely saved.');
     } finally {
       setBusy('');
     }
   }
 
   function toggle(id) {
-    setSelected(current => current.includes(id) ? current.filter(item => item !== id) : current.length >= 10 ? current : [...current, id]);
+    setSelected(current => {
+      if (current.includes(id)) return current.filter(item => item !== id);
+      if (current.length >= MAX_SELECTED_FILES) {
+        toast.message(`You can import up to ${MAX_SELECTED_FILES} files in one job.`);
+        return current;
+      }
+      return [...current, id];
+    });
+  }
+
+  function toggleAllLoaded() {
+    if (allLoadedSelected) {
+      const loaded = new Set(items.map(item => item.id));
+      setSelected(current => current.filter(id => !loaded.has(id)));
+      return;
+    }
+    const combined = [...new Set([...selected, ...items.map(item => item.id)])].slice(0, MAX_SELECTED_FILES);
+    setSelected(combined);
+    if (items.length > MAX_SELECTED_FILES) toast.message(`The first ${MAX_SELECTED_FILES} loaded files were selected.`);
   }
 
   return (
@@ -123,7 +219,7 @@ export default function ImportsPage() {
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-xl">☁️</div>
             <div>
               <h2 className="text-lg font-black">Your connected cloud</h2>
-              <p className="mt-1 text-sm text-white/55">Choose where your memories are stored, then select what you want to save in SnapNext.</p>
+              <p className="mt-1 text-sm text-white/55">Browse your available Drive library and choose what you want to save in SnapNext.</p>
               <div className="mt-2 inline-flex items-center gap-2 text-xs text-white/45"><ShieldCheck className="h-4 w-4"/> SnapNext only copies the memories you choose. It cannot delete your originals.</div>
             </div>
           </div>
@@ -146,11 +242,12 @@ export default function ImportsPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="font-black">Choose memories to bring in</h3>
-                <p className="mt-1 text-xs text-white/45">You can copy up to 10 at a time. SnapNext skips anything already saved.</p>
+                <p className="mt-1 text-xs text-white/45">{items.length} loaded · {selected.length} selected · up to {MAX_SELECTED_FILES} per import job</p>
               </div>
-              <div className="flex gap-2">
-                <button onClick={loadStatus} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs font-bold"><RefreshCw className="h-3.5 w-3.5"/> Refresh</button>
-                <button onClick={disconnect} disabled={busy === 'disconnect'} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/60"><LogOut className="h-3.5 w-3.5"/> Disconnect</button>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={toggleAllLoaded} disabled={!items.length || busy === 'import'} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold">{allLoadedSelected ? 'Clear loaded' : 'Select all loaded'}</button>
+                <button onClick={loadStatus} disabled={busy === 'import'} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs font-bold"><RefreshCw className="h-3.5 w-3.5"/> Refresh</button>
+                <button onClick={disconnect} disabled={busy === 'disconnect' || busy === 'import'} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/60"><LogOut className="h-3.5 w-3.5"/> Disconnect</button>
               </div>
             </div>
 
@@ -158,7 +255,7 @@ export default function ImportsPage() {
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {items.map(item => {
                   const active = selectedSet.has(item.id);
-                  return <button key={item.id} onClick={() => toggle(item.id)} className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${active ? 'border-pink-400 bg-pink-500/10' : 'border-white/10 bg-black/15 hover:bg-white/[0.05]'}`}>
+                  return <button key={item.id} onClick={() => toggle(item.id)} disabled={busy === 'import'} className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition disabled:opacity-60 ${active ? 'border-pink-400 bg-pink-500/10' : 'border-white/10 bg-black/15 hover:bg-white/[0.05]'}`}>
                     <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/5">{item.thumbnail ? <img src={item.thumbnail} alt="" className="h-full w-full object-cover"/> : item.mime?.startsWith('video/') ? '🎬' : '🖼️'}</div>
                     <div className="min-w-0 flex-1"><div className="truncate text-sm font-bold">{item.name}</div><div className="mt-1 text-xs text-white/40">{item.mime?.startsWith('video/') ? 'Video' : 'Photo'}{item.size ? ` · ${readableSize(item.size)}` : ''}</div></div>
                     <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border ${active ? 'border-pink-400 bg-pink-500' : 'border-white/20'}`}>{active && <Check className="h-3.5 w-3.5"/>}</span>
@@ -167,8 +264,23 @@ export default function ImportsPage() {
               </div>
             ) : <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-white/45">No photos or videos were found in this connected account.</div>}
 
+            {nextPageToken && (
+              <div className="flex flex-wrap gap-2">
+                <button onClick={loadMore} disabled={loadingMore || busy === 'import'} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm font-bold disabled:opacity-40">{loadingMore && <Loader2 className="h-4 w-4 animate-spin"/>} Load next 100</button>
+                <button onClick={loadAll} disabled={loadingMore || busy === 'import'} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-bold disabled:opacity-40">Load complete library</button>
+              </div>
+            )}
+
+            {progress && (
+              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
+                <div className="flex items-center justify-between text-sm font-bold"><span>Import progress</span><span>{progress.completed}/{progress.total}</span></div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/30"><div className="h-full rounded-full bg-cyan-300 transition-all" style={{ width: `${Math.round((progress.completed / Math.max(1, progress.total)) * 100)}%` }}/></div>
+                <p className="mt-2 text-xs text-white/55">{progress.saved} saved · {progress.skipped} already safe · {progress.failed} failed</p>
+              </div>
+            )}
+
             <button onClick={importSelected} disabled={!selected.length || busy === 'import'} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 py-3 text-sm font-black disabled:opacity-40">
-              {busy === 'import' ? <Loader2 className="h-4 w-4 animate-spin"/> : <CloudDownload className="h-4 w-4"/>} {busy === 'import' ? 'Saving your memories…' : `Save ${selected.length || ''} selected`}
+              {busy === 'import' ? <Loader2 className="h-4 w-4 animate-spin"/> : <CloudDownload className="h-4 w-4"/>} {busy === 'import' ? `Importing ${progress?.completed || 0}/${progress?.total || selected.length}…` : `Save ${selected.length || ''} selected`}
             </button>
           </div>
         )}
