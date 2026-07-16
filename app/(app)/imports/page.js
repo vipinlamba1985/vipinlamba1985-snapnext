@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Check, ChevronRight, Cloud, CloudDownload, ImagePlus, Loader2, LogOut, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
+import CloudImportBatchGuide from '@/components/CloudImportBatchGuide';
 import { toast } from 'sonner';
 
 const CLOUD_OPTIONS = [
@@ -250,6 +251,8 @@ export default function ImportsPage() {
                 <button onClick={disconnect} disabled={busy === 'disconnect' || busy === 'import'} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/60"><LogOut className="h-3.5 w-3.5"/> Disconnect</button>
               </div>
             </div>
+
+            <CloudImportBatchGuide selected={selected.length} batchSize={IMPORT_BATCH_SIZE} maxFiles={MAX_SELECTED_FILES} progress={progress} />
 
             {items.length ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
