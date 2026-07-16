@@ -9,7 +9,7 @@
     "build": "npm test && next build",
     "start": "node server.js",
     "lint": "next lint",
-    "test": "node --experimental-default-type=module --test tests/*.test.mjs",
+    "test": "node --test tests/*.test.mjs",
     "test:smoke": "node scripts/smoke-test.mjs",
     "native:sync": "npx cap sync",
     "native:add:android": "npx cap add android",
