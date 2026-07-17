@@ -6,33 +6,16 @@ const securityHeaders = [
   { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
   { key: 'Cross-Origin-Resource-Policy', value: 'same-site' },
-  {
-    key: 'Content-Security-Policy',
-    value: [
-      "default-src 'self'",
-      "base-uri 'self'",
-      "frame-ancestors 'none'",
-      "form-action 'self'",
-      "object-src 'none'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' blob: data: https:",
-      "media-src 'self' blob: data: https:",
-      "font-src 'self' data:",
-      "connect-src 'self' https: wss:",
-      "frame-src 'self' https://js.stripe.com https://hooks.stripe.com",
-      "worker-src 'self' blob:",
-      "upgrade-insecure-requests",
-    ].join('; '),
-  },
 ];
 
 const nextConfig = {
   output: 'standalone',
   eslint: {
+    // Kept temporarily until the non-blocking quality workflow reaches zero findings.
     ignoreDuringBuilds: true,
   },
   typescript: {
+    // Kept temporarily until the non-blocking quality workflow reaches zero findings.
     ignoreBuildErrors: true,
   },
   images: {
@@ -57,25 +40,12 @@ const nextConfig = {
     pagesBufferLength: 2,
   },
   async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: securityHeaders,
-      },
-    ];
+    return [{ source: '/(.*)', headers: securityHeaders }];
   },
   async redirects() {
     return [
-      {
-        source: '/signin',
-        destination: '/login',
-        permanent: true,
-      },
-      {
-        source: '/auth/login',
-        destination: '/login',
-        permanent: true,
-      },
+      { source: '/signin', destination: '/login', permanent: true },
+      { source: '/auth/login', destination: '/login', permanent: true },
     ];
   },
 };
