@@ -40,6 +40,38 @@ const RATE_RULES = [
   { match: /\/(export|stream-zip|downloads\/export)(\/|$)/i, limit: 12, windowMs: 10 * 60_000 },
 ];
 
+function createRequestId(request) {
+  const incoming = request.headers.get('x-request-id')?.trim();
+  if (incoming && /^[a-zA-Z0-9._:-]{8,128}$/.test(incoming)) return incoming;
+  return crypto.randomUUID();
+}
+
+function attachRequestId(response, requestId) {
+  response.headers.set('x-request-id', requestId);
+  return response;
+}
+
+function continueWithRequestId(request, requestId) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-request-id', requestId);
+  return attachRequestId(
+    NextResponse.next({ request: { headers: requestHeaders } }),
+    requestId,
+  );
+}
+
+function logSecurityEvent(level, event, details) {
+  const payload = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    event,
+    ...details,
+  });
+
+  if (level === 'error') console.error(payload);
+  else if (level === 'warn') console.warn(payload);
+  else console.info(payload);
+}
+
 // Preview/demo authentication is a development-only convenience.
 // It must NEVER authenticate anyone in production.
 function previewAuthAllowed() {
@@ -99,7 +131,15 @@ function checkRateLimit(request, pathname) {
   const retryAfter = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
   return NextResponse.json(
     { error: { code: 'rate_limited', message: 'Too many requests. Please try again shortly.' } },
-    { status: 429, headers: { 'Retry-After': String(retryAfter) } },
+    {
+      status: 429,
+      headers: {
+        'Retry-After': String(retryAfter),
+        'X-RateLimit-Limit': String(rule.limit),
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': String(Math.ceil(existing.resetAt / 1000)),
+      },
+    },
   );
 }
 
@@ -124,27 +164,51 @@ function occasionallyPruneRateBuckets() {
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
+  const requestId = createRequestId(request);
 
   if (pathname.startsWith('/api/')) {
     // Browser requests from unrelated websites must not reach SnapNext APIs.
     // Requests without an Origin header remain allowed for trusted server-to-server integrations.
     if (!isAllowedBrowserOrigin(request)) {
-      return NextResponse.json(
-        { error: { code: 'origin_not_allowed', message: 'Request origin is not allowed.' } },
-        { status: 403 },
+      logSecurityEvent('warn', 'api_origin_rejected', {
+        requestId,
+        method: request.method,
+        pathname,
+      });
+      return attachRequestId(
+        NextResponse.json(
+          { error: { code: 'origin_not_allowed', message: 'Request origin is not allowed.' } },
+          { status: 403 },
+        ),
+        requestId,
       );
     }
 
     const oversized = rejectOversizedApiRequest(request);
-    if (oversized) return oversized;
+    if (oversized) {
+      logSecurityEvent('warn', 'api_payload_rejected', {
+        requestId,
+        method: request.method,
+        pathname,
+        contentLength: request.headers.get('content-length') || null,
+      });
+      return attachRequestId(oversized, requestId);
+    }
 
     occasionallyPruneRateBuckets();
     const rateLimited = checkRateLimit(request, pathname);
-    if (rateLimited) return rateLimited;
+    if (rateLimited) {
+      logSecurityEvent('warn', 'api_rate_limited', {
+        requestId,
+        method: request.method,
+        pathname,
+      });
+      return attachRequestId(rateLimited, requestId);
+    }
   }
 
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
-  if (!isProtected) return NextResponse.next();
+  if (!isProtected) return continueWithRequestId(request, requestId);
 
   const authHeader = request.headers.get('authorization') || '';
   const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -154,12 +218,18 @@ export async function middleware(request) {
   if (token === 'preview-demo-token') {
     // Strictly non-production. In production this token is rejected and the
     // request falls through to the login redirect below (fail closed).
-    if (previewAuthAllowed()) return NextResponse.next();
+    if (previewAuthAllowed()) return continueWithRequestId(request, requestId);
   } else if (token && supabaseServer) {
     try {
       const { data, error } = await supabaseServer.auth.getUser(token);
-      if (data?.user && !error) return NextResponse.next();
-    } catch {
+      if (data?.user && !error) return continueWithRequestId(request, requestId);
+    } catch (error) {
+      logSecurityEvent('error', 'auth_verification_failed', {
+        requestId,
+        pathname,
+        authProvider: 'supabase',
+        failureCategory: error?.name || 'verification_error',
+      });
       // Fail closed: if Supabase verification throws or cannot verify the
       // session, we must NOT allow access to a protected page.
     }
@@ -167,7 +237,7 @@ export async function middleware(request) {
 
   const loginUrl = new URL('/login', request.url);
   loginUrl.searchParams.set('next', pathname);
-  return NextResponse.redirect(loginUrl);
+  return attachRequestId(NextResponse.redirect(loginUrl), requestId);
 }
 
 export const config = {

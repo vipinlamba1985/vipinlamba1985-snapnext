@@ -1,0 +1,83 @@
+name: Quality Visibility
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-visibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test
+
+  code-quality:
+    name: Code quality visibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: TypeScript check
+        id: typescript
+        continue-on-error: true
+        run: npx tsc --noEmit
+
+      - name: ESLint check
+        id: eslint
+        continue-on-error: true
+        run: npx eslint .
+
+      - name: Dependency audit
+        id: audit
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+      - name: Publish quality summary
+        if: always()
+        run: |
+          {
+            echo '## SnapNext quality visibility'
+            echo ''
+            echo '| Check | Outcome |'
+            echo '|---|---|'
+            echo '| TypeScript | `${{ steps.typescript.outcome }}` |'
+            echo '| ESLint | `${{ steps.eslint.outcome }}` |'
+            echo '| Dependency audit | `${{ steps.audit.outcome }}` |'
+            echo ''
+            echo 'These checks are initially informational so existing findings can be fixed incrementally before they become required release gates.'
+          } >> "$GITHUB_STEP_SUMMARY"
