@@ -21,11 +21,43 @@ function createRequestId(request) {
   const incoming = request.headers.get('x-request-id')?.trim();
   return incoming && /^[a-zA-Z0-9._:-]{8,128}$/.test(incoming) ? incoming : crypto.randomUUID();
 }
-function attachRequestId(response, requestId) { response.headers.set('x-request-id', requestId); return response; }
-function continueWithRequestId(request, requestId) {
+function createNonce() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return btoa(String.fromCharCode(...bytes));
+}
+function contentSecurityPolicy(nonce) {
+  const script = process.env.NODE_ENV === 'development'
+    ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval' https://js.stripe.com`
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com`;
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "object-src 'none'",
+    script,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' blob: data: https:",
+    "media-src 'self' blob: data: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' https: wss:",
+    "frame-src 'self' https://js.stripe.com https://hooks.stripe.com",
+    "worker-src 'self' blob:",
+    'upgrade-insecure-requests',
+  ].join('; ');
+}
+function attachSecurityHeaders(response, requestId, nonce) {
+  response.headers.set('x-request-id', requestId);
+  response.headers.set('x-nonce', nonce);
+  response.headers.set('Content-Security-Policy', contentSecurityPolicy(nonce));
+  return response;
+}
+function continueRequest(request, requestId, nonce) {
   const headers = new Headers(request.headers);
   headers.set('x-request-id', requestId);
-  return attachRequestId(NextResponse.next({ request: { headers } }), requestId);
+  headers.set('x-nonce', nonce);
+  headers.set('Content-Security-Policy', contentSecurityPolicy(nonce));
+  return attachSecurityHeaders(NextResponse.next({ request: { headers } }), requestId, nonce);
 }
 function logSecurityEvent(level, event, details) {
   const payload = JSON.stringify({ timestamp: new Date().toISOString(), event, ...details });
@@ -93,35 +125,36 @@ async function checkRateLimit(request, pathname) {
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
   const requestId = createRequestId(request);
+  const nonce = createNonce();
 
   if (pathname.startsWith('/api/')) {
     if (!isAllowedBrowserOrigin(request)) {
       logSecurityEvent('warn', 'api_origin_rejected', { requestId, method: request.method, pathname });
-      return attachRequestId(NextResponse.json({ error: { code: 'origin_not_allowed', message: 'Request origin is not allowed.' } }, { status: 403 }), requestId);
+      return attachSecurityHeaders(NextResponse.json({ error: { code: 'origin_not_allowed', message: 'Request origin is not allowed.' } }, { status: 403 }), requestId, nonce);
     }
     const oversized = rejectOversizedApiRequest(request);
-    if (oversized) return attachRequestId(oversized, requestId);
+    if (oversized) return attachSecurityHeaders(oversized, requestId, nonce);
     const invalidType = rejectInvalidContentType(request, pathname);
-    if (invalidType) return attachRequestId(invalidType, requestId);
+    if (invalidType) return attachSecurityHeaders(invalidType, requestId, nonce);
     const rateLimited = await checkRateLimit(request, pathname);
     if (rateLimited) {
       logSecurityEvent('warn', 'api_rate_limited', { requestId, method: request.method, pathname });
-      return attachRequestId(rateLimited, requestId);
+      return attachSecurityHeaders(rateLimited, requestId, nonce);
     }
   }
 
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
-  if (!isProtected) return continueWithRequestId(request, requestId);
+  if (!isProtected) return continueRequest(request, requestId, nonce);
 
   const authHeader = request.headers.get('authorization') || '';
   const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const token = bearer || request.cookies.get('sb-access-token')?.value || null;
   if (token === 'preview-demo-token') {
-    if (previewAuthAllowed()) return continueWithRequestId(request, requestId);
+    if (previewAuthAllowed()) return continueRequest(request, requestId, nonce);
   } else if (token && supabaseServer) {
     try {
       const { data, error } = await supabaseServer.auth.getUser(token);
-      if (data?.user && !error) return continueWithRequestId(request, requestId);
+      if (data?.user && !error) return continueRequest(request, requestId, nonce);
     } catch (error) {
       logSecurityEvent('error', 'auth_verification_failed', {
         requestId, pathname, authProvider: 'supabase', failureCategory: error?.name || 'verification_error',
@@ -130,7 +163,7 @@ export async function middleware(request) {
   }
   const loginUrl = new URL('/login', request.url);
   loginUrl.searchParams.set('next', pathname);
-  return attachRequestId(NextResponse.redirect(loginUrl), requestId);
+  return attachSecurityHeaders(NextResponse.redirect(loginUrl), requestId, nonce);
 }
 
 export const config = { matcher: [
