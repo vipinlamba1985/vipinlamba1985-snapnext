@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { supabaseServer } from './lib/supabase';
 import { distributedRateLimit } from './lib/distributed-rate-limit';
 
 const PROTECTED_PREFIXES = [
@@ -149,18 +148,17 @@ export async function middleware(request) {
   const authHeader = request.headers.get('authorization') || '';
   const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const token = bearer || request.cookies.get('sb-access-token')?.value || null;
+
   if (token === 'preview-demo-token') {
     if (previewAuthAllowed()) return continueRequest(request, requestId, nonce);
-  } else if (token && supabaseServer) {
-    try {
-      const { data, error } = await supabaseServer.auth.getUser(token);
-      if (data?.user && !error) return continueRequest(request, requestId, nonce);
-    } catch (error) {
-      logSecurityEvent('error', 'auth_verification_failed', {
-        requestId, pathname, authProvider: 'supabase', failureCategory: error?.name || 'verification_error',
-      });
-    }
+  } else if (token) {
+    // Page middleware only checks that a SnapNext session token is present.
+    // The authoritative token validation remains in protected API routes and
+    // AppShell's /api/auth/me startup check. This supports SnapNext's MongoDB/JWT
+    // login tokens without incorrectly treating them as Supabase access tokens.
+    return continueRequest(request, requestId, nonce);
   }
+
   const loginUrl = new URL('/login', request.url);
   loginUrl.searchParams.set('next', pathname);
   return attachSecurityHeaders(NextResponse.redirect(loginUrl), requestId, nonce);
