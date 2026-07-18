@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Home, Upload, Image as ImageIcon, Heart, Sparkles, Send, Users, MessageSquare, Download, Trash2, CreditCard, Settings, Shield, LifeBuoy, LogOut, Crown, Menu, X, Mail, Loader2, Network, RefreshCw, BookOpen, ShieldAlert, BrainCircuit, Film } from 'lucide-react';
 import { apiFetch, logout, getStoredUser, setStoredUser, getToken } from '@/lib/api-client';
 import BrandLogo from '@/components/BrandLogo';
@@ -51,17 +51,59 @@ export default function AppShell({ children }) {
   const [devPlan, setDevPlan] = useState(null);
   const [devReady, setDevReady] = useState(false);
   const [open, setOpen] = useState(false);
-  const [ready, setReady] = useState(false);
+  const [startup, setStartup] = useState('checking');
+  const startupAttempt = useRef(0);
+
+  const loadAccount = useCallback(async () => {
+    const attempt = startupAttempt.current + 1;
+    startupAttempt.current = attempt;
+    setStartup('checking');
+
+    if (!getToken()) {
+      setStartup('signin');
+      router.replace('/login');
+      return;
+    }
+
+    const storedUser = getStoredUser();
+    if (storedUser) setUser(storedUser);
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+
+    try {
+      const response = await apiFetch('/auth/me', { signal: controller.signal });
+      if (startupAttempt.current !== attempt) return;
+      if (!response?.user) throw new Error('Your account could not be opened.');
+      setUser(response.user);
+      setStoredUser(response.user);
+      setStartup('ready');
+    } catch (error) {
+      if (startupAttempt.current !== attempt) return;
+      if (error?.status === 401) {
+        setStartup('signin');
+        logout();
+        return;
+      }
+      setStartup('slow');
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }, [router]);
 
   useEffect(() => {
-    if (!getToken()) { router.replace('/login'); return; }
-    setUser(getStoredUser());
-    apiFetch('/auth/me').then(({ user }) => { setUser(user); setStoredUser(user); setReady(true); })
-      .catch(() => { logout(); });
-    apiFetch('/storage/usage').then(setUsage).catch(()=>{});
+    loadAccount();
+    return () => {
+      startupAttempt.current += 1;
+    };
+  }, [loadAccount]);
+
+  useEffect(() => {
+    if (startup !== 'ready') return;
+    apiFetch('/storage/usage').then(setUsage).catch(() => {});
     setDevReady(false);
     apiFetch('/dev/effective-plan').then(setDevPlan).catch(() => setDevPlan(null)).finally(() => setDevReady(true));
-  }, [pathname]);
+  }, [startup]);
 
   const activeRoute = NAV.find(item => pathname === item.href || pathname.startsWith(`${item.href}/`));
   const isAdminAuthRoute = !!activeRoute?.adminOnly;
@@ -86,18 +128,31 @@ export default function AppShell({ children }) {
   useEffect(() => {
     const blockedByAuth = isAdminAuthRoute && !realIsSuper;
     const blockedByPlan = devReady && !routeCapabilityAllowed;
-    if (ready && (blockedByAuth || blockedByPlan)) router.replace('/billing');
-  }, [ready, isAdminAuthRoute, realIsSuper, routeCapabilityAllowed, devReady, router]);
+    if (startup === 'ready' && (blockedByAuth || blockedByPlan)) router.replace('/billing');
+  }, [startup, isAdminAuthRoute, realIsSuper, routeCapabilityAllowed, devReady, router]);
 
-  const waitingForExperience = !!activeRoute?.aiCapability && !devReady;
-  const blockedRoute = (isAdminAuthRoute && !realIsSuper) || (devReady && !routeCapabilityAllowed);
-  if (!ready || waitingForExperience || blockedRoute) {
+  const waitingForExperience = startup === 'ready' && !!activeRoute?.aiCapability && !devReady;
+  const blockedRoute = startup === 'ready' && ((isAdminAuthRoute && !realIsSuper) || (devReady && !routeCapabilityAllowed));
+
+  if (startup !== 'ready' || waitingForExperience || blockedRoute) {
+    const recoverable = startup === 'slow';
     return (
-      <div className="min-h-screen grid place-items-center text-white/50">
-        <div className="text-center">
+      <div className="min-h-screen grid place-items-center px-6 text-white/60">
+        <div className="w-full max-w-sm text-center">
           <BrandLogo size={56} className="mx-auto mb-4" priority />
-          <Loader2 className="mx-auto h-5 w-5 animate-spin text-pink-300" />
-          <div className="mt-3 text-sm">{blockedRoute ? 'Checking plan access…' : 'Loading…'}</div>
+          {!recoverable && <Loader2 className="mx-auto h-5 w-5 animate-spin text-pink-300" />}
+          <div className="mt-3 text-sm font-semibold text-white/70">
+            {blockedRoute ? 'Checking plan access…' : recoverable ? 'We’re having trouble opening your account' : 'Opening SnapNext…'}
+          </div>
+          {recoverable && (
+            <>
+              <p className="mt-2 text-xs leading-5 text-white/45">Your memories are safe. Check your connection, then try again.</p>
+              <div className="mt-5 flex flex-col gap-2">
+                <button onClick={loadAccount} className="rounded-full bg-white px-5 py-3 text-sm font-black text-black">Try again</button>
+                <button onClick={logout} className="rounded-full border border-white/10 px-5 py-3 text-sm font-bold text-white/70">Sign in again</button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
