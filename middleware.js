@@ -20,51 +20,26 @@ function createRequestId(request) {
   const incoming = request.headers.get('x-request-id')?.trim();
   return incoming && /^[a-zA-Z0-9._:-]{8,128}$/.test(incoming) ? incoming : crypto.randomUUID();
 }
-function createNonce() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return btoa(String.fromCharCode(...bytes));
-}
-function contentSecurityPolicy(nonce) {
-  const script = process.env.NODE_ENV === 'development'
-    ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval' https://js.stripe.com`
-    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com`;
-  return [
-    "default-src 'self'",
-    "base-uri 'self'",
-    "frame-ancestors 'none'",
-    "form-action 'self'",
-    "object-src 'none'",
-    script,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' blob: data: https:",
-    "media-src 'self' blob: data: https:",
-    "font-src 'self' data:",
-    "connect-src 'self' https: wss:",
-    "frame-src 'self' https://js.stripe.com https://hooks.stripe.com",
-    "worker-src 'self' blob:",
-    'upgrade-insecure-requests',
-  ].join('; ');
-}
-function attachSecurityHeaders(response, requestId, nonce) {
+function attachRequestId(response, requestId) {
   response.headers.set('x-request-id', requestId);
-  response.headers.set('x-nonce', nonce);
-  response.headers.set('Content-Security-Policy', contentSecurityPolicy(nonce));
   return response;
 }
-function continueRequest(request, requestId, nonce) {
+function continueWithRequestId(request, requestId) {
   const headers = new Headers(request.headers);
   headers.set('x-request-id', requestId);
-  headers.set('x-nonce', nonce);
-  headers.set('Content-Security-Policy', contentSecurityPolicy(nonce));
-  return attachSecurityHeaders(NextResponse.next({ request: { headers } }), requestId, nonce);
+  return attachRequestId(NextResponse.next({ request: { headers } }), requestId);
 }
 function logSecurityEvent(level, event, details) {
   const payload = JSON.stringify({ timestamp: new Date().toISOString(), event, ...details });
-  if (level === 'error') console.error(payload); else if (level === 'warn') console.warn(payload); else console.info(payload);
+  if (level === 'error') console.error(payload);
+  else if (level === 'warn') console.warn(payload);
+  else console.info(payload);
 }
-function previewAuthAllowed() { return process.env.NODE_ENV !== 'production' && process.env.VERCEL_ENV !== 'production'; }
+function previewAuthAllowed() {
+  return process.env.NODE_ENV !== 'production' && process.env.VERCEL_ENV !== 'production';
+}
 function configuredOrigins(request) {
-  const allowed = new Set(String(process.env.CORS_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean));
+  const allowed = new Set(String(process.env.CORS_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean));
   allowed.add(request.nextUrl.origin);
   return allowed;
 }
@@ -77,7 +52,9 @@ function requestClientKey(request) {
     || request.headers.get('x-real-ip')?.trim()
     || 'unknown';
 }
-function matchingRateRule(pathname) { return RATE_RULES.find((rule) => rule.match.test(pathname)); }
+function matchingRateRule(pathname) {
+  return RATE_RULES.find((rule) => rule.match.test(pathname));
+}
 function rejectOversizedApiRequest(request) {
   if (!WRITE_METHODS.has(request.method)) return null;
   const contentLength = Number(request.headers.get('content-length') || 0);
@@ -111,57 +88,60 @@ async function checkRateLimit(request, pathname) {
   const retryAfter = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000));
   return NextResponse.json(
     { error: { code: 'rate_limited', message: 'Too many requests. Please try again shortly.' } },
-    { status: 429, headers: {
-      'Retry-After': String(retryAfter),
-      'X-RateLimit-Limit': String(result.limit),
-      'X-RateLimit-Remaining': String(result.remaining),
-      'X-RateLimit-Reset': String(Math.ceil(result.resetAt / 1000)),
-      'X-RateLimit-Backend': result.backend,
-    } },
+    {
+      status: 429,
+      headers: {
+        'Retry-After': String(retryAfter),
+        'X-RateLimit-Limit': String(result.limit),
+        'X-RateLimit-Remaining': String(result.remaining),
+        'X-RateLimit-Reset': String(Math.ceil(result.resetAt / 1000)),
+        'X-RateLimit-Backend': result.backend,
+      },
+    },
   );
 }
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
   const requestId = createRequestId(request);
-  const nonce = createNonce();
 
   if (pathname.startsWith('/api/')) {
     if (!isAllowedBrowserOrigin(request)) {
       logSecurityEvent('warn', 'api_origin_rejected', { requestId, method: request.method, pathname });
-      return attachSecurityHeaders(NextResponse.json({ error: { code: 'origin_not_allowed', message: 'Request origin is not allowed.' } }, { status: 403 }), requestId, nonce);
+      return attachRequestId(
+        NextResponse.json({ error: { code: 'origin_not_allowed', message: 'Request origin is not allowed.' } }, { status: 403 }),
+        requestId,
+      );
     }
     const oversized = rejectOversizedApiRequest(request);
-    if (oversized) return attachSecurityHeaders(oversized, requestId, nonce);
+    if (oversized) return attachRequestId(oversized, requestId);
     const invalidType = rejectInvalidContentType(request, pathname);
-    if (invalidType) return attachSecurityHeaders(invalidType, requestId, nonce);
+    if (invalidType) return attachRequestId(invalidType, requestId);
     const rateLimited = await checkRateLimit(request, pathname);
     if (rateLimited) {
       logSecurityEvent('warn', 'api_rate_limited', { requestId, method: request.method, pathname });
-      return attachSecurityHeaders(rateLimited, requestId, nonce);
+      return attachRequestId(rateLimited, requestId);
     }
   }
 
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
-  if (!isProtected) return continueRequest(request, requestId, nonce);
+  if (!isProtected) return continueWithRequestId(request, requestId);
 
   const authHeader = request.headers.get('authorization') || '';
   const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const token = bearer || request.cookies.get('sb-access-token')?.value || null;
 
   if (token === 'preview-demo-token') {
-    if (previewAuthAllowed()) return continueRequest(request, requestId, nonce);
+    if (previewAuthAllowed()) return continueWithRequestId(request, requestId);
   } else if (token) {
-    // Page middleware only checks that a SnapNext session token is present.
-    // The authoritative token validation remains in protected API routes and
-    // AppShell's /api/auth/me startup check. This supports SnapNext's MongoDB/JWT
-    // login tokens without incorrectly treating them as Supabase access tokens.
-    return continueRequest(request, requestId, nonce);
+    // Page navigation only requires a session token to be present. Protected APIs
+    // and /api/auth/me remain responsible for authoritative token validation.
+    return continueWithRequestId(request, requestId);
   }
 
   const loginUrl = new URL('/login', request.url);
   loginUrl.searchParams.set('next', pathname);
-  return attachSecurityHeaders(NextResponse.redirect(loginUrl), requestId, nonce);
+  return attachRequestId(NextResponse.redirect(loginUrl), requestId);
 }
 
 export const config = { matcher: [
