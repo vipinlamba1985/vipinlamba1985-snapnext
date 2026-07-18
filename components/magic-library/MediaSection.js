@@ -1,14 +1,15 @@
 'use client';
 
+import Link from 'next/link';
 import { FileText, Film } from 'lucide-react';
 import { mediaSrc } from '@/lib/api-client';
 
-export default function MediaSection({ title, items, onOpen, onExpand, emptyCopy }) {
+export default function MediaSection({ title, items, onOpen, emptyCopy }) {
   return (
     <section>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-xl font-black text-white">{title}</h2>
-        {!!items.length && <button onClick={() => onExpand?.()} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-bold text-white/65">See all</button>}
+        {!!items.length && <Link href="/magic-library/all" className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-bold text-white/65">See all</Link>}
       </div>
       {items.length === 0 ? <p className="mt-3 text-sm text-white/40">{emptyCopy || 'Nothing found here yet.'}</p> : (
         <div className="mt-4 flex gap-3.5 overflow-x-auto pb-3 pr-5">
