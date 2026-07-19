@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { getToken } from '@/lib/api-client';
-import { calculateFaceCropLayout, sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
+import { safeFaceFocus, sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
 
 function thumbnailSrc(mediaId) {
   const token = getToken();
@@ -20,43 +20,9 @@ export default function PeopleFaceThumbnail({
   onManualChange,
 }) {
   const [failed, setFailed] = useState(false);
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-  const [viewport, setViewport] = useState({ width: 0, height: 0 });
-  const containerRef = useRef(null);
   const drag = useRef(null);
   const src = useMemo(() => thumbnailSrc(mediaId), [mediaId]);
-
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node) return undefined;
-
-    function updateViewport() {
-      const rect = node.getBoundingClientRect();
-      setViewport({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
-    }
-
-    updateViewport();
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', updateViewport);
-      return () => window.removeEventListener('resize', updateViewport);
-    }
-
-    const observer = new ResizeObserver(updateViewport);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-
-  const layout = useMemo(() => {
-    if (!imageSize.width || !imageSize.height || !viewport.width || !viewport.height) return null;
-    return calculateFaceCropLayout({
-      faceBox,
-      manualCrop: manual,
-      imageWidth: imageSize.width,
-      imageHeight: imageSize.height,
-      containerWidth: viewport.width,
-      containerHeight: viewport.height,
-    });
-  }, [faceBox, imageSize, manual, viewport]);
+  const focus = useMemo(() => safeFaceFocus(faceBox, manual), [faceBox, manual]);
 
   function finishDrag(event) {
     if (!drag.current) return;
@@ -85,8 +51,10 @@ export default function PeopleFaceThumbnail({
     const dy = event.clientY - state.startY;
     onManualChange(sanitizeThumbnailCrop({
       ...state.crop,
-      x: state.crop.x + (dx / state.width) * 100,
-      y: state.crop.y + (dy / state.height) * 100,
+      // Object-position moves the underlying photo opposite to its percentage,
+      // so subtract to make dragging feel like moving the actual photo.
+      x: state.crop.x - (dx / state.width) * 70,
+      y: state.crop.y - (dy / state.height) * 70,
     }));
   }
 
@@ -94,23 +62,7 @@ export default function PeopleFaceThumbnail({
     return <span className={`grid place-items-center bg-white/5 font-black text-white/50 ${className}`}>?</span>;
   }
 
-  const imageStyle = layout ? {
-    position: 'absolute',
-    width: `${layout.width}px`,
-    height: `${layout.height}px`,
-    left: `${layout.left}px`,
-    top: `${layout.top}px`,
-    maxWidth: 'none',
-  } : {
-    position: 'absolute',
-    inset: 0,
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-  };
-
   return <span
-    ref={containerRef}
     className={`relative block overflow-hidden bg-white/5 ${editable ? 'cursor-grab touch-none active:cursor-grabbing' : ''} ${className}`}
     onPointerDown={onPointerDown}
     onPointerMove={onPointerMove}
@@ -122,13 +74,14 @@ export default function PeopleFaceThumbnail({
       alt={alt}
       draggable={false}
       decoding="async"
-      onLoad={(event) => setImageSize({
-        width: event.currentTarget.naturalWidth,
-        height: event.currentTarget.naturalHeight,
-      })}
+      onLoad={() => setFailed(false)}
       onError={() => setFailed(true)}
-      className="select-none"
-      style={imageStyle}
+      className="block h-full w-full select-none object-cover will-change-transform"
+      style={{
+        objectPosition: focus.objectPosition,
+        transform: `scale(${focus.zoom})`,
+        transformOrigin: focus.transformOrigin,
+      }}
     />
   </span>;
 }
