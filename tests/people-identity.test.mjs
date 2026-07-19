@@ -22,3 +22,11 @@ test('active people appear first and unknown faces move to the end', () => {
     ['active', 'review', 'inactive', 'unknown-face'],
   );
 });
+
+test('People ordering supports the all-memories activation view object', () => {
+  const enabled = { length: 0, includes: (name) => name === 'active' };
+  assert.deepEqual(
+    sortPeopleForDisplay([{ name: 'inactive' }, { name: 'active' }], enabled).map((person) => person.name),
+    ['active', 'inactive'],
+  );
+});
