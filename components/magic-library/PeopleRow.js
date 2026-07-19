@@ -39,7 +39,7 @@ export default function PeopleRow({ people, enabledNames, favoriteNames, activeP
 
   return <section className="space-y-3">
     <div className="flex items-center justify-between gap-3">
-      <div><h2 className="text-xl font-black text-white">People</h2><p className="text-xs text-white/40">Name people once and confirm uncertain matches.</p></div>
+      <div><h2 className="text-xl font-black text-white">People</h2><p className="text-xs text-white/40">Only clear, unique faces are shown. Tap a face to confirm or edit it.</p></div>
       <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-black text-white/65">Active {enabledNames.length}/{limit}</span>
     </div>
     <div className="flex snap-x gap-4 overflow-x-auto pb-3 pr-8 [mask-image:linear-gradient(to_right,black_94%,transparent)]">
@@ -58,7 +58,7 @@ export default function PeopleRow({ people, enabledNames, favoriteNames, activeP
         </button>;
       })}
     </div>
-    <div className="flex items-center gap-2 text-[10px] text-white/35"><Sparkles className="h-3 w-3 text-pink-200/70" />Names are saved to your private SnapNext account, not only this device.</div>
+    <div className="flex items-center gap-2 text-[10px] text-white/35"><Sparkles className="h-3 w-3 text-pink-200/70" />Weak detections and repeated face identities are hidden automatically.</div>
     {selected && <PersonDialog {...selected} limit={limit} activeCount={enabledNames.length} profile={profiles[selected.person.name] || {}} label={cleanLabel(selected.person, displayName)} onSaveCrop={(patch) => saveCrop(selected.person.name, patch)} onClose={() => setSelected(null)} onOpen={() => { setSelected(null); onOpen(selected.person.name); }} />}
   </section>;
 }
@@ -71,7 +71,13 @@ function cleanLabel(person, displayName) {
 }
 function adjustedCrop(box, profile) {
   const base = faceCropStyle(box || {});
-  return { ...base, objectPosition: `${Number(profile.x ?? 50)}% ${Number(profile.y ?? 50)}%`, transform: `${base.transform} scale(${Number(profile.zoom ?? 1)})` };
+  const hasManualPosition = Number.isFinite(Number(profile.x)) && Number.isFinite(Number(profile.y));
+  const zoom = Number.isFinite(Number(profile.zoom)) ? Number(profile.zoom) : 1;
+  return {
+    ...base,
+    objectPosition: hasManualPosition ? `${Number(profile.x)}% ${Number(profile.y)}%` : base.objectPosition,
+    transform: `${base.transform} scale(${zoom})`,
+  };
 }
 
 function PersonDialog({ person, enabled, limit, activeCount, profile, label, onSaveCrop, onClose, onOpen }) {
