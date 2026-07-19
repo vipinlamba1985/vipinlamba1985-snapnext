@@ -12,6 +12,7 @@ import LockedPersonPrompt from '@/components/magic-library/LockedPersonPrompt';
 import { buildLibrarySections, buildPersonSections, findConfirmedSelfLabel } from '@/lib/magic-library-sections';
 import { isDocsItem, mediaCategory, screenshotType } from '@/lib/media-category';
 import { mediaSrc } from '@/lib/api-client';
+import { isUnknownPerson } from '@/lib/people-identity';
 
 const NAME_KEY = 'snapnext.magicPersonNames.v1';
 const TITLES = { photos: 'Photos', videos: 'Videos', screenshots: 'Screenshots', docs: 'Docs' };
@@ -65,6 +66,7 @@ export default function MagicLibraryGalleryMagic() {
     magic.setActivePerson(''); magic.setQuery(''); setDraftQuery(''); setSectionKey(null); setCategory(null); setShotFilter('all');
   }
 
+  const activatablePeople = useMemo(() => magic.people.filter((person) => !isUnknownPerson(person)), [magic.people]);
   const selfLabel = useMemo(() => findConfirmedSelfLabel(magic.people), [magic.people]);
   const sections = useMemo(() => {
     if (magic.activePerson) return buildPersonSections({ items: magic.visibleItems, personName: magic.activePerson, displayName });
@@ -90,6 +92,7 @@ export default function MagicLibraryGalleryMagic() {
     if (!typed) return [];
     const values = new Set(magic.suggestions.filter((value) => !UUID_PATTERN.test(String(value || '').trim())));
     magic.people.forEach((person) => {
+      if (isUnknownPerson(person)) return;
       const label = displayName(person.name);
       if (label !== 'Add name') values.add(label);
     });
@@ -97,7 +100,7 @@ export default function MagicLibraryGalleryMagic() {
   }, [draftQuery, magic.people, magic.suggestions, personNames]);
 
   if (magic.busy) return <div className="grid min-h-[50vh] place-items-center"><Loader2 className="h-8 w-8 animate-spin text-pink-300" /></div>;
-  if (magic.people.length > 0 && magic.activation.active.length === 0) return <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirmPeople} busy={magic.activating} />;
+  if (activatablePeople.length > 0 && magic.activation.active.length === 0) return <PeopleActivation people={activatablePeople} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirmPeople} busy={magic.activating} />;
 
   return <div className="space-y-5">
     <header>
@@ -106,7 +109,7 @@ export default function MagicLibraryGalleryMagic() {
       {!!suggestions.length && <div className="mt-2 flex flex-wrap gap-1.5">{suggestions.map((label) => <button key={label} onClick={() => { setDraftQuery(label); runSearch(label); }} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55">{label}</button>)}</div>}
     </header>
 
-    {!!magic.people.length && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setSectionKey(null); setCategory(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
+    {!!magic.people.length && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} activeCount={magic.activation.active.length} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setSectionKey(null); setCategory(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
 
     {!magic.activePerson && <div className="grid grid-cols-4 gap-1.5"><CategoryButton icon={Camera} label="Photos" onClick={() => openCategory('photos')} className="text-pink-300" /><CategoryButton icon={Film} label="Videos" onClick={() => openCategory('videos')} className="text-purple-300" /><CategoryButton icon={ImageIcon} label="Screenshots" onClick={() => openCategory('screenshots')} className="text-sky-300" /><CategoryButton icon={FileText} label="Docs" onClick={() => openCategory('docs')} className="text-emerald-300" /></div>}
 
@@ -117,7 +120,7 @@ export default function MagicLibraryGalleryMagic() {
     {expanded ? <div><div className="mb-3"><h2 className="text-xl font-black text-white">{expanded.title}</h2><p className="text-xs text-white/40">{expanded.items.length} memories</p></div><div className="grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-6">{expanded.items.map((item, index) => <button key={item.id} onClick={() => setViewer({ item, items: expanded.items, index })} className="aspect-square overflow-hidden rounded-xl bg-white/5">{item.kind === 'photo' ? <img src={mediaSrc(item.id)} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline preload="metadata" /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>)}</div></div> : sections.map((section) => <MediaSection key={section.key} title={section.title} items={section.items} onOpen={(item, index) => setViewer({ item, items: section.items, index })} onExpand={() => { setCategory(null); setSectionKey(section.key); }} emptyCopy="No matching memories yet." />)}
 
     <MediaViewer item={viewer?.item} items={viewer?.items || []} index={viewer?.index || 0} onClose={() => setViewer(null)} onChanged={magic.reload} />
-    <LockedPersonPrompt person={lockedPerson} onClose={() => setLockedPerson(null)} />
+    <LockedPersonPrompt person={lockedPerson} onClose={() => setLockedPerson(null)} onActivated={async (person) => { setLockedPerson(null); await magic.reload(); setSectionKey(null); setCategory(null); magic.setActivePerson(person.name); }} />
   </div>;
 }
 

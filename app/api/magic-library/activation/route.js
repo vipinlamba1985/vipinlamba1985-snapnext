@@ -13,7 +13,11 @@ async function state(request) {
   const planId = entitlementForUser(user, request).planId || 'free';
   const limit = magicPeopleLimitForPlan(planId);
   const row = await db.collection('magic_library_activation').findOne({ userId: user.id });
-  const clusters = await db.collection('person_clusters').find({ userId: user.id, status: { $ne: 'hidden' } }, { projection: { clusterId: 1 } }).toArray();
+  const clusters = await db.collection('person_clusters').find({
+    userId: user.id,
+    status: { $nin: ['hidden', 'rejected', 'legacy'] },
+    identityState: { $ne: 'unknown' },
+  }, { projection: { clusterId: 1 } }).toArray();
   const validIds = new Set(clusters.map((cluster) => cluster.clusterId));
   const stored = normalizeMagicPeople(row?.active || []);
   const active = stored.filter((clusterId) => validIds.has(clusterId));

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { PEOPLE_INTELLIGENCE_VERSION, cleanCluster, isGenericIdentityLabel, isUsableFaceBox } from '@/lib/people-intelligence';
+import { normalizePeopleIdentityState, PEOPLE_IDENTITY_UNKNOWN } from '@/lib/people-identity';
 import { peopleIntelligenceReady } from '@/lib/people-intelligence.server';
 import { sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
 
@@ -71,9 +72,10 @@ export async function PATCH(request) {
   const clusterId = String(body.clusterId || '').trim();
   const hasDisplayName = Object.prototype.hasOwnProperty.call(body, 'displayName');
   const hasThumbnailCrop = Object.prototype.hasOwnProperty.call(body, 'thumbnailCrop');
+  const hasIdentityState = Object.prototype.hasOwnProperty.call(body, 'identityState');
 
   if (!clusterId) return NextResponse.json({ error: 'clusterId is required' }, { status: 400 });
-  if (!hasDisplayName && !hasThumbnailCrop) return NextResponse.json({ error: 'No person changes supplied.' }, { status: 400 });
+  if (!hasDisplayName && !hasThumbnailCrop && !hasIdentityState) return NextResponse.json({ error: 'No person changes supplied.' }, { status: 400 });
 
   const set = { updatedAt: new Date() };
   const unset = {};
@@ -89,6 +91,8 @@ export async function PATCH(request) {
     else set.thumbnailCrop = sanitizeThumbnailCrop(body.thumbnailCrop);
   }
 
+  if (hasIdentityState) set.identityState = normalizePeopleIdentityState(body.identityState);
+
   const update = { $set: set };
   if (Object.keys(unset).length) update.$unset = unset;
 
@@ -99,5 +103,14 @@ export async function PATCH(request) {
     { returnDocument: 'after' },
   );
   if (!result) return NextResponse.json({ error: 'Person cluster not found' }, { status: 404 });
-  return NextResponse.json({ ok: true, person: cleanCluster(result) });
+
+  const markedUnknown = hasIdentityState && set.identityState === PEOPLE_IDENTITY_UNKNOWN;
+  if (markedUnknown) {
+    await db.collection('magic_library_activation').updateOne(
+      { userId: user.id },
+      { $pull: { active: clusterId }, $set: { updatedAt: new Date() } },
+    );
+  }
+
+  return NextResponse.json({ ok: true, person: cleanCluster(result), deactivated: markedUnknown });
 }
