@@ -1,11 +1,29 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { cleanCluster, isGenericIdentityLabel } from '@/lib/people-intelligence';
+import { cleanCluster, isGenericIdentityLabel, isUsableFaceBox } from '@/lib/people-intelligence';
 import { peopleIntelligenceReady } from '@/lib/people-intelligence.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+function dedupePeople(rows) {
+  const seen = new Set();
+  const output = [];
+  for (const row of rows) {
+    if (!isUsableFaceBox(row.representativeFaceBox)) continue;
+    if (Number(row.representativeQuality || 0) < Number(process.env.PEOPLE_MIN_REPRESENTATIVE_QUALITY || 12)) continue;
+    const keys = [
+      row.rekognitionUserId ? `user:${row.rekognitionUserId}` : null,
+      row.representativeFaceId ? `face:${row.representativeFaceId}` : null,
+      row.displayName ? `name:${String(row.displayName).trim().toLowerCase()}` : null,
+    ].filter(Boolean);
+    if (keys.some((key) => seen.has(key))) continue;
+    keys.forEach((key) => seen.add(key));
+    output.push(row);
+  }
+  return output;
+}
 
 export async function GET(request) {
   const user = await getUserFromRequest(request);
@@ -16,12 +34,15 @@ export async function GET(request) {
     userId: user.id,
     status: { $ne: 'hidden' },
     representativeMediaId: { $exists: true, $ne: null },
+    representativeFaceBox: { $exists: true, $ne: null },
   }).sort({ representativeQuality: -1, updatedAt: -1 }).limit(1000).toArray();
 
+  const people = dedupePeople(rows).map(cleanCluster);
   return NextResponse.json({
-    people: rows.map(cleanCluster),
+    people,
     engineReady: peopleIntelligenceReady(),
-    source: 'face_clusters',
+    source: 'deduplicated_face_clusters',
+    hiddenWeakOrDuplicateCount: Math.max(0, rows.length - people.length),
   });
 }
 
