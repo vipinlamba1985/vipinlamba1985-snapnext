@@ -54,10 +54,10 @@ export async function POST(request) {
       { userId: user.id, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'failed' },
       { $set: { 'peopleIntelligence.status': 'queued', 'peopleIntelligence.retryRequestedAt': new Date() }, $unset: { 'peopleIntelligence.error': '' } },
     );
-    const result = await rebuildPeopleIntelligence({ db, userId: user.id, limit, reset: body.reset === true });
+    const result = await rebuildPeopleIntelligence({ db, userId: user.id, limit, retryFailed: body.retryFailed === true });
     return NextResponse.json({ ok: true, ...result, migration: await getStatus(db, user.id), estimatedMaxCost });
   } catch (error) {
-    console.error('[people-intelligence] reindex failed', error?.name, error?.message);
+    console.error('[people-intelligence-v3] reindex failed', error?.name, error?.message);
     const safe = publicError(error);
     return NextResponse.json({ error: safe.error, code: safe.code }, { status: safe.status });
   }
