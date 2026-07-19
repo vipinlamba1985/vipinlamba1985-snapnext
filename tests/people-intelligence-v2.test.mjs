@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchDecision, rekognitionUserId } from '../lib/people-intelligence.js';
+import { matchDecision, rekognitionUserId } from '../lib/people-match.js';
 
 test('people confidence zones separate confirmed, suggested and unmatched', () => {
   assert.equal(matchDecision(99.2), 'confirmed');
