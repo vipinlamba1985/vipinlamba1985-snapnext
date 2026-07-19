@@ -12,9 +12,10 @@ function dedupePeople(rows) {
   const seenFaces = new Set();
   const seenNames = new Set();
   const output = [];
+  const minimumQuality = Number(process.env.PEOPLE_MIN_REPRESENTATIVE_QUALITY || 10);
   for (const row of rows) {
     if (!isUsableFaceBox(row.representativeFaceBox)) continue;
-    if (Number(row.representativeQuality || 0) < Number(process.env.PEOPLE_MIN_REPRESENTATIVE_QUALITY || 42)) continue;
+    if (Number(row.representativeQuality || 0) < minimumQuality) continue;
     const userKey = String(row.rekognitionUserId || '');
     const faceKey = String(row.representativeFaceId || '');
     const nameKey = String(row.displayName || '').trim().toLowerCase();
@@ -43,7 +44,11 @@ export async function GET(request) {
       userId: user.id,
       trashed: { $ne: true },
       kind: 'photo',
-      'peopleIntelligence.version': { $ne: PEOPLE_INTELLIGENCE_VERSION },
+      $or: [
+        { 'peopleIntelligence.version': { $ne: PEOPLE_INTELLIGENCE_VERSION } },
+        { 'peopleIntelligence.status': { $in: ['queued', 'failed'] } },
+        { 'peopleIntelligence.status': 'completed', 'peopleIntelligence.faceIds.0': { $exists: false } },
+      ],
     }),
   ]);
   const people = dedupePeople(rows).map(cleanCluster);
