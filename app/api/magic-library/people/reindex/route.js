@@ -12,18 +12,33 @@ export const maxDuration = 60;
 const baseQuery = (userId) => ({ userId, trashed: { $ne: true }, kind: 'photo' });
 const pendingQuery = (userId) => ({ ...baseQuery(userId), $or: [
   { 'peopleIntelligence.version': { $ne: PEOPLE_INTELLIGENCE_VERSION } },
-  { 'peopleIntelligence.status': { $nin: ['completed', 'skipped', 'failed'] } },
+  { 'peopleIntelligence.status': { $nin: ['completed', 'skipped', 'no_faces', 'failed'] } },
+  { 'peopleIntelligence.status': 'completed', 'peopleIntelligence.faceIds.0': { $exists: false } },
 ] });
 
 async function getStatus(db, userId) {
   const base = baseQuery(userId);
-  const [total, remaining, failed, completed] = await Promise.all([
+  const [total, remaining, failed, withFaces, noFaces, skipped] = await Promise.all([
     db.collection('media').countDocuments(base),
     db.collection('media').countDocuments(pendingQuery(userId)),
     db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'failed' }),
-    db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': { $in: ['completed', 'skipped'] } }),
+    db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'completed', 'peopleIntelligence.faceIds.0': { $exists: true } }),
+    db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'no_faces' }),
+    db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'skipped' }),
   ]);
-  return { version: PEOPLE_INTELLIGENCE_VERSION, total, completed, remaining, failed, needsMigration: remaining > 0 || failed > 0 };
+  const checked = withFaces + noFaces + skipped;
+  return {
+    version: PEOPLE_INTELLIGENCE_VERSION,
+    total,
+    completed: checked,
+    checked,
+    withFaces,
+    noFaces,
+    skipped,
+    remaining,
+    failed,
+    needsMigration: remaining > 0 || failed > 0,
+  };
 }
 
 function publicError(error) {
