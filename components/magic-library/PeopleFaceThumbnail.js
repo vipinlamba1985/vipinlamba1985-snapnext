@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { mediaSrc } from '@/lib/api-client';
+import { getToken } from '@/lib/api-client';
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Number(value || 0)));
@@ -17,24 +17,30 @@ function facePosition(box, manual = {}) {
   return `${x}% ${y}%`;
 }
 
+function thumbnailSrc(mediaId) {
+  const token = getToken();
+  if (!mediaId || !token || token === 'preview-demo-token') return '';
+  return `/api/media/${encodeURIComponent(mediaId)}/thumbnail?t=${encodeURIComponent(token)}`;
+}
+
 export default function PeopleFaceThumbnail({ mediaId, faceBox, className = '', manual = {}, alt = '' }) {
   const [failed, setFailed] = useState(false);
   const objectPosition = useMemo(() => facePosition(faceBox, manual), [faceBox, manual]);
-  const zoom = clamp(Number(manual.zoom || 1), 0.9, 1.35);
+  const src = useMemo(() => thumbnailSrc(mediaId), [mediaId]);
 
-  if (!mediaId || failed) {
+  if (!src || failed) {
     return <span className={`grid place-items-center bg-white/5 font-black text-white/50 ${className}`}>?</span>;
   }
 
-  return <span className={`relative block overflow-hidden bg-white/5 ${className}`}>
+  return <span className={`block overflow-hidden bg-white/5 ${className}`}>
     <img
-      src={mediaSrc(mediaId)}
+      src={src}
       alt={alt}
       draggable={false}
-      loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
-      className="absolute inset-0 h-full w-full object-cover"
-      style={{ objectPosition, transform: `scale(${zoom})`, transformOrigin: objectPosition }}
+      className="block h-full w-full object-cover"
+      style={{ objectPosition }}
     />
   </span>;
 }
