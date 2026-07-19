@@ -48,7 +48,7 @@ export default function PeopleRow({ people, enabledNames, activeCount, favoriteN
 
   return <section className="space-y-3">
     <div className="flex items-center justify-between gap-3">
-      <div><h2 className="text-xl font-black text-white">People</h2><p className="text-xs text-white/40">Tap the photo to edit. Tap the name or memory count to open that person.</p></div>
+      <div><h2 className="text-xl font-black text-white">People</h2><p className="text-xs text-white/40">Tap a photo to edit it. Use the large button below it to view that person’s memories.</p></div>
       <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-black text-white/65">Active {activeTotal}/{limit}</span>
     </div>
     <div className="flex snap-x gap-4 overflow-x-auto pb-3 pr-8 [mask-image:linear-gradient(to_right,black_94%,transparent)]">
@@ -57,18 +57,19 @@ export default function PeopleRow({ people, enabledNames, activeCount, favoriteN
         const enabled = !unknown && enabledNames.includes(person.name);
         const profile = cropFor(person);
         const label = cleanLabel(person, displayName);
-        return <div key={person.name} className={`w-[5.75rem] shrink-0 snap-start text-center ${unknown ? 'opacity-60' : ''}`}>
-          <button type="button" onClick={() => setSelected({ person, enabled })} className="group block w-full" aria-label={`Edit ${label} thumbnail`}>
-            <span className={`relative mx-auto block h-28 w-20 overflow-hidden rounded-[1.4rem] border-[3px] bg-white/5 shadow-lg shadow-black/30 ${unknown ? 'border-white/10 grayscale' : activePerson === person.name ? 'border-pink-400 ring-4 ring-pink-500/20' : person.verificationStatus === 'suggested' ? 'border-amber-300/70' : enabled ? 'border-white/25' : 'border-white/10'}`}>
+        const memoryCount = Number(person.count || 0);
+        return <div key={person.name} className={`w-[7.25rem] shrink-0 snap-start text-center ${unknown ? 'opacity-60' : ''}`}>
+          <button type="button" onClick={() => setSelected({ person, enabled })} className="group block w-full rounded-[1.6rem] focus:outline-none focus-visible:ring-4 focus-visible:ring-pink-500/30" aria-label={`Edit ${label} thumbnail`}>
+            <span className={`relative mx-auto block h-32 w-24 overflow-hidden rounded-[1.6rem] border-[3px] bg-white/5 shadow-lg shadow-black/30 transition group-active:scale-[0.98] ${unknown ? 'border-white/10 grayscale' : activePerson === person.name ? 'border-pink-400 ring-4 ring-pink-500/20' : person.verificationStatus === 'suggested' ? 'border-amber-300/70' : enabled ? 'border-white/25' : 'border-white/10'}`}>
               <PeopleFaceThumbnail mediaId={person.representativeMediaId} faceBox={person.representativeFaceBox} manual={profile} className={`h-full w-full ${enabled ? '' : 'opacity-80'}`} />
-              <span className="absolute left-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/75 text-white/90"><Pencil className="h-3 w-3" /></span>
-              {favoriteNames.includes(person.name) && !unknown && <span className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-pink-500"><Heart className="h-3 w-3 fill-current" /></span>}
-              {unknown ? <span className="absolute bottom-1 right-1 grid h-6 w-6 place-items-center rounded-full bg-black/80 text-white/65"><UserX className="h-3.5 w-3.5" /></span> : person.verificationStatus === 'suggested' ? <span className="absolute bottom-1 right-1 grid h-6 w-6 place-items-center rounded-full bg-amber-400 text-black"><HelpCircle className="h-3.5 w-3.5" /></span> : !enabled && <span className="absolute bottom-1 right-1 grid h-6 w-6 place-items-center rounded-full bg-black/80"><LockKeyhole className="h-3 w-3" /></span>}
+              <span className="absolute left-1.5 top-1.5 inline-flex h-7 items-center gap-1 rounded-full bg-black/80 px-2 text-[10px] font-black text-white"><Pencil className="h-3 w-3" />Edit</span>
+              {favoriteNames.includes(person.name) && !unknown && <span className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-pink-500"><Heart className="h-3 w-3 fill-current" /></span>}
+              {unknown ? <span className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/80 text-white/65"><UserX className="h-4 w-4" /></span> : person.verificationStatus === 'suggested' ? <span className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-amber-400 text-black"><HelpCircle className="h-4 w-4" /></span> : !enabled && <span className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/80"><LockKeyhole className="h-3.5 w-3.5" /></span>}
             </span>
           </button>
-          <button type="button" disabled={unknown} onClick={() => openMemories(person, enabled)} className="mt-2 block w-full rounded-lg px-0.5 py-1 disabled:cursor-default" aria-label={unknown ? `Unknown face, ${person.count} memories` : `${label}, open ${person.count} memories`}>
-            <span className="block truncate text-xs font-bold text-white/75">{label}</span>
-            <span className="block text-[10px] text-white/35">{unknown ? `${person.count} memories` : person.verificationStatus === 'suggested' ? 'Needs confirmation' : enabled ? `${person.count} memories` : `Activate · ${person.count} memories`}</span>
+          <button type="button" disabled={unknown} onClick={() => openMemories(person, enabled)} className={`mt-2 flex min-h-14 w-full flex-col items-center justify-center rounded-2xl border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-4 focus-visible:ring-pink-500/30 ${unknown ? 'cursor-default border-white/5 bg-white/[0.025]' : enabled ? 'border-pink-400/25 bg-pink-500/10 active:scale-[0.98]' : 'border-white/10 bg-white/[0.055] active:scale-[0.98]'}`} aria-label={unknown ? `Unknown face, ${memoryCount} memories` : `${label}, open ${memoryCount} memories`}>
+            <span className="block w-full truncate text-sm font-black text-white/90">{label}</span>
+            <span className={`mt-0.5 block text-[11px] font-bold ${enabled ? 'text-pink-200' : 'text-white/45'}`}>{unknown ? `${memoryCount} memories` : enabled ? `View ${memoryCount} memories` : `Activate to view · ${memoryCount}`}</span>
           </button>
         </div>;
       })}
