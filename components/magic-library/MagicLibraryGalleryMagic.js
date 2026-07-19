@@ -109,7 +109,7 @@ export default function MagicLibraryGalleryMagic() {
       {!!suggestions.length && <div className="mt-2 flex flex-wrap gap-1.5">{suggestions.map((label) => <button key={label} onClick={() => { setDraftQuery(label); runSearch(label); }} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55">{label}</button>)}</div>}
     </header>
 
-    {!!magic.people.length && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setSectionKey(null); setCategory(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
+    {!!magic.people.length && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} activeCount={magic.activation.active.length} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setSectionKey(null); setCategory(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
 
     {!magic.activePerson && <div className="grid grid-cols-4 gap-1.5"><CategoryButton icon={Camera} label="Photos" onClick={() => openCategory('photos')} className="text-pink-300" /><CategoryButton icon={Film} label="Videos" onClick={() => openCategory('videos')} className="text-purple-300" /><CategoryButton icon={ImageIcon} label="Screenshots" onClick={() => openCategory('screenshots')} className="text-sky-300" /><CategoryButton icon={FileText} label="Docs" onClick={() => openCategory('docs')} className="text-emerald-300" /></div>}
 
