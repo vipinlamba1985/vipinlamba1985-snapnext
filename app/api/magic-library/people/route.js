@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { PEOPLE_INTELLIGENCE_VERSION, cleanCluster, isGenericIdentityLabel, isUsableFaceBox } from '@/lib/people-intelligence';
 import { peopleIntelligenceReady } from '@/lib/people-intelligence.server';
+import { sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -68,13 +69,33 @@ export async function PATCH(request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const body = await request.json().catch(() => ({}));
   const clusterId = String(body.clusterId || '').trim();
-  const displayName = String(body.displayName || '').trim().slice(0, 80);
+  const hasDisplayName = Object.prototype.hasOwnProperty.call(body, 'displayName');
+  const hasThumbnailCrop = Object.prototype.hasOwnProperty.call(body, 'thumbnailCrop');
+
   if (!clusterId) return NextResponse.json({ error: 'clusterId is required' }, { status: 400 });
-  if (!displayName || isGenericIdentityLabel(displayName)) return NextResponse.json({ error: 'Choose a real name or relationship label.' }, { status: 400 });
+  if (!hasDisplayName && !hasThumbnailCrop) return NextResponse.json({ error: 'No person changes supplied.' }, { status: 400 });
+
+  const set = { updatedAt: new Date() };
+  const unset = {};
+
+  if (hasDisplayName) {
+    const displayName = String(body.displayName || '').trim().slice(0, 80);
+    if (!displayName || isGenericIdentityLabel(displayName)) return NextResponse.json({ error: 'Choose a real name or relationship label.' }, { status: 400 });
+    set.displayName = displayName;
+  }
+
+  if (hasThumbnailCrop) {
+    if (body.thumbnailCrop === null) unset.thumbnailCrop = '';
+    else set.thumbnailCrop = sanitizeThumbnailCrop(body.thumbnailCrop);
+  }
+
+  const update = { $set: set };
+  if (Object.keys(unset).length) update.$unset = unset;
+
   const db = await getDb();
   const result = await db.collection('person_clusters').findOneAndUpdate(
     { userId: user.id, clusterId, indexVersion: PEOPLE_INTELLIGENCE_VERSION },
-    { $set: { displayName, updatedAt: new Date() } },
+    update,
     { returnDocument: 'after' },
   );
   if (!result) return NextResponse.json({ error: 'Person cluster not found' }, { status: 404 });
