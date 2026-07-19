@@ -13,8 +13,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const PROFILE_KEY = 'snapnext.magicPersonProfiles.v2';
 function loadProfiles() { try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}'); } catch { return {}; } }
 
-export default function PeopleRow({ people, enabledNames, favoriteNames, activePerson, displayName, onOpen, onLocked }) {
-  const [limit, setLimit] = useState(Math.max(4, enabledNames.length));
+export default function PeopleRow({ people, enabledNames, activeCount, favoriteNames, activePerson, displayName, onOpen, onLocked }) {
+  const activeTotal = Number.isFinite(Number(activeCount)) ? Number(activeCount) : Number(enabledNames.length || 0);
+  const [limit, setLimit] = useState(Math.max(4, activeTotal));
   const [selected, setSelected] = useState(null);
   const [profiles, setProfiles] = useState({});
 
@@ -23,7 +24,7 @@ export default function PeopleRow({ people, enabledNames, favoriteNames, activeP
     let cancelled = false;
     apiFetch('/magic-library/activation').then((state) => { if (!cancelled) setLimit(Number(state?.limit || 4)); }).catch(() => null);
     return () => { cancelled = true; };
-  }, [enabledNames.length]);
+  }, [activeTotal]);
 
   const orderedPeople = useMemo(() => sortPeopleForDisplay(people, enabledNames), [people, enabledNames]);
 
@@ -48,7 +49,7 @@ export default function PeopleRow({ people, enabledNames, favoriteNames, activeP
   return <section className="space-y-3">
     <div className="flex items-center justify-between gap-3">
       <div><h2 className="text-xl font-black text-white">People</h2><p className="text-xs text-white/40">Tap the photo to edit. Tap the name or memory count to open that person.</p></div>
-      <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-black text-white/65">Active {enabledNames.length}/{limit}</span>
+      <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-black text-white/65">Active {activeTotal}/{limit}</span>
     </div>
     <div className="flex snap-x gap-4 overflow-x-auto pb-3 pr-8 [mask-image:linear-gradient(to_right,black_94%,transparent)]">
       {orderedPeople.map((person) => {
@@ -73,7 +74,7 @@ export default function PeopleRow({ people, enabledNames, favoriteNames, activeP
       })}
     </div>
     <div className="flex items-center gap-2 text-[10px] text-white/35"><Sparkles className="h-3 w-3 text-pink-200/70" />Unknown faces move to the end and do not use an active-person slot.</div>
-    {selected && <PersonDialog {...selected} limit={limit} activeCount={enabledNames.length} profile={cropFor(selected.person)} label={cleanLabel(selected.person, displayName)} onSaveCrop={(patch) => saveCrop(selected.person.name, patch)} onClose={() => setSelected(null)} onOpen={() => { const personName = selected.person.name; setSelected(null); onOpen(personName); }} />}
+    {selected && <PersonDialog {...selected} limit={limit} activeCount={activeTotal} profile={cropFor(selected.person)} label={cleanLabel(selected.person, displayName)} onSaveCrop={(patch) => saveCrop(selected.person.name, patch)} onClose={() => setSelected(null)} onOpen={() => { const personName = selected.person.name; setSelected(null); onOpen(personName); }} />}
   </section>;
 }
 
@@ -107,10 +108,7 @@ function PersonDialog({ person, enabled, limit, activeCount, profile, label, onS
     setBusy('save');
     try {
       const cleanName = name.trim();
-      const payload = {
-        clusterId: person.name,
-        thumbnailCrop: resetCrop ? null : crop,
-      };
+      const payload = { clusterId: person.name, thumbnailCrop: resetCrop ? null : crop };
       if (cleanName) payload.displayName = cleanName;
       await apiFetch('/magic-library/people', { method: 'PATCH', body: JSON.stringify(payload) });
       onSaveCrop(resetCrop ? null : crop);
@@ -157,14 +155,7 @@ function PersonDialog({ person, enabled, limit, activeCount, profile, label, onS
       <button onClick={onClose} className="absolute right-4 top-4 z-10 text-white/50"><X className="h-5 w-5" /></button>
       <div className="text-center">
         <div className={`mx-auto w-fit rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider ${unknown ? 'border-white/10 bg-white/5 text-white/55' : 'border-emerald-300/20 bg-emerald-400/10 text-emerald-200'}`}>{unknown ? 'Unknown face' : 'Automatic face focus'}</div>
-        <PeopleFaceThumbnail
-          mediaId={person.representativeMediaId}
-          faceBox={person.representativeFaceBox}
-          manual={crop}
-          editable={!unknown}
-          onManualChange={updateCrop}
-          className={`mx-auto mt-4 h-64 w-44 rounded-[2rem] border-4 shadow-2xl shadow-black/50 ${unknown ? 'border-white/15 grayscale' : 'border-pink-400/50'}`}
-        />
+        <PeopleFaceThumbnail mediaId={person.representativeMediaId} faceBox={person.representativeFaceBox} manual={crop} editable={!unknown} onManualChange={updateCrop} className={`mx-auto mt-4 h-64 w-44 rounded-[2rem] border-4 shadow-2xl shadow-black/50 ${unknown ? 'border-white/15 grayscale' : 'border-pink-400/50'}`} />
         {!unknown && <p className="mt-3 inline-flex items-center gap-2 text-xs text-white/55"><Move className="h-4 w-4" />Drag the photo to move the face. Use Zoom for a closer view.</p>}
         <h2 className="mt-4 text-2xl font-black text-white">{unknown ? 'Unknown' : name || 'Name this person'}</h2>
         <p className="mt-1 text-sm text-white/50">{person.count || 0} related memories</p>
