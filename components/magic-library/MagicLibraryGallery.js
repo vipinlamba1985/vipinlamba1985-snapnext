@@ -40,6 +40,7 @@ export default function MagicLibraryGallery() {
   useEffect(() => { try { setPersonNames(JSON.parse(localStorage.getItem(NAME_KEY) || '{}')); } catch {} }, []);
 
   const displayName = (name) => personNames[name] || cleanName(name);
+  const eligiblePeople = useMemo(() => magic.people.filter((person) => person.thumbnailEligible !== false || person.isSelf || magic.activation.enabled?.includes?.(person.name)), [magic.people, magic.activation.enabled]);
 
   function renamePerson(name) {
     const nextName = window.prompt('Name this face', displayName(name) === 'Add name' ? '' : displayName(name));
@@ -108,9 +109,9 @@ export default function MagicLibraryGallery() {
   function openViewer(section, item, index) { setViewer({ item, items: section.items, index }); }
 
   if (magic.busy) return <div className="grid min-h-[50vh] place-items-center"><Loader2 className="h-8 w-8 animate-spin text-pink-300" /></div>;
-  if (magic.people.length > 0 && magic.activation.active.length === 0) return <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />;
+  if (eligiblePeople.length > 0 && magic.activation.active.length === 0) return <PeopleActivation people={eligiblePeople} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />;
 
-  const canAddMore = magic.activation.active.length < magic.activation.limit && magic.people.some((person) => !magic.activation.active.includes(person.name));
+  const canAddMore = magic.activation.active.length < magic.activation.limit && eligiblePeople.some((person) => !magic.activation.active.includes(person.name));
 
   return (
     <div className="space-y-5">
@@ -120,11 +121,10 @@ export default function MagicLibraryGallery() {
         {!!smartSuggestions.length && <div className="mt-2 flex flex-wrap gap-1.5">{smartSuggestions.map((label) => <button key={label} onClick={() => { setDraftQuery(label); runSearch(label); }} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55">{label}</button>)}</div>}
       </header>
 
-      {magic.people.length > 0 && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setOpenSection(null); setOpenCategoryKey(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
-
+      {magic.people.length > 0 && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} activeCount={magic.activation.active.length} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setOpenSection(null); setOpenCategoryKey(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
       {!magic.activePerson && <div className="grid grid-cols-4 gap-1.5"><CategoryButton icon={Camera} label="Photos" onClick={() => openCategory('photos')} className="text-pink-300" /><CategoryButton icon={Film} label="Videos" onClick={() => openCategory('videos')} className="text-purple-300" /><CategoryButton icon={ImageIcon} label="Screenshots" onClick={() => openCategory('screenshots')} className="text-sky-300" /><CategoryButton icon={FileText} label="Docs" onClick={() => openCategory('docs')} className="text-emerald-300" /></div>}
       {(magic.activePerson || magic.query || openSection || openCategoryKey) && <button onClick={showAll} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-bold text-white/65">Show all memories</button>}
-      {canAddMore && <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />}
+      {canAddMore && <PeopleActivation people={eligiblePeople} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />}
       {showContextHeading && <div><h2 className="text-xl font-black text-white">{expanded ? expanded.title : title}</h2><p className="mt-0.5 text-xs text-white/40">{magic.activePerson && magic.personBusy ? 'Counting matched memories…' : `${expanded ? expanded.items.length : resultCount} memories`}</p></div>}
 
       {magic.activePerson && magic.personBusy ? (

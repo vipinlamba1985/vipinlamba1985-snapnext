@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
+import { annotatePersonMedia } from '@/lib/people-gallery-rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,11 +23,14 @@ export async function GET(request, context) {
   if (!clusterId) return NextResponse.json({ error: 'clusterId is required' }, { status: 400 });
 
   const db = await getDb();
-  const person = await db.collection('person_clusters').findOne({
-    userId: user.id,
-    clusterId,
-    status: { $nin: ['hidden', 'rejected', 'legacy'] },
-  });
+  const [person, activation] = await Promise.all([
+    db.collection('person_clusters').findOne({
+      userId: user.id,
+      clusterId,
+      status: { $nin: ['hidden', 'rejected', 'legacy'] },
+    }),
+    db.collection('magic_library_activation').findOne({ userId: user.id }),
+  ]);
   if (!person) return NextResponse.json({ error: 'Person not found' }, { status: 404 });
 
   const url = new URL(request.url);
@@ -42,12 +46,22 @@ export async function GET(request, context) {
     db.collection('media').find(query).sort({ createdAt: -1 }).limit(limit).toArray(),
     db.collection('media').countDocuments(query),
   ]);
+  const activeClusterIds = activation?.active || [];
+  const classifiedItems = items.map((item) => annotatePersonMedia(cleanMedia(item), {
+    selectedClusterId: clusterId,
+    activeClusterIds,
+  }));
 
   return NextResponse.json({
     person: clusterId,
-    items: items.map(cleanMedia),
+    items: classifiedItems,
     total,
-    loaded: items.length,
-    truncated: total > items.length,
+    loaded: classifiedItems.length,
+    truncated: total > classifiedItems.length,
+    sections: {
+      bestEligible: classifiedItems.filter((item) => item.peopleContext?.bestEligible).length,
+      groupPhotos: classifiedItems.filter((item) => item.peopleContext?.groupPhoto).length,
+      largeGroupsExcludedFromBest: classifiedItems.filter((item) => item.peopleContext?.largeGroupPhoto && !item.peopleContext?.bestEligible).length,
+    },
   });
 }
