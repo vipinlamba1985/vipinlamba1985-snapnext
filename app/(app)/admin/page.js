@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { Activity, Crown, Shield } from 'lucide-react';
+import { Activity, Crown, Shield, ShieldCheck } from 'lucide-react';
 
 export default function Admin() {
   const [users, setUsers] = useState([]);
@@ -27,6 +27,7 @@ export default function Admin() {
         <div className="flex items-center gap-2"><Shield className="h-5 w-5 text-amber-300"/> <h1 className="text-3xl font-bold">Admin</h1></div>
         <div className="flex items-center gap-2 flex-wrap">
           <a href="/admin/operations" className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-cyan-400/10 border border-cyan-300/20 text-cyan-100 hover:bg-cyan-400/20"><Activity className="h-3.5 w-3.5"/> Launch operations →</a>
+          <a href="/admin/storage-audit" className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-400/10 border border-emerald-300/20 text-emerald-100 hover:bg-emerald-400/20"><ShieldCheck className="h-3.5 w-3.5"/> Storage & People audit →</a>
           <a href="/admin/billing" className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10">Billing health →</a>
           <a href="/admin/storage" className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10">Storage health →</a>
           <a href="/admin/emails" className="text-sm inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 hover:bg-white/10">Email log →</a>
