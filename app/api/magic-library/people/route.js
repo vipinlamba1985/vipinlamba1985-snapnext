@@ -16,8 +16,9 @@ function dedupePeople(rows) {
   const output = [];
   const minimumQuality = Number(process.env.PEOPLE_MIN_REPRESENTATIVE_QUALITY || 10);
   for (const row of rows) {
-    if (!isUsableFaceBox(row.representativeFaceBox)) continue;
-    if (Number(row.representativeQuality || 0) < minimumQuality) continue;
+    const explicitlyRestored = Boolean(row.isSelf || row.restoredAt);
+    if (!explicitlyRestored && !isUsableFaceBox(row.representativeFaceBox)) continue;
+    if (!explicitlyRestored && Number(row.representativeQuality || 0) < minimumQuality) continue;
     const userKey = String(row.rekognitionUserId || '');
     const faceKey = String(row.representativeFaceId || '');
     const nameKey = String(row.displayName || '').trim().toLowerCase();
