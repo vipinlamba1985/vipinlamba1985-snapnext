@@ -110,7 +110,7 @@ function PersonDialog({ person, enabled, limit, activeCount, profile, label, onS
   const [resetCrop, setResetCrop] = useState(false);
   const [busy, setBusy] = useState('');
   const canActivate = activeCount < limit;
-  const photoCount = Number(person.distinctPhotoCount ?? person.photos ?? person.count || 0);
+  const photoCount = Number((person.distinctPhotoCount ?? person.photos ?? person.count) || 0);
 
   function updateCrop(next) { setCrop(sanitizeThumbnailCrop(next)); setResetCrop(false); }
   function resetToAutomatic() { setCrop({ x: 0, y: 0, zoom: 1 }); setResetCrop(true); }
