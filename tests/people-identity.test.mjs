@@ -10,16 +10,17 @@ test('unknown identity state is explicit and safe by default', () => {
   assert.equal(isUnknownPerson({}), false);
 });
 
-test('active people appear first and unknown faces move to the end', () => {
+test('self appears first, active people follow, and unknown faces move to the end', () => {
   const people = [
     { name: 'unknown-face', identityState: 'unknown', count: 99 },
     { name: 'inactive', verificationStatus: 'confirmed', count: 50 },
     { name: 'review', verificationStatus: 'suggested', count: 10 },
     { name: 'active', verificationStatus: 'confirmed', count: 2 },
+    { name: 'self-face', isSelf: true, verificationStatus: 'confirmed', count: 1 },
   ];
   assert.deepEqual(
     sortPeopleForDisplay(people, ['active']).map((person) => person.name),
-    ['active', 'review', 'inactive', 'unknown-face'],
+    ['self-face', 'active', 'review', 'inactive', 'unknown-face'],
   );
 });
 
