@@ -5,6 +5,7 @@ import { PEOPLE_INTELLIGENCE_VERSION, cleanCluster, isGenericIdentityLabel, isUs
 import { normalizePeopleIdentityState, PEOPLE_IDENTITY_UNKNOWN } from '@/lib/people-identity';
 import { peopleIntelligenceReady } from '@/lib/people-intelligence.server';
 import { sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
+import { personThumbnailEligibility } from '@/lib/people-gallery-rules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,7 +60,7 @@ export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const db = await getDb();
-  const [rows, remaining] = await Promise.all([
+  const [rows, remaining, activation] = await Promise.all([
     db.collection('person_clusters').find({
       userId: user.id,
       indexVersion: PEOPLE_INTELLIGENCE_VERSION,
@@ -77,25 +78,40 @@ export async function GET(request) {
         { 'peopleIntelligence.status': 'completed', 'peopleIntelligence.faceIds.0': { $exists: false } },
       ],
     }),
+    db.collection('magic_library_activation').findOne({ userId: user.id }),
   ]);
+  const activeNames = activation?.active || [];
   const deduped = dedupePeople(rows);
   const liveCounts = await liveCountsByCluster(db, user.id, deduped.map((row) => row.clusterId).filter(Boolean));
   const people = deduped.map((row) => {
     const live = liveCounts.get(String(row.clusterId)) || { count: 0, photos: 0, videos: 0 };
-    return cleanCluster({
+    const eligibility = personThumbnailEligibility({
       ...row,
-      liveMemoryCount: live.count,
+      name: row.clusterId,
       livePhotoCount: live.photos,
-      liveVideoCount: live.videos,
-    });
+    }, activeNames);
+    return {
+      ...cleanCluster({
+        ...row,
+        liveMemoryCount: live.count,
+        livePhotoCount: live.photos,
+        liveVideoCount: live.videos,
+      }),
+      distinctPhotoCount: eligibility.photoCount,
+      thumbnailEligible: eligibility.eligible,
+      thumbnailEligibilityReason: eligibility.reason,
+    };
   });
+  const eligiblePeopleCount = people.filter((person) => person.thumbnailEligible).length;
   return NextResponse.json({
     people,
+    eligiblePeopleCount,
+    suppressedOneOffCount: Math.max(0, people.length - eligiblePeopleCount),
     engineReady: peopleIntelligenceReady(),
     version: PEOPLE_INTELLIGENCE_VERSION,
     migrationRequired: remaining > 0,
     migrationRemaining: remaining,
-    source: 'people_v3_live_media_counts',
+    source: 'people_v3_recurring_face_thumbnails',
     hiddenWeakOrDuplicateCount: Math.max(0, rows.length - deduped.length),
   });
 }
