@@ -41,7 +41,7 @@ export async function GET(request) {
       status: { $nin: ['hidden', 'rejected', 'legacy'] },
       representativeMediaId: { $exists: true, $ne: null },
       representativeFaceBox: { $exists: true, $ne: null },
-    }).sort({ representativeQuality: -1, updatedAt: -1 }).limit(1000).toArray(),
+    }).sort({ isSelf: -1, representativeQuality: -1, updatedAt: -1 }).limit(1000).toArray(),
     db.collection('media').countDocuments({
       userId: user.id,
       trashed: { $ne: true },
