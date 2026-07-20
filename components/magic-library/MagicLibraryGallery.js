@@ -102,7 +102,7 @@ export default function MagicLibraryGallery() {
 
   const expanded = categoryExpanded || sections.find((section) => section.key === openSection);
   const title = magic.activePerson ? displayName(magic.activePerson) : magic.query ? `Results for “${magic.query}”` : 'Magic Library';
-  const resultCount = magic.query || magic.activePerson ? magic.visibleItems.length : magic.items.length;
+  const resultCount = magic.activePerson ? magic.visibleTotal : magic.query ? magic.visibleItems.length : magic.items.length;
   const showContextHeading = Boolean(expanded || magic.activePerson || magic.query);
 
   function openViewer(section, item, index) { setViewer({ item, items: section.items, index }); }
@@ -125,9 +125,11 @@ export default function MagicLibraryGallery() {
       {!magic.activePerson && <div className="grid grid-cols-4 gap-1.5"><CategoryButton icon={Camera} label="Photos" onClick={() => openCategory('photos')} className="text-pink-300" /><CategoryButton icon={Film} label="Videos" onClick={() => openCategory('videos')} className="text-purple-300" /><CategoryButton icon={ImageIcon} label="Screenshots" onClick={() => openCategory('screenshots')} className="text-sky-300" /><CategoryButton icon={FileText} label="Docs" onClick={() => openCategory('docs')} className="text-emerald-300" /></div>}
       {(magic.activePerson || magic.query || openSection || openCategoryKey) && <button onClick={showAll} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-bold text-white/65">Show all memories</button>}
       {canAddMore && <PeopleActivation people={magic.people} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirm} busy={magic.activating} />}
-      {showContextHeading && <div><h2 className="text-xl font-black text-white">{expanded ? expanded.title : title}</h2><p className="mt-0.5 text-xs text-white/40">{expanded ? expanded.items.length : resultCount} memories</p></div>}
+      {showContextHeading && <div><h2 className="text-xl font-black text-white">{expanded ? expanded.title : title}</h2><p className="mt-0.5 text-xs text-white/40">{magic.activePerson && magic.personBusy ? 'Counting matched memories…' : `${expanded ? expanded.items.length : resultCount} memories`}</p></div>}
 
-      {expanded ? (
+      {magic.activePerson && magic.personBusy ? (
+        <div className="flex min-h-40 items-center justify-center gap-2 rounded-3xl border border-white/10 bg-white/[0.035] text-sm font-bold text-white/55"><Loader2 className="h-4 w-4 animate-spin text-pink-300" />Loading all matched memories…</div>
+      ) : expanded ? (
         <div>
           <div className="mb-3 flex items-center justify-between gap-3"><button onClick={() => { setOpenSection(null); setOpenCategoryKey(null); }} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-bold text-white/65">Back to sections</button><div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] p-1"><button onClick={() => setGridSize('small')} className={`grid h-9 w-9 place-items-center rounded-full ${gridSize === 'small' ? 'bg-white text-black' : 'text-white/60'}`} aria-label="Smaller thumbnails"><ZoomOut className="h-4 w-4" /></button><button onClick={() => setGridSize('medium')} className={`h-9 rounded-full px-3 text-[11px] font-black ${gridSize === 'medium' ? 'bg-white text-black' : 'text-white/60'}`}>Fit</button><button onClick={() => setGridSize('large')} className={`grid h-9 w-9 place-items-center rounded-full ${gridSize === 'large' ? 'bg-white text-black' : 'text-white/60'}`} aria-label="Larger thumbnails"><ZoomIn className="h-4 w-4" /></button></div></div>
           <div className={`grid gap-2 ${GRID_CLASSES[gridSize]}`}>{expanded.items.map((item, index) => <button key={item.id} onClick={() => openViewer(expanded, item, index)} className="aspect-square overflow-hidden rounded-xl bg-white/5">{item.kind === 'photo' ? <img src={`/api/media/${item.id}`} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={`/api/media/${item.id}`} className="h-full w-full object-cover" muted /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>)}</div>

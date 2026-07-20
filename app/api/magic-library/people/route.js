@@ -31,6 +31,30 @@ function dedupePeople(rows) {
   return output;
 }
 
+async function liveCountsByCluster(db, userId, clusterIds) {
+  if (!clusterIds.length) return new Map();
+  const rows = await db.collection('media').aggregate([
+    {
+      $match: {
+        userId,
+        trashed: { $ne: true },
+        'peopleIntelligence.clusterIds': { $in: clusterIds },
+      },
+    },
+    { $unwind: '$peopleIntelligence.clusterIds' },
+    { $match: { 'peopleIntelligence.clusterIds': { $in: clusterIds } } },
+    {
+      $group: {
+        _id: '$peopleIntelligence.clusterIds',
+        count: { $sum: 1 },
+        photos: { $sum: { $cond: [{ $eq: ['$kind', 'photo'] }, 1, 0] } },
+        videos: { $sum: { $cond: [{ $eq: ['$kind', 'video'] }, 1, 0] } },
+      },
+    },
+  ]).toArray();
+  return new Map(rows.map((row) => [String(row._id), row]));
+}
+
 export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -54,15 +78,25 @@ export async function GET(request) {
       ],
     }),
   ]);
-  const people = dedupePeople(rows).map(cleanCluster);
+  const deduped = dedupePeople(rows);
+  const liveCounts = await liveCountsByCluster(db, user.id, deduped.map((row) => row.clusterId).filter(Boolean));
+  const people = deduped.map((row) => {
+    const live = liveCounts.get(String(row.clusterId)) || { count: 0, photos: 0, videos: 0 };
+    return cleanCluster({
+      ...row,
+      liveMemoryCount: live.count,
+      livePhotoCount: live.photos,
+      liveVideoCount: live.videos,
+    });
+  });
   return NextResponse.json({
     people,
     engineReady: peopleIntelligenceReady(),
     version: PEOPLE_INTELLIGENCE_VERSION,
     migrationRequired: remaining > 0,
     migrationRemaining: remaining,
-    source: 'people_v3_clean_clusters',
-    hiddenWeakOrDuplicateCount: Math.max(0, rows.length - people.length),
+    source: 'people_v3_live_media_counts',
+    hiddenWeakOrDuplicateCount: Math.max(0, rows.length - deduped.length),
   });
 }
 

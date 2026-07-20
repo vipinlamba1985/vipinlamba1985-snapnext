@@ -19,6 +19,9 @@ function isAllMemoriesCommand(value) {
 
 export default function useMagicLibrary() {
   const [items, setItems] = useState([]);
+  const [personItems, setPersonItems] = useState([]);
+  const [personTotal, setPersonTotal] = useState(0);
+  const [personBusy, setPersonBusy] = useState(false);
   const [people, setPeople] = useState([]);
   const [peopleEngineReady, setPeopleEngineReady] = useState(false);
   const [activation, setActivation] = useState({ planId: 'free', limit: 4, active: [], enabled: [] });
@@ -49,14 +52,48 @@ export default function useMagicLibrary() {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!activePerson) {
+      setPersonItems([]);
+      setPersonTotal(0);
+      setPersonBusy(false);
+      return () => { cancelled = true; };
+    }
+
+    setPersonBusy(true);
+    apiFetch(`/magic-library/people/${encodeURIComponent(activePerson)}/media?limit=2000`)
+      .then((state) => {
+        if (cancelled) return;
+        setPersonItems(state.items || []);
+        setPersonTotal(Number(state.total || 0));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPersonItems([]);
+        setPersonTotal(0);
+      })
+      .finally(() => { if (!cancelled) setPersonBusy(false); });
+
+    return () => { cancelled = true; };
+  }, [activePerson, items]);
+
   const suggestions = useMemo(() => buildMagicSuggestions(items), [items]);
-  const visibleItems = useMemo(() => filterMagicItems(items, query, activePerson), [items, query, activePerson]);
+  const visibleItems = useMemo(() => {
+    const source = activePerson ? personItems : items;
+    return filterMagicItems(source, query, '');
+  }, [items, personItems, query, activePerson]);
+  const visibleTotal = useMemo(() => (activePerson && !query ? personTotal : visibleItems.length), [activePerson, personTotal, query, visibleItems.length]);
   const bestItems = useMemo(() => bestMagicItems(visibleItems), [visibleItems]);
   const videos = useMemo(() => visibleItems.filter((item) => item.kind === 'video'), [visibleItems]);
   const photos = useMemo(() => visibleItems.filter((item) => item.kind === 'photo'), [visibleItems]);
 
   function setActivePerson(value) {
     const next = String(value || '');
+    if (next !== activePerson) {
+      setPersonItems([]);
+      setPersonTotal(0);
+    }
     setActivePersonState(next);
     setExplicitAllMemories(!next);
   }
@@ -114,6 +151,8 @@ export default function useMagicLibrary() {
       });
       setActivation(next);
       setDraftNames(next.active || []);
+      setPersonItems([]);
+      setPersonTotal(0);
       setActivePersonState(name);
       setExplicitAllMemories(false);
       return next;
@@ -145,8 +184,10 @@ export default function useMagicLibrary() {
     query,
     activePerson,
     busy,
+    personBusy,
     activating,
     visibleItems,
+    visibleTotal,
     bestItems,
     videos,
     photos,
