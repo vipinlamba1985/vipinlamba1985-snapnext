@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { DEFAULT_SMART_SYNC_PROFILE, normalizeSmartSyncProfile, SMART_SYNC_PROVIDERS } from '@/lib/smart-sync';
 import { listProviderStatus } from '@/lib/smart-sync/providers';
+import { cloudInventorySnapshot, normalizeSyncMetrics } from '@/lib/smart-sync/cloud-assets';
 
 export const runtime = 'nodejs';
 
@@ -26,16 +27,56 @@ function planFingerprint(profile) {
   });
 }
 
+function publicCloudAsset(asset = {}) {
+  return {
+    id: asset.id,
+    provider: asset.provider,
+    providerFileId: asset.providerFileId,
+    name: asset.name,
+    mime: asset.mime,
+    kind: asset.kind,
+    size: Number(asset.size || 0),
+    createdAt: asset.createdAt || null,
+    modifiedAt: asset.modifiedAt || null,
+    importState: asset.importState || 'available_to_import',
+    sourceState: asset.sourceState || 'active',
+    importOutcome: asset.importOutcome || null,
+    mediaId: asset.mediaId || null,
+    lastError: asset.lastError || null,
+  };
+}
+
 export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
   const db = await getDb();
   const saved = await db.collection('smart_sync_profiles').findOne({ userId: user.id });
-  const connections = await db.collection('cloud_connections').find({ userId: user.id }).project({ provider: 1, connectedAt: 1, autoSyncEnabled: 1 }).toArray();
+  const profile = normalizeSmartSyncProfile(saved || DEFAULT_SMART_SYNC_PROFILE);
+  const connections = await db.collection('cloud_connections').find({ userId: user.id }).project({
+    provider: 1,
+    connectedAt: 1,
+    autoSyncEnabled: 1,
+    lastAutoSyncAt: 1,
+    lastAutoSyncError: 1,
+    smartSyncInitialCompleted: 1,
+    driveChangePageToken: 1,
+    syncMetrics: 1,
+    lastSyncMetrics: 1,
+  }).toArray();
   const readiness = new Map(listProviderStatus().map(provider => [provider.id, provider]));
+  const selectedConnection = connections.find(connection => connection.provider === profile.providerId) || null;
+  const [storage, inventory, recentAssets] = await Promise.all([
+    storageSnapshot(db, user),
+    cloudInventorySnapshot(db, user.id, profile.providerId),
+    db.collection('cloud_assets')
+      .find({ userId: user.id, provider: profile.providerId })
+      .sort({ modifiedAt: -1, updatedAt: -1 })
+      .limit(8)
+      .toArray(),
+  ]);
 
   return json({
-    profile: normalizeSmartSyncProfile(saved || DEFAULT_SMART_SYNC_PROFILE),
+    profile,
     providers: SMART_SYNC_PROVIDERS.map(provider => {
       const status = readiness.get(provider.id) || {};
       const connected = provider.surface === 'native'
@@ -48,7 +89,19 @@ export async function GET(request) {
         connected,
       };
     }),
-    storage: await storageSnapshot(db, user),
+    storage,
+    inventory,
+    recentAssets: recentAssets.map(publicCloudAsset),
+    operations: selectedConnection ? {
+      provider: selectedConnection.provider,
+      connectedAt: selectedConnection.connectedAt || null,
+      lastAutoSyncAt: selectedConnection.lastAutoSyncAt || null,
+      lastError: selectedConnection.lastAutoSyncError || null,
+      initialDiscoveryComplete: Boolean(selectedConnection.smartSyncInitialCompleted),
+      incrementalCursorReady: Boolean(selectedConnection.driveChangePageToken),
+      totals: normalizeSyncMetrics(selectedConnection.syncMetrics),
+      lastRun: normalizeSyncMetrics(selectedConnection.lastSyncMetrics),
+    } : null,
     updatedAt: saved?.updatedAt || null,
   });
 }
