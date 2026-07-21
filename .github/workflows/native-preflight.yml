@@ -29,13 +29,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-      - run: npm ci
+      - run: npm install --no-audit --no-fund
       - run: npm run native:bootstrap:android
       - run: npm run native:preflight -- --require=android
       - run: npm run policy:android
@@ -51,9 +51,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm install --no-audit --no-fund
       - run: npm run native:bootstrap:ios
       - run: npm run native:preflight -- --require=ios
       - run: npm run policy:ios
