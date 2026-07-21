@@ -4,10 +4,65 @@ Smart Sync uses one shared server-side job model for the web app, protected cron
 
 ## What is active now
 
-- Google Drive: read-only OAuth, manual browsing, durable Smart Sync jobs, duplicate checks, storage enforcement, pause/resume/retry/stop, web-assisted batches, and protected cron continuation.
+- Google Drive: read-only OAuth, metadata inventory, provider-native change cursors, durable Smart Sync jobs, checksum-first duplicate checks, storage enforcement, pause/resume/retry/stop, web-assisted batches, and protected cron continuation.
 - Google Photos: OAuth foundation for the Google Photos Picker API. Users must select the items they want to share with SnapNext; broad full-library read access is not used.
 - Dropbox and OneDrive: OAuth connection foundations are present; import adapters must be completed before enabling them for users.
 - iOS and Android: server permission, device registration, manifest, prioritization, duplicate, and capacity contracts are present. The signed native apps must implement the device-library and background-upload clients.
+
+## Cloud inventory states
+
+Provider metadata is stored separately in `cloud_assets`. Metadata records do not consume plan storage and do not represent a backup by themselves.
+
+- `available_to_import`: discovered at the provider; the original has not been copied to SnapNext.
+- `importing`: an approved transfer is active.
+- `safe_in_snapnext`: the original was copied and SHA-256 verified, or an exact verified duplicate already exists in SnapNext.
+- `capacity_blocked`: metadata is retained, but the original was not copied because plan storage is full.
+- `failed`: the transfer needs attention.
+- `source_removed`: the provider reported that the source item was removed.
+- `unsupported`: the provider item is not a supported photo or video.
+
+Only `media` records count as stored SnapNext memories. Provider thumbnails and metadata must never be shown as permanent backups.
+
+## Google Drive incremental sync
+
+1. Before the first full inventory scan, SnapNext captures a Drive start page token.
+2. The initial library is enumerated with durable page tokens.
+3. After initial discovery completes, the captured token becomes the change cursor.
+4. Later jobs use the Drive Changes API rather than modified-time rescans.
+5. `nextPageToken` is persisted while a change feed has more pages.
+6. `newStartPageToken` is saved only after all discovered items on the final page are processed.
+7. Removed files update metadata state but never delete an imported SnapNext memory.
+
+This sequence prevents files changed during initial discovery from being missed.
+
+## Duplicate verification
+
+Duplicate checks happen in this order:
+
+1. Same provider file ID and same provider version/checksum: already imported.
+2. Provider checksum plus file size: avoid downloading when an exact stored match exists.
+3. Downloaded bytes: compute SnapNext SHA-256.
+4. Existing SHA-256 match: skip a duplicate after verification.
+5. New bytes: save to storage, persist SHA-256 verification, then mark the cloud asset **Safe in SnapNext**.
+
+If the same provider file ID has a newer version or checksum, SnapNext imports it as a new version and links it to the earlier media record.
+
+## Operational metrics
+
+Smart Sync stores cumulative and last-run metrics on the provider connection and job:
+
+- items discovered
+- metadata upserts
+- provider API calls
+- downloads avoided by provider checksum
+- duplicates detected by SnapNext SHA-256
+- bytes downloaded
+- bytes stored
+- items prevented by storage capacity
+- unsupported items
+- source removals
+
+These metrics are visible on the Smart Sync page without exposing OAuth tokens or provider cursors.
 
 ## Web OAuth providers
 
@@ -64,10 +119,12 @@ Smart Sync uses one shared server-side job model for the web app, protected cron
 3. The user explicitly selects **Approve and start**.
 4. One unresolved job is allowed per user/provider.
 5. The worker leases a job before processing to prevent duplicate workers.
-6. Google Drive processes at most 10 files per batch.
-7. The web app advances batches while open; the protected cron continues queued work later.
-8. Pause, resume, retry, stop, counters, errors, and cursor position persist in MongoDB.
-9. Account deletion removes profiles, jobs, devices, native-upload records, and cloud tokens.
+6. Google Drive processes at most 10 originals per transfer batch.
+7. Metadata discovery uses provider page tokens and may inventory up to 500 provider records per discovery page.
+8. The web app advances batches while open; the protected cron continues queued work later.
+9. Pause, resume, retry, stop, counters, metrics, errors, and cursor position persist in MongoDB.
+10. Disconnecting removes provider tokens and metadata inventory but keeps safely imported SnapNext memories.
+11. Full account deletion removes profiles, jobs, devices, native-upload records, cloud metadata, and cloud tokens.
 
 ## Deployment note
 
