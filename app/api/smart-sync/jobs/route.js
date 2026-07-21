@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { SMART_SYNC_PROVIDERS } from '@/lib/smart-sync';
-import { createSmartSyncJob, publicSmartSyncJob } from '@/lib/smart-sync/jobs';
+import { ACTIVE_SMART_SYNC_JOB_STATUSES, createSmartSyncJob, publicSmartSyncJob } from '@/lib/smart-sync/jobs';
 
 export const runtime = 'nodejs';
 
@@ -13,6 +13,9 @@ async function providerReady(db, userId, profile) {
   const provider = SMART_SYNC_PROVIDERS.find(item => item.id === profile.providerId);
   if (!provider) return { error: 'Choose a supported Smart Sync source.' };
   if (provider.surface === 'web') {
+    if (provider.syncStrategy !== 'durable_cloud_job') {
+      return { error: `${provider.name} is visible for setup, but its import worker is not enabled yet.` };
+    }
     const connection = await db.collection('cloud_connections').findOne({ userId, provider: profile.providerId });
     if (!connection) return { error: `Connect ${provider.name} before creating a sync job.` };
     return { provider, connection };
@@ -46,8 +49,18 @@ export async function POST(request) {
 
   const activeKey = `${user.id}:${profile.providerId}`;
   await db.collection('smart_sync_jobs').createIndex({ activeKey: 1 }, { unique: true, sparse: true });
-  const existing = await db.collection('smart_sync_jobs').findOne({ activeKey });
-  if (existing) return json({ job: publicSmartSyncJob(existing), existing: true });
+  const existing = await db.collection('smart_sync_jobs').findOne({
+    $or: [
+      { activeKey },
+      { userId: user.id, providerId: profile.providerId, status: { $in: ACTIVE_SMART_SYNC_JOB_STATUSES } },
+    ],
+  });
+  if (existing) {
+    if (!existing.activeKey) {
+      await db.collection('smart_sync_jobs').updateOne({ _id: existing._id }, { $set: { activeKey, updatedAt: new Date() } }).catch(() => {});
+    }
+    return json({ job: publicSmartSyncJob({ ...existing, activeKey }), existing: true });
+  }
 
   const sourceFileIds = Array.isArray(body.sourceFileIds) ? body.sourceFileIds : body.fileIds;
   const job = {
