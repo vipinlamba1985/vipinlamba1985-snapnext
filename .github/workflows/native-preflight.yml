@@ -37,7 +37,7 @@ jobs:
           java-version: '21'
       - run: npm ci
       - run: npm run native:bootstrap:android
-      - run: npm run native:preflight -- --require-platforms
+      - run: npm run native:preflight -- --require=android
       - run: npm run policy:android
       - name: Compile Android shell
         working-directory: android
@@ -55,7 +55,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run native:bootstrap:ios
-      - run: npm run native:preflight -- --require-platforms
+      - run: npm run native:preflight -- --require=ios
       - run: npm run policy:ios
       - name: Compile iOS shell without signing
         shell: bash
