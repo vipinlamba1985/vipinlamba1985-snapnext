@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { storage } from '@/lib/storage';
-import { entitlementForUser } from '@/lib/entitlements';
+import {
+  importGoogleDriveAsset,
+  inventoryGoogleDriveAssets,
+} from '@/lib/smart-sync/google-drive-worker';
+import {
+  ensureCloudAssetIndexes,
+  mergeSyncMetrics,
+  metricsIncrementPatch,
+  normalizeSyncMetrics,
+} from '@/lib/smart-sync/cloud-assets';
 
 export const runtime = 'nodejs';
 
@@ -15,7 +22,7 @@ const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 const OAUTH_COOKIE = 'snapnext_cloud_state';
 const MAX_IMPORT_FILES = 10;
-const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
+const DRIVE_FIELDS = 'id,name,mimeType,size,createdTime,modifiedTime,thumbnailLink,md5Checksum,sha1Checksum,sha256Checksum,version,trashed';
 
 function json(data, status = 200) { return NextResponse.json(data, { status }); }
 function appUrl(request) { return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin; }
@@ -81,7 +88,7 @@ async function accessToken(db, connection) {
 async function driveFiles(token, pageToken = '') {
   const params = new URLSearchParams({
     q: "trashed = false and (mimeType contains 'image/' or mimeType contains 'video/')",
-    fields: 'nextPageToken,files(id,name,mimeType,size,createdTime,modifiedTime,thumbnailLink)',
+    fields: `nextPageToken,files(${DRIVE_FIELDS})`,
     pageSize: '100',
     orderBy: 'modifiedTime desc',
   });
@@ -90,6 +97,27 @@ async function driveFiles(token, pageToken = '') {
   const data = await response.json();
   if (!response.ok) throw new Error('Google Drive could not be opened right now.');
   return data;
+}
+
+async function currentUsage(db, userId) {
+  const [usage] = await db.collection('media').aggregate([
+    { $match: { userId, trashed: { $ne: true } } },
+    { $group: { _id: null, bytes: { $sum: '$size' } } },
+  ]).toArray();
+  return Number(usage?.bytes || 0);
+}
+
+async function recordManualMetrics(db, connection, metrics) {
+  const increment = metricsIncrementPatch(metrics);
+  const update = {
+    $set: {
+      lastSyncMetrics: normalizeSyncMetrics(metrics),
+      lastAutoSyncAt: new Date(),
+      updatedAt: new Date(),
+    },
+  };
+  if (Object.keys(increment).length) update.$inc = increment;
+  await db.collection('cloud_connections').updateOne({ _id: connection._id }, update);
 }
 
 export async function GET(request, context) {
@@ -112,9 +140,40 @@ export async function GET(request, context) {
     const data = await response.json();
     if (!response.ok || !data.access_token) return cloudRedirect(request, 'failed');
 
-    const set = { userId: parsed.userId, provider: 'google_drive', accessToken: encrypt(data.access_token), expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000), connectedAt: new Date(), updatedAt: new Date() };
+    const set = {
+      userId: parsed.userId,
+      provider: 'google_drive',
+      accessToken: encrypt(data.access_token),
+      expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000),
+      connectedAt: new Date(),
+      smartSyncInitialCompleted: false,
+      updatedAt: new Date(),
+    };
     if (data.refresh_token) set.refreshToken = encrypt(data.refresh_token);
-    await db.collection('cloud_connections').updateOne({ userId: parsed.userId, provider: 'google_drive' }, { $set: set }, { upsert: true });
+    await db.collection('cloud_connections').updateOne(
+      { userId: parsed.userId, provider: 'google_drive' },
+      {
+        $set: set,
+        $unset: {
+          driveChangePageToken: '',
+          driveInitialStartPageToken: '',
+          smartSyncCursorAt: '',
+          smartSyncInitialBeforeAt: '',
+          smartSyncInitialNewestAt: '',
+        },
+      },
+      { upsert: true },
+    );
+    await Promise.all([
+      db.collection('cloud_assets').deleteMany({ userId: parsed.userId, provider: 'google_drive' }),
+      db.collection('smart_sync_jobs').updateMany(
+        { userId: parsed.userId, providerId: 'google_drive', status: { $in: ['queued', 'running', 'paused'] } },
+        {
+          $set: { status: 'stopped', stopRequested: true, pauseRequested: false, completedAt: new Date(), updatedAt: new Date() },
+          $unset: { activeKey: '', leaseToken: '', leaseUntil: '' },
+        },
+      ),
+    ]);
     return cloudRedirect(request, 'connected');
   }
 
@@ -133,12 +192,49 @@ export async function GET(request, context) {
   const connection = await getConnection(db, user.id);
   if (action === 'files') {
     if (!connection) return json({ error: 'Connect Google Drive first.' }, 400);
+    await ensureCloudAssetIndexes(db);
     const token = await accessToken(db, connection);
     const data = await driveFiles(token, new URL(request.url).searchParams.get('pageToken') || '');
-    return json({ items: (data.files || []).map(file => ({ id: file.id, name: file.name, mime: file.mimeType, size: Number(file.size || 0), createdAt: file.createdTime, modifiedAt: file.modifiedTime, thumbnail: file.thumbnailLink })), nextPageToken: data.nextPageToken || null });
+    await inventoryGoogleDriveAssets({ db, userId: user.id, items: data.files || [] });
+    const assets = await db.collection('cloud_assets').find({
+      userId: user.id,
+      provider: 'google_drive',
+      providerFileId: { $in: (data.files || []).map(file => file.id) },
+    }).toArray();
+    const assetById = new Map(assets.map(asset => [asset.providerFileId, asset]));
+    const metrics = normalizeSyncMetrics({
+      discoveredItems: (data.files || []).length,
+      metadataUpserts: (data.files || []).length,
+      providerApiCalls: 1,
+    });
+    await recordManualMetrics(db, connection, metrics);
+    return json({
+      items: (data.files || []).map(file => {
+        const asset = assetById.get(file.id);
+        return {
+          id: file.id,
+          name: file.name,
+          mime: file.mimeType,
+          size: Number(file.size || 0),
+          createdAt: file.createdTime,
+          modifiedAt: file.modifiedTime,
+          thumbnail: file.thumbnailLink,
+          importState: asset?.importState || 'available_to_import',
+          importOutcome: asset?.importOutcome || null,
+        };
+      }),
+      nextPageToken: data.nextPageToken || null,
+    });
   }
 
-  return json({ configured: configured(), connected: Boolean(connection), connectedAt: connection?.connectedAt || null, provider: 'Google Drive' });
+  return json({
+    configured: configured(),
+    connected: Boolean(connection),
+    connectedAt: connection?.connectedAt || null,
+    provider: 'Google Drive',
+    incrementalCursorReady: Boolean(connection?.driveChangePageToken),
+    metrics: normalizeSyncMetrics(connection?.syncMetrics),
+  });
 }
 
 export async function POST(request, context) {
@@ -150,43 +246,38 @@ export async function POST(request, context) {
   const connection = await getConnection(db, user.id);
   if (!connection) return json({ error: 'Connect Google Drive first.' }, 400);
   const { fileIds = [] } = await request.json().catch(() => ({}));
-  const ids = [...new Set(fileIds)].slice(0, MAX_IMPORT_FILES);
+  const ids = [...new Set(fileIds.map(value => String(value || '').trim()).filter(Boolean))].slice(0, MAX_IMPORT_FILES);
   if (!ids.length) return json({ error: 'Choose at least one photo or video.' }, 400);
+  await ensureCloudAssetIndexes(db);
   const token = await accessToken(db, connection);
   const results = [];
+  let usedBytes = await currentUsage(db, user.id);
+  let metrics = normalizeSyncMetrics();
 
   for (const driveId of ids) {
     try {
-      const metaResponse = await fetch(`${DRIVE_FILES}/${encodeURIComponent(driveId)}?fields=id,name,mimeType,size,createdTime`, { headers: { Authorization: `Bearer ${token}` } });
-      const meta = await metaResponse.json();
-      if (!metaResponse.ok || (!meta.mimeType?.startsWith('image/') && !meta.mimeType?.startsWith('video/'))) throw new Error('This item is not a supported photo or video.');
-      const size = Number(meta.size || 0);
-      if (!size || size > MAX_IMPORT_BYTES) throw new Error('This file is too large for cloud import right now.');
-      if (await db.collection('media').findOne({ userId: user.id, 'cloudSource.provider': 'google_drive', 'cloudSource.fileId': driveId })) {
-        results.push({ id: driveId, status: 'already_saved', name: meta.name });
-        continue;
-      }
-      const entitlement = entitlementForUser(user);
-      const usage = await db.collection('media').aggregate([{ $match: { userId: user.id, trashed: { $ne: true } } }, { $group: { _id: null, bytes: { $sum: '$size' } } }]).toArray();
-      if (!entitlement.realIsSuper && entitlement.plan.storageBytes && (usage[0]?.bytes || 0) + size > entitlement.plan.storageBytes) throw new Error('There is not enough storage space for this file.');
-      const fileResponse = await fetch(`${DRIVE_FILES}/${encodeURIComponent(driveId)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!fileResponse.ok) throw new Error('This file could not be copied right now.');
-      const buffer = Buffer.from(await fileResponse.arrayBuffer());
-      const hash = crypto.createHash('sha256').update(buffer).digest('hex');
-      if (await db.collection('media').findOne({ userId: user.id, hash, trashed: { $ne: true } })) {
-        results.push({ id: driveId, status: 'duplicate', name: meta.name });
-        continue;
-      }
-      const id = uuidv4();
-      const saved = await storage.save({ userId: user.id, fileId: id, buffer, name: meta.name, mime: meta.mimeType });
-      await db.collection('media').insertOne({ id, userId: user.id, name: meta.name, size: buffer.length, hash, mime: meta.mimeType, kind: meta.mimeType.startsWith('video/') ? 'video' : 'photo', storageKey: saved.storageKey, provider: saved.provider, favorite: false, trashed: false, cloudSource: { provider: 'google_drive', fileId: driveId, importedAt: new Date() }, aiAnalysis: { tags: [], faces: [], autoAlbum: 'Cloud Imports' }, createdAt: meta.createdTime ? new Date(meta.createdTime) : new Date() });
-      results.push({ id: driveId, status: 'saved', name: meta.name, mediaId: id });
+      const result = await importGoogleDriveAsset({ db, token, user, driveId, usedBytes });
+      metrics = mergeSyncMetrics(metrics, result.metrics);
+      if (result.status === 'saved') usedBytes += result.size;
+      results.push({
+        id: driveId,
+        status: result.status === 'saved' ? 'saved' : result.status === 'skipped' ? result.reason || 'duplicate' : result.status,
+        mediaId: result.mediaId || null,
+        message: result.message || null,
+      });
     } catch (error) {
       results.push({ id: driveId, status: 'failed', message: error.message || 'This file could not be copied.' });
     }
   }
 
-  return json({ results, saved: results.filter(item => item.status === 'saved').length, skipped: results.filter(item => ['duplicate', 'already_saved'].includes(item.status)).length, failed: results.filter(item => item.status === 'failed').length });
+  await recordManualMetrics(db, connection, metrics);
+  return json({
+    results,
+    saved: results.filter(item => item.status === 'saved').length,
+    skipped: results.filter(item => ['already_imported', 'provider_checksum_duplicate', 'sha256_duplicate', 'duplicate'].includes(item.status)).length,
+    failed: results.filter(item => ['failed', 'capacity'].includes(item.status)).length,
+    metrics,
+  });
 }
 
 export async function DELETE(request) {
@@ -202,6 +293,20 @@ export async function DELETE(request) {
       console.error('[cloud-sync] Google revocation failed', error?.message || error);
     }
   }
-  await db.collection('cloud_connections').deleteOne({ userId: user.id, provider: 'google_drive' });
+  await Promise.all([
+    db.collection('cloud_connections').deleteOne({ userId: user.id, provider: 'google_drive' }),
+    db.collection('cloud_assets').deleteMany({ userId: user.id, provider: 'google_drive' }),
+    db.collection('smart_sync_profiles').updateOne(
+      { userId: user.id, providerId: 'google_drive' },
+      { $set: { enabled: false, approvedAt: null, updatedAt: new Date() } },
+    ),
+    db.collection('smart_sync_jobs').updateMany(
+      { userId: user.id, providerId: 'google_drive', status: { $in: ['queued', 'running', 'paused'] } },
+      {
+        $set: { status: 'stopped', stopRequested: true, pauseRequested: false, completedAt: new Date(), updatedAt: new Date() },
+        $unset: { activeKey: '', leaseToken: '', leaseUntil: '' },
+      },
+    ),
+  ]);
   return json({ ok: true });
 }
