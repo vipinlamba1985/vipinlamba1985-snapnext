@@ -3,9 +3,18 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = process.cwd();
-const requirePlatforms = process.argv.includes('--require-platforms');
+const requireAll = process.argv.includes('--require-platforms');
+const requireArg = process.argv.find(value => value.startsWith('--require='));
+const requiredPlatforms = new Set(requireAll ? ['android', 'ios'] : requireArg ? requireArg.slice('--require='.length).split(',').map(value => value.trim()).filter(Boolean) : []);
 const failures = [];
 const notes = [];
+
+for (const platform of requiredPlatforms) {
+  if (!['android', 'ios'].includes(platform)) {
+    console.error(`Unsupported required platform: ${platform}`);
+    process.exit(1);
+  }
+}
 
 function exists(file) { return fs.existsSync(path.join(root, file)); }
 function read(file) { return fs.readFileSync(path.join(root, file), 'utf8'); }
@@ -33,7 +42,7 @@ if (exists('package.json')) {
 for (const platform of ['android', 'ios']) {
   if (!exists(platform)) {
     const message = `${platform}/ is not generated. Run npm run native:bootstrap:${platform}.`;
-    if (requirePlatforms) failures.push(message); else notes.push(message);
+    if (requiredPlatforms.has(platform)) failures.push(message); else notes.push(message);
   }
 }
 
