@@ -1,0 +1,16 @@
+{
+  "appId": "ai.snapnext.app",
+  "appName": "SnapNext AI",
+  "appUrl": "https://snapnext.ai",
+  "urlScheme": "snapnext",
+  "android": {
+    "compileSdk": 36,
+    "targetSdk": 36,
+    "minSdk": 24
+  },
+  "ios": {
+    "deploymentTarget": "15.0",
+    "photoLibraryUsage": "SnapNext needs access to the photos and videos you choose so it can securely back up and organize your memories.",
+    "photoLibraryAddUsage": "SnapNext needs permission to save memories you choose to download back to your photo library."
+  }
+}
