@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2, RefreshCw, ScanFace, Sparkles } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -18,6 +18,7 @@ export default function PeopleMagicBootstrap() {
   const [repairing, setRepairing] = useState(false);
   const [autoPaused, setAutoPaused] = useState(false);
   const [progress, setProgress] = useState(null);
+  const autoRetriedFailed = useRef(false);
 
   async function refreshState() {
     const [peopleResult, migration] = await Promise.all([
@@ -67,7 +68,7 @@ export default function PeopleMagicBootstrap() {
     }).then(async () => {
       if (cancelled) return;
       const next = await refreshState();
-      if (!next.selfRepairRequired && Number(next.migration?.remaining || 0) === 0) window.location.reload();
+      if (!next.selfRepairRequired && Number(next.migration?.remaining || 0) === 0 && Number(next.migration?.failed || 0) === 0) window.location.reload();
     }).catch((error) => {
       if (!cancelled) {
         setAutoPaused(true);
@@ -81,12 +82,14 @@ export default function PeopleMagicBootstrap() {
 
   useEffect(() => {
     const remaining = Number(state.migration?.remaining || 0);
-    if (state.loading || building || repairing || autoPaused || !state.engineReady || state.selfRepairRequired || !state.migration?.needsMigration || remaining <= 0) return;
+    const failed = Number(state.migration?.failed || 0);
+    const canRetryFailed = failed > 0 && !autoRetriedFailed.current;
+    if (state.loading || building || repairing || autoPaused || !state.engineReady || state.selfRepairRequired || !state.migration?.needsMigration || (remaining <= 0 && !canRetryFailed)) return;
     const timer = window.setTimeout(() => runMigration({ automatic: true, maxBatches: 6 }), 700);
     return () => window.clearTimeout(timer);
   // runMigration is intentionally driven by the latest saved migration snapshot.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.loading, state.engineReady, state.selfRepairRequired, state.migration?.needsMigration, state.migration?.remaining, building, repairing, autoPaused]);
+  }, [state.loading, state.engineReady, state.selfRepairRequired, state.migration?.needsMigration, state.migration?.remaining, state.migration?.failed, building, repairing, autoPaused]);
 
   async function runMigration({ automatic = false, maxBatches = 12 } = {}) {
     if (!state.engineReady || building || repairing) {
@@ -101,13 +104,15 @@ export default function PeopleMagicBootstrap() {
     let remaining = Number(state.migration?.remaining || 0);
     let failed = Number(state.migration?.failed || 0);
     let latestMigration = state.migration;
+    const retryFailedThisRun = failed > 0 && (!automatic || !autoRetriedFailed.current);
+    if (automatic && retryFailedThisRun) autoRetriedFailed.current = true;
 
     try {
-      const shouldContinue = () => automatic ? remaining > 0 : (remaining > 0 || failed > 0);
+      const shouldContinue = () => automatic ? (remaining > 0 || (failed > 0 && retryFailedThisRun && totalProcessed === 0)) : (remaining > 0 || failed > 0);
       for (let batch = 0; batch < maxBatches && shouldContinue(); batch += 1) {
         const result = await apiFetch('/magic-library/people/reindex', {
           method: 'POST',
-          body: JSON.stringify({ limit: 12, retryFailed: !automatic && batch === 0 && failed > 0 }),
+          body: JSON.stringify({ limit: 12, retryFailed: retryFailedThisRun && batch === 0 }),
         });
         totalProcessed += Number(result.processed || 0);
         totalFaces += Number(result.faces || 0);
@@ -134,12 +139,11 @@ export default function PeopleMagicBootstrap() {
           window.location.reload();
           return;
         }
-        if (remaining === 0 && failed > 0) setAutoPaused(true);
         return;
       }
 
       if (remaining === 0 && !next.selfRepairRequired) {
-        toast.success('Your full photo history is organized by person.');
+        toast.success(failed > 0 ? 'People organizing finished, but a few photos still need retry.' : 'Your full photo history is organized by person.');
         window.location.reload();
       } else if (remaining || failed || next.selfRepairRequired) {
         toast.message('Your People backfill is saved. SnapNext will continue from where it stopped.');
