@@ -42,6 +42,15 @@ jobs:
           tail -n 35 docker-build.log
           exit "$status"
 
+      - name: Upload Docker build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-build-log
+          path: docker-build.log
+          if-no-files-found: ignore
+          retention-days: 3
+
       - name: Start container
         run: |
           docker run --detach \
