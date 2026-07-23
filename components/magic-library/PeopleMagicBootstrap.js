@@ -66,7 +66,8 @@ export default function PeopleMagicBootstrap() {
       body: JSON.stringify({ clusterId: state.selfRepairClusterId, action: 'self' }),
     }).then(async () => {
       if (cancelled) return;
-      await refreshState();
+      const next = await refreshState();
+      if (!next.selfRepairRequired && Number(next.migration?.remaining || 0) === 0) window.location.reload();
     }).catch((error) => {
       if (!cancelled) {
         setAutoPaused(true);
