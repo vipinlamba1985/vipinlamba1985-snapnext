@@ -27,13 +27,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          show-progress: false
 
       - name: Build production image
+        shell: bash
         run: |
-          docker build --quiet \
+          set +e
+          docker build \
             --build-arg NEXT_PUBLIC_APP_URL=http://localhost:3000 \
             --tag snapnext-ai:ci \
-            .
+            . > docker-build.log 2>&1
+          status=$?
+          tail -n 35 docker-build.log
+          exit "$status"
 
       - name: Start container
         run: |
