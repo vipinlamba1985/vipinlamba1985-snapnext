@@ -13,7 +13,6 @@ ios
 
 # Source-control and hosting metadata
 .git
-.github
 .vercel
 
 # Local/editor files
