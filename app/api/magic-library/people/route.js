@@ -6,6 +6,7 @@ import { normalizePeopleIdentityState, PEOPLE_IDENTITY_UNKNOWN } from '@/lib/peo
 import { peopleIntelligenceReady } from '@/lib/people-intelligence.server';
 import { sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
 import { personThumbnailEligibility } from '@/lib/people-gallery-rules';
+import { choosePersonCounts, historicalPersonMediaIds, shouldUseHistoricalPersonFallback } from '@/lib/people-count-reconciliation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -56,6 +57,32 @@ async function liveCountsByCluster(db, userId, clusterIds) {
   return new Map(rows.map((row) => [String(row._id), row]));
 }
 
+async function historicalCountsByCluster(db, userId, people, liveCounts) {
+  const candidates = people.map((person) => {
+    const live = liveCounts.get(String(person.clusterId)) || { count: 0 };
+    if (!shouldUseHistoricalPersonFallback(person, live.count)) return null;
+    return { person, mediaIds: historicalPersonMediaIds(person) };
+  }).filter(Boolean);
+  if (!candidates.length) return new Map();
+
+  const allMediaIds = [...new Set(candidates.flatMap((candidate) => candidate.mediaIds))];
+  const media = await db.collection('media').find({
+    userId,
+    trashed: { $ne: true },
+    id: { $in: allMediaIds },
+  }).project({ id: 1, kind: 1 }).toArray();
+  const mediaById = new Map(media.map((item) => [String(item.id), item]));
+
+  return new Map(candidates.map(({ person, mediaIds }) => {
+    const linked = mediaIds.map((mediaId) => mediaById.get(String(mediaId))).filter(Boolean);
+    return [String(person.clusterId), {
+      count: linked.length,
+      photos: linked.filter((item) => item.kind === 'photo').length,
+      videos: linked.filter((item) => item.kind === 'video').length,
+    }];
+  }));
+}
+
 export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -83,23 +110,28 @@ export async function GET(request) {
   const activeNames = activation?.active || [];
   const deduped = dedupePeople(rows);
   const liveCounts = await liveCountsByCluster(db, user.id, deduped.map((row) => row.clusterId).filter(Boolean));
+  const historicalCounts = await historicalCountsByCluster(db, user.id, deduped, liveCounts);
   const people = deduped.map((row) => {
     const live = liveCounts.get(String(row.clusterId)) || { count: 0, photos: 0, videos: 0 };
+    const historical = historicalCounts.get(String(row.clusterId)) || null;
+    const counts = choosePersonCounts(row, live, historical);
     const eligibility = personThumbnailEligibility({
       ...row,
       name: row.clusterId,
-      livePhotoCount: live.photos,
+      livePhotoCount: counts.photos,
     }, activeNames);
     return {
       ...cleanCluster({
         ...row,
-        liveMemoryCount: live.count,
-        livePhotoCount: live.photos,
-        liveVideoCount: live.videos,
+        liveMemoryCount: counts.count,
+        livePhotoCount: counts.photos,
+        liveVideoCount: counts.videos,
       }),
       distinctPhotoCount: eligibility.photoCount,
       thumbnailEligible: eligibility.eligible,
       thumbnailEligibilityReason: eligibility.reason,
+      countSource: counts.source,
+      countReconciled: counts.reconciled,
     };
   });
   const eligiblePeopleCount = people.filter((person) => person.thumbnailEligible).length;
