@@ -1,0 +1,36 @@
+# Dependency and build output
+node_modules
+.next
+out
+coverage
+*.log
+npm-debug.log*
+
+# Local uploads and generated native projects
+uploads
+android
+ios
+
+# Source-control and hosting metadata
+.git
+.github
+.vercel
+
+# Local/editor files
+.DS_Store
+.vscode
+.idea
+*.swp
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# Archives and temporary files
+*.zip
+*.tar
+*.tar.gz
+tmp
+temp
