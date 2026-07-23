@@ -109,12 +109,15 @@ export async function GET(request) {
   ]);
   const activeNames = activation?.active || [];
   const deduped = dedupePeople(rows);
+  const selfRepair = deduped.find((row) => row.isSelf && !row.rekognitionUserId) || null;
   const liveCounts = await liveCountsByCluster(db, user.id, deduped.map((row) => row.clusterId).filter(Boolean));
   const historicalCounts = await historicalCountsByCluster(db, user.id, deduped, liveCounts);
   const people = deduped.map((row) => {
     const live = liveCounts.get(String(row.clusterId)) || { count: 0, photos: 0, videos: 0 };
     const historical = historicalCounts.get(String(row.clusterId)) || null;
     const counts = choosePersonCounts(row, live, historical);
+    const identityRepairRequired = Boolean(row.isSelf && !row.rekognitionUserId);
+    const countPending = remaining > 0 || identityRepairRequired;
     const eligibility = personThumbnailEligibility({
       ...row,
       name: row.clusterId,
@@ -132,17 +135,22 @@ export async function GET(request) {
       thumbnailEligibilityReason: eligibility.reason,
       countSource: counts.source,
       countReconciled: counts.reconciled,
+      countPending,
+      identityRepairRequired,
     };
   });
   const eligiblePeopleCount = people.filter((person) => person.thumbnailEligible).length;
+  const selfRepairRequired = Boolean(selfRepair);
   return NextResponse.json({
     people,
     eligiblePeopleCount,
     suppressedOneOffCount: Math.max(0, people.length - eligiblePeopleCount),
     engineReady: peopleIntelligenceReady(),
     version: PEOPLE_INTELLIGENCE_VERSION,
-    migrationRequired: remaining > 0,
+    migrationRequired: remaining > 0 || selfRepairRequired,
     migrationRemaining: remaining,
+    selfRepairRequired,
+    selfRepairClusterId: selfRepair?.clusterId || null,
     source: 'people_v3_recurring_face_thumbnails',
     hiddenWeakOrDuplicateCount: Math.max(0, rows.length - deduped.length),
   });
