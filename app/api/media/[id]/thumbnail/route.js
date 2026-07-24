@@ -23,22 +23,6 @@ function inferImageType(doc = {}) {
   return 'application/octet-stream';
 }
 
-async function authenticatedUser(request) {
-  let user = await getUserFromRequest(request);
-  if (user) return user;
-
-  const token = new URL(request.url).searchParams.get('t');
-  if (!token) return null;
-
-  return getUserFromRequest({
-    headers: {
-      get(name) {
-        return String(name || '').toLowerCase() === 'authorization' ? `Bearer ${token}` : null;
-      },
-    },
-  });
-}
-
 function imageHeaders({ contentType, contentLength }) {
   const headers = new Headers({
     'Content-Type': contentType || 'application/octet-stream',
@@ -51,7 +35,7 @@ function imageHeaders({ contentType, contentLength }) {
 }
 
 export async function GET(request, context) {
-  const user = await authenticatedUser(request);
+  const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await context.params;
