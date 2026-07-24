@@ -50,6 +50,22 @@ test('account deletion filters remove current shared data and referenced child r
   assert.deepEqual(filters.chatMessages, { senderId: 'user-1' });
 });
 
+test('account deletion includes current LifeGPT, memory graph, and creative project state', () => {
+  const filters = buildAccountDeletionFilters({ userId: 'user-1' });
+  for (const key of [
+    'memoryRelationships',
+    'memoryEvents',
+    'memoryStories',
+    'memoryGraphSnapshots',
+    'lifeProfiles',
+    'lifeEvents',
+    'lifeEventDrafts',
+    'creativeProjects',
+  ]) {
+    assert.deepEqual(filters[key], { userId: 'user-1' }, `${key} should be user scoped`);
+  }
+});
+
 test('account deletion child filters fail safely when no referenced rows exist', () => {
   const filters = buildAccountDeletionFilters({ userId: 'user-1' });
   assert.deepEqual(filters.sharedAlbumMedia, { albumId: { $in: [] } });
