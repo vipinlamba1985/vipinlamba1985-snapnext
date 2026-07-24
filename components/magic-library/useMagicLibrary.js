@@ -28,6 +28,9 @@ export default function useMagicLibrary() {
   const [favoriteNames, setFavoriteNames] = useState([]);
   const [draftNames, setDraftNames] = useState([]);
   const [query, setQueryState] = useState('');
+  const [searchItems, setSearchItems] = useState([]);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const [activePerson, setActivePersonState] = useState('');
   const [explicitAllMemories, setExplicitAllMemories] = useState(false);
   const [busy, setBusy] = useState(true);
@@ -78,11 +81,43 @@ export default function useMagicLibrary() {
     return () => { cancelled = true; };
   }, [activePerson, items]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const normalized = String(query || '').trim();
+
+    // Person pages already load the complete person set (up to the dedicated
+    // 2,000-item safety cap), so their search remains instant and local.
+    if (!normalized || activePerson) {
+      setSearchItems([]);
+      setSearchBusy(false);
+      setSearchError('');
+      return () => { cancelled = true; };
+    }
+
+    setSearchItems([]);
+    setSearchBusy(true);
+    setSearchError('');
+    apiFetch(`/media?q=${encodeURIComponent(normalized)}`)
+      .then((result) => {
+        if (cancelled) return;
+        setSearchItems(result.items || []);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setSearchItems([]);
+        setSearchError(error?.message || 'Search is unavailable right now.');
+      })
+      .finally(() => { if (!cancelled) setSearchBusy(false); });
+
+    return () => { cancelled = true; };
+  }, [query, activePerson]);
+
   const suggestions = useMemo(() => buildMagicSuggestions(items), [items]);
   const visibleItems = useMemo(() => {
-    const source = activePerson ? personItems : items;
-    return filterMagicItems(source, query, '');
-  }, [items, personItems, query, activePerson]);
+    if (activePerson) return filterMagicItems(personItems, query, '');
+    if (query) return searchItems;
+    return items;
+  }, [items, personItems, searchItems, query, activePerson]);
   const visibleTotal = useMemo(() => (activePerson && !query ? personTotal : visibleItems.length), [activePerson, personTotal, query, visibleItems.length]);
   const bestItems = useMemo(() => bestMagicItems(visibleItems), [visibleItems]);
   const videos = useMemo(() => visibleItems.filter((item) => item.kind === 'video'), [visibleItems]);
@@ -103,10 +138,16 @@ export default function useMagicLibrary() {
     if (isAllMemoriesCommand(next)) {
       setQueryState('');
       setActivePersonState('');
+      setSearchItems([]);
+      setSearchError('');
       setExplicitAllMemories(true);
       return;
     }
     setQueryState(next);
+    if (!next) {
+      setSearchItems([]);
+      setSearchError('');
+    }
   }
 
   function toggleDraft(name) {
@@ -185,6 +226,8 @@ export default function useMagicLibrary() {
     activePerson,
     busy,
     personBusy,
+    searchBusy,
+    searchError,
     activating,
     visibleItems,
     visibleTotal,
