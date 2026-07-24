@@ -42,6 +42,11 @@ export default function GalleryPage() {
   async function load({ append = false, cursor = '' } = {}) {
     append ? setLoadingMore(true) : setLoading(true);
     setLoadError('');
+    if (!append) {
+      setItems([]);
+      setNextCursor(null);
+      setHasMore(false);
+    }
     const params = new URLSearchParams({ filter, limit: '48' });
     if (search) params.set('q', search);
     if (cursor) params.set('cursor', cursor);
