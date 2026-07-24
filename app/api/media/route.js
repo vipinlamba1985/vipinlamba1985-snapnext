@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { listUserMediaPage } from '@/lib/media-library-service';
+import { listUserMediaPage, MediaLibraryServiceError } from '@/lib/media-library-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,13 +12,20 @@ export async function GET(request) {
 
   const url = new URL(request.url);
   const db = await getDb();
-  const page = await listUserMediaPage({
-    db,
-    userId: user.id,
-    filter: url.searchParams.get('filter') || 'all',
-    query: url.searchParams.get('q') || '',
-    cursor: url.searchParams.get('cursor') || '',
-    limit: url.searchParams.get('limit') || 48,
-  });
-  return NextResponse.json(page);
+  try {
+    const page = await listUserMediaPage({
+      db,
+      userId: user.id,
+      filter: url.searchParams.get('filter') || 'all',
+      query: url.searchParams.get('q') || '',
+      cursor: url.searchParams.get('cursor') || '',
+      limit: url.searchParams.get('limit') || 48,
+    });
+    return NextResponse.json(page);
+  } catch (error) {
+    if (error instanceof MediaLibraryServiceError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
+    throw error;
+  }
 }
