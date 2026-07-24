@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getRequestAuthToken } from '../lib/auth.js';
+import { getRequestAuthToken } from '../lib/auth-request-token.js';
 
 function requestWith({ authorization = null, cookie = null, directCookie = null } = {}) {
   return {
