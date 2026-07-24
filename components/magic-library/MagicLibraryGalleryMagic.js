@@ -54,7 +54,36 @@ export default function MagicLibraryGalleryMagic() {
   }
 
   function runSearch(value = draftQuery) {
-    setSectionKey(null); setCategory(null); magic.setQuery(String(value || '').trim());
+    const next = String(value || '').trim();
+    setSectionKey(null);
+    setCategory(null);
+    if (!next) {
+      magic.setQuery('');
+      return;
+    }
+
+    // A typed/suggested exact person name should open that person's memories,
+    // rather than trying to text-search a local display name that is not stored
+    // on every media document.
+    const personMatch = magic.people.find((person) => (
+      !isUnknownPerson(person) && displayName(person.name).toLowerCase() === next.toLowerCase()
+    ));
+    if (personMatch) {
+      if (magic.activation.enabled?.includes?.(personMatch.name)) {
+        setDraftQuery(displayName(personMatch.name));
+        magic.setQuery('');
+        magic.setActivePerson(personMatch.name);
+      } else {
+        setLockedPerson(personMatch);
+      }
+      return;
+    }
+
+    // Normal search is intentionally global. Clearing the active person also
+    // marks the library as explicitly-all so the auto-select effect cannot
+    // silently re-scope the query to the first activated person.
+    magic.setActivePerson('');
+    magic.setQuery(next);
   }
 
   function openCategory(next) {
@@ -85,8 +114,7 @@ export default function MagicLibraryGalleryMagic() {
   }, [category, shotFilter, magic.items]);
 
   const expanded = categoryView || sections.find((section) => section.key === sectionKey);
-  const activePersonLabel = magic.activePerson ? displayName(magic.activePerson) : '';
-  const searchPlaceholder = activePersonLabel && activePersonLabel !== 'Add name' ? `Search memories with ${activePersonLabel}` : 'Search your memories';
+  const searchPlaceholder = 'Search people, places, objects, or text';
   const suggestions = useMemo(() => {
     const typed = draftQuery.trim().toLowerCase();
     if (!typed) return [];
@@ -105,11 +133,12 @@ export default function MagicLibraryGalleryMagic() {
   return <div className="space-y-5">
     <header>
       <div className="flex items-center gap-2.5"><span className="grid h-9 w-9 place-items-center rounded-full bg-pink-500/15 text-pink-200"><Sparkles className="h-4 w-4" /></span><div><h1 className="text-2xl font-black text-white md:text-3xl">Magic Library</h1><p className="text-xs text-white/40">Your organized memories</p></div></div>
-      <div className="mt-3 flex max-w-3xl gap-2"><div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" /><input value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} placeholder={searchPlaceholder} className="w-full rounded-full border border-white/10 bg-white/[0.05] py-2.5 pl-10 pr-10 text-sm text-white outline-none focus:border-pink-400/40" />{draftQuery && <button onClick={() => { setDraftQuery(''); magic.setQuery(''); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/35"><X className="h-4 w-4" /></button>}</div><button onClick={() => runSearch()} className="rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-4 py-2 text-sm font-bold text-white">Search</button></div>
+      <div className="mt-3 flex max-w-3xl gap-2"><div className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" /><input value={draftQuery} onChange={(event) => setDraftQuery(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && runSearch()} placeholder={searchPlaceholder} aria-label="Search Magic Library" className="w-full rounded-full border border-white/10 bg-white/[0.05] py-2.5 pl-10 pr-10 text-sm text-white outline-none focus:border-pink-400/40" />{draftQuery && <button aria-label="Clear search" onClick={() => { setDraftQuery(''); magic.setQuery(''); }} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/35"><X className="h-4 w-4" /></button>}</div><button onClick={() => runSearch()} disabled={!draftQuery.trim() || magic.searchBusy} className="inline-flex min-w-[92px] items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{magic.searchBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}{magic.searchBusy ? 'Searching' : 'Search'}</button></div>
       {!!suggestions.length && <div className="mt-2 flex flex-wrap gap-1.5">{suggestions.map((label) => <button key={label} onClick={() => { setDraftQuery(label); runSearch(label); }} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55">{label}</button>)}</div>}
+      {magic.query && <div className="mt-2 text-xs text-white/45" role="status" aria-live="polite">{magic.searchBusy ? 'Searching your full library…' : magic.searchError ? <span className="text-rose-300">{magic.searchError}</span> : `${magic.visibleTotal} ${magic.visibleTotal === 1 ? 'memory' : 'memories'} found for “${magic.query}”`}</div>}
     </header>
 
-    {!!magic.people.length && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} activeCount={magic.activation.active.length} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setSectionKey(null); setCategory(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
+    {!!magic.people.length && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} activeCount={magic.activation.active.length} favoriteNames={magic.favoriteNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setSectionKey(null); setCategory(null); setDraftQuery(''); magic.setQuery(''); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
 
     {!magic.activePerson && <div className="grid grid-cols-4 gap-1.5"><CategoryButton icon={Camera} label="Photos" onClick={() => openCategory('photos')} className="text-pink-300" /><CategoryButton icon={Film} label="Videos" onClick={() => openCategory('videos')} className="text-purple-300" /><CategoryButton icon={ImageIcon} label="Screenshots" onClick={() => openCategory('screenshots')} className="text-sky-300" /><CategoryButton icon={FileText} label="Docs" onClick={() => openCategory('docs')} className="text-emerald-300" /></div>}
 
@@ -117,10 +146,10 @@ export default function MagicLibraryGalleryMagic() {
 
     {(magic.activePerson || magic.query || sectionKey || category) && <button onClick={showAll} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-bold text-white/65">Show all memories</button>}
 
-    {expanded ? <div><div className="mb-3"><h2 className="text-xl font-black text-white">{expanded.title}</h2><p className="text-xs text-white/40">{expanded.items.length} memories</p></div><div className="grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-6">{expanded.items.map((item, index) => <button key={item.id} onClick={() => setViewer({ item, items: expanded.items, index })} className="aspect-square overflow-hidden rounded-xl bg-white/5">{item.kind === 'photo' ? <img src={mediaSrc(item.id)} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline preload="metadata" /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>)}</div></div> : sections.map((section) => <MediaSection key={section.key} title={section.title} items={section.items} onOpen={(item, index) => setViewer({ item, items: section.items, index })} onExpand={() => { setCategory(null); setSectionKey(section.key); }} emptyCopy="No matching memories yet." />)}
+    {expanded ? <div><div className="mb-3"><h2 className="text-xl font-black text-white">{expanded.title}</h2><p className="text-xs text-white/40">{expanded.items.length} memories</p></div><div className="grid grid-cols-3 gap-2 md:grid-cols-5 lg:grid-cols-6">{expanded.items.map((item, index) => <button key={item.id} onClick={() => setViewer({ item, items: expanded.items, index })} className="aspect-square overflow-hidden rounded-xl bg-white/5">{item.kind === 'photo' ? <img src={mediaSrc(item.id)} className="h-full w-full object-cover" alt="" /> : item.kind === 'video' ? <video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline preload="metadata" /> : <div className="grid h-full w-full place-items-center p-2 text-xs text-white/60">{item.name}</div>}</button>)}</div></div> : magic.query && !magic.searchBusy && !magic.visibleItems.length ? <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-10 text-center"><Search className="mx-auto h-6 w-6 text-white/25" /><div className="mt-3 text-sm font-bold text-white/75">No matching memories</div><p className="mt-1 text-xs text-white/40">Try a person, place, object, filename, caption, or text found inside an image.</p></div> : sections.map((section) => <MediaSection key={section.key} title={section.title} items={section.items} onOpen={(item, index) => setViewer({ item, items: section.items, index })} onExpand={() => { setCategory(null); setSectionKey(section.key); }} emptyCopy="No matching memories yet." />)}
 
     <MediaViewer item={viewer?.item} items={viewer?.items || []} index={viewer?.index || 0} onClose={() => setViewer(null)} onChanged={magic.reload} />
-    <LockedPersonPrompt person={lockedPerson} onClose={() => setLockedPerson(null)} onActivated={async (person) => { setLockedPerson(null); await magic.reload(); setSectionKey(null); setCategory(null); magic.setActivePerson(person.name); }} />
+    <LockedPersonPrompt person={lockedPerson} onClose={() => setLockedPerson(null)} onActivated={async (person) => { setLockedPerson(null); await magic.reload(); setDraftQuery(''); magic.setQuery(''); setSectionKey(null); setCategory(null); magic.setActivePerson(person.name); }} />
   </div>;
 }
 
