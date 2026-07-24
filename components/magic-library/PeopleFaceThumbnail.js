@@ -1,13 +1,12 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { getToken } from '@/lib/api-client';
+import { isPreviewDemo } from '@/lib/api-client';
 import { safeFaceFocus, sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
 
 function thumbnailSrc(mediaId) {
-  const token = getToken();
-  if (!mediaId || !token || token === 'preview-demo-token') return '';
-  return `/api/media/${encodeURIComponent(mediaId)}/thumbnail?t=${encodeURIComponent(token)}`;
+  if (!mediaId || isPreviewDemo()) return '';
+  return `/api/media/${encodeURIComponent(mediaId)}/thumbnail`;
 }
 
 export default function PeopleFaceThumbnail({
