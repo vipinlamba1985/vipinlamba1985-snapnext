@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { listUserMedia } from '@/lib/media-library-service';
+import { listUserMediaPage } from '@/lib/media-library-service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,12 +12,13 @@ export async function GET(request) {
 
   const url = new URL(request.url);
   const db = await getDb();
-  const items = await listUserMedia({
+  const page = await listUserMediaPage({
     db,
     userId: user.id,
     filter: url.searchParams.get('filter') || 'all',
     query: url.searchParams.get('q') || '',
-    limit: 500,
+    cursor: url.searchParams.get('cursor') || '',
+    limit: url.searchParams.get('limit') || 48,
   });
-  return NextResponse.json({ items });
+  return NextResponse.json(page);
 }
