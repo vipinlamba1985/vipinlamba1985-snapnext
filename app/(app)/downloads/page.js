@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { apiFetch, mediaSrc, getToken } from '@/lib/api-client';
+import { apiFetch, mediaSrc } from '@/lib/api-client';
 import { Download, Loader2, Package, CheckCircle2, AlertTriangle, RefreshCw, Clock } from 'lucide-react';
 import { formatBytes } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -52,7 +52,7 @@ export default function DownloadsPage() {
     catch (e) { toast.error(e.message); }
   }
   function downloadZip(job) {
-    window.location.href = `/api/exports/${job.id}/download?t=${getToken()}`;
+    window.location.href = `/api/exports/${encodeURIComponent(job.id)}/download`;
   }
 
   return (
