@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api-client';
-import { CalendarDays, CheckCircle2, Gift, Loader2, Sparkles, Users } from 'lucide-react';
+import { CalendarDays, CheckCircle2, Gift, Globe2, Loader2, Sparkles, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 const EMPTY_PROFILE = { name: '', relationship: '', birthday: '', anniversary: '', currentCountry: '', originCountries: '', celebrations: '', favourite: true };
 const EMPTY_EVENT = { title: '', type: 'festival', date: '', annual: true, countries: '', cultureTags: '' };
-const EMPTY_DATA = { profiles: [], events: [], drafts: [], upcoming: [], incompleteProfiles: [] };
+const EMPTY_DATA = { profiles: [], events: [], drafts: [], upcoming: [], incompleteProfiles: [], memorySuggestions: [], setupPrompts: [], contextualCelebrations: [] };
 
 function normalizeDirectorData(value) {
   const next = value && typeof value === 'object' ? value : {};
@@ -19,6 +19,9 @@ function normalizeDirectorData(value) {
     drafts: Array.isArray(next.drafts) ? next.drafts : [],
     upcoming: Array.isArray(next.upcoming) ? next.upcoming : [],
     incompleteProfiles: Array.isArray(next.incompleteProfiles) ? next.incompleteProfiles : [],
+    memorySuggestions: Array.isArray(next.memorySuggestions) ? next.memorySuggestions : [],
+    setupPrompts: Array.isArray(next.setupPrompts) ? next.setupPrompts : [],
+    contextualCelebrations: Array.isArray(next.contextualCelebrations) ? next.contextualCelebrations : [],
   };
 }
 
@@ -34,6 +37,7 @@ export default function EventDirectorPage() {
   const [profile, setProfile] = useState(EMPTY_PROFILE);
   const [event, setEvent] = useState(EMPTY_EVENT);
   const [saving, setSaving] = useState(false);
+  const [suggestionBusy, setSuggestionBusy] = useState('');
 
   async function load() {
     try {
@@ -101,23 +105,41 @@ export default function EventDirectorPage() {
     } catch (error) { toast.error(error.message || 'Package could not be prepared.'); }
   }
 
+  async function respondSuggestion(item, action) {
+    setSuggestionBusy(item.id);
+    try {
+      await apiFetch('/life-event-director', {
+        method: 'POST',
+        body: JSON.stringify({ action, suggestionId: item.id }),
+      });
+      await load();
+      toast.success(action === 'confirm-suggestion' ? 'Date confirmed.' : 'Suggestion dismissed.');
+    } catch (error) {
+      toast.error(error.message || 'Suggestion could not be updated.');
+    } finally {
+      setSuggestionBusy('');
+    }
+  }
+
   if (loading) return <div className="grid min-h-[55vh] place-items-center"><Loader2 className="h-7 w-7 animate-spin text-white/50" /></div>;
 
   return (
     <div className="mx-auto max-w-6xl space-y-7 pb-24">
       <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-fuchsia-500/20 via-purple-500/10 to-cyan-500/10 p-6 md:p-8">
         <div className="flex flex-wrap items-start justify-between gap-5">
-          <div><p className="text-xs font-black uppercase tracking-[0.22em] text-pink-200">AI Life Event Director</p><h1 className="mt-2 text-3xl font-black md:text-5xl">Never miss a moment worth celebrating.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Track birthdays, anniversaries, family traditions, festivals from every culture you celebrate, national days, trips, and milestones. SnapNext prepares ideas early and always asks before sharing.</p></div>
+          <div><p className="text-xs font-black uppercase tracking-[0.22em] text-pink-200">AI Life Event Director</p><h1 className="mt-2 text-3xl font-black md:text-5xl">Never miss a moment worth celebrating.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Keep confirmed birthdays and anniversaries, review dates SnapNext notices in your memories, and see relevant country or travel celebrations. Personal dates are never inferred as fact until you confirm them.</p></div>
           <Link href="/ai-studio" className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-black text-black"><Sparkles className="h-4 w-4" /> Open AI Studio</Link>
         </div>
       </section>
+
+      {data.memorySuggestions.length > 0 && <section><div className="mb-3"><h2 className="text-xl font-black">Confirm from your memories</h2><p className="mt-1 text-sm text-white/45">SnapNext noticed a possible date. Confirm it before it becomes part of your calendar.</p></div><div className="grid gap-3 md:grid-cols-2">{data.memorySuggestions.map(item => <div key={item.id} className="rounded-3xl border border-amber-300/15 bg-amber-400/[0.05] p-4"><div className="text-xs font-black uppercase tracking-wider text-amber-200">{item.confidence} confidence</div><h3 className="mt-2 text-lg font-black">{item.question}</h3><p className="mt-1 text-sm leading-5 text-white/48">{item.evidence}</p><div className="mt-4 flex gap-2"><button disabled={suggestionBusy === item.id} onClick={() => respondSuggestion(item, 'confirm-suggestion')} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-black text-black disabled:opacity-50">{suggestionBusy === item.id && <Loader2 className="h-4 w-4 animate-spin" />}Confirm date</button><button disabled={suggestionBusy === item.id} onClick={() => respondSuggestion(item, 'dismiss-suggestion')} className="min-h-10 rounded-full border border-white/10 px-4 text-sm font-bold text-white/60 disabled:opacity-50">Not this date</button></div></div>)}</div></section>}
 
       {urgent.length > 0 && <section><h2 className="mb-3 text-xl font-black">Needs attention now</h2><div className="grid gap-3 md:grid-cols-2">{urgent.map(item => <EventCard key={item.id} item={item} prepare={prepare} />)}</div></section>}
 
       <section className="grid gap-5 lg:grid-cols-[1.2fr_.8fr]">
         <div className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
           <div className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-pink-200" /><h2 className="text-xl font-black">Coming up</h2></div>
-          <div className="mt-4 space-y-3">{data.upcoming.length ? data.upcoming.map(item => <EventCard key={item.id} item={item} prepare={prepare} compact />) : <Empty text="Add a person or celebration to begin." />}</div>
+          <div className="mt-4 space-y-3">{data.upcoming.length ? data.upcoming.map(item => <EventCard key={item.id} item={item} prepare={prepare} compact />) : <Empty text="Add yourself or an important person to begin." />}</div>
         </div>
 
         <div className="space-y-5">
@@ -126,18 +148,20 @@ export default function EventDirectorPage() {
         </div>
       </section>
 
+      {data.contextualCelebrations.length > 0 && <section><div className="mb-3 flex items-start gap-3"><Globe2 className="mt-1 h-5 w-5 text-cyan-200" /><div><h2 className="text-xl font-black">Suggested for your world</h2><p className="mt-1 text-sm text-white/45">Public and observance days from countries you explicitly added or countries present in your travel metadata. SnapNext does not infer ethnicity from appearance.</p></div></div><div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">{data.contextualCelebrations.map(item => <div key={item.id} className="w-56 shrink-0 rounded-3xl border border-cyan-300/10 bg-cyan-400/[0.04] p-4"><div className="text-[11px] font-black uppercase tracking-wider text-cyan-200">{item.country} · {daysLabel(item.daysUntil)}</div><h3 className="mt-2 text-lg font-black">{item.title}</h3><p className="mt-2 text-xs leading-5 text-white/42">{item.reason}</p></div>)}</div></section>}
+
       <section className="grid gap-5 lg:grid-cols-2">
-        <FormCard title="Add family or favourite person" subtitle="A person may live in Canada and still celebrate traditions from one or many cultures.">
+        <FormCard title="Add yourself, family or favourite person" subtitle="Start with yourself: birthday, optional anniversary, home/current country and countries of origin. Then add only the family birthdays that matter to you.">
           <Input label="Name" value={profile.name} setValue={value => setProfile(p => ({ ...p, name: value }))} />
-          <Input label="Relationship" value={profile.relationship} setValue={value => setProfile(p => ({ ...p, relationship: value }))} />
-          <div className="grid grid-cols-2 gap-3"><Input label="Birthday" type="date" value={profile.birthday} setValue={value => setProfile(p => ({ ...p, birthday: value }))} /><Input label="Anniversary" type="date" value={profile.anniversary} setValue={value => setProfile(p => ({ ...p, anniversary: value }))} /></div>
-          <Input label="Current country" value={profile.currentCountry} setValue={value => setProfile(p => ({ ...p, currentCountry: value }))} placeholder="Canada" />
+          <Input label="Relationship" value={profile.relationship} setValue={value => setProfile(p => ({ ...p, relationship: value }))} placeholder="You, Son, Mother, Partner..." />
+          <div className="grid grid-cols-2 gap-3"><Input label="Birthday" type="date" value={profile.birthday} setValue={value => setProfile(p => ({ ...p, birthday: value }))} /><Input label="Anniversary (optional)" type="date" value={profile.anniversary} setValue={value => setProfile(p => ({ ...p, anniversary: value }))} /></div>
+          <Input label="Current / home country" value={profile.currentCountry} setValue={value => setProfile(p => ({ ...p, currentCountry: value }))} placeholder="Canada" />
           <Input label="Countries of origin" value={profile.originCountries} setValue={value => setProfile(p => ({ ...p, originCountries: value }))} placeholder="India, Canada" />
           <Input label="Celebrations and traditions" value={profile.celebrations} setValue={value => setProfile(p => ({ ...p, celebrations: value }))} placeholder="Diwali, Canada Day, Christmas, family picnic" />
           <button onClick={saveProfile} disabled={saving} className="mt-2 w-full rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-40">Save life profile</button>
         </FormCard>
 
-        <FormCard title="Add an occasion" subtitle="Use this for festivals, patriotic days, annual traditions, trips, milestones, or any family event.">
+        <FormCard title="Add an occasion" subtitle="Use this for festivals, patriotic days, annual traditions, trips, milestones, or any family event SnapNext cannot know automatically.">
           <Input label="Event name" value={event.title} setValue={value => setEvent(e => ({ ...e, title: value }))} placeholder="Diwali family celebration" />
           <label className="block text-xs font-bold text-white/55">Type<select value={event.type} onChange={e => setEvent(v => ({ ...v, type: e.target.value }))} className="mt-1 w-full rounded-2xl border border-white/10 bg-[#160c21] px-4 py-3 text-sm"><option value="festival">Festival</option><option value="national-day">National or patriotic day</option><option value="tradition">Family tradition</option><option value="milestone">Milestone</option><option value="trip">Trip</option><option value="other">Other</option></select></label>
           <Input label="Date" type="date" value={event.date} setValue={value => setEvent(e => ({ ...e, date: value }))} />
