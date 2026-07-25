@@ -3,11 +3,20 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { buildDirectorFeed, EVENT_TYPES } from '@/lib/life-event-director';
+import {
+  buildCelebrationSetupPrompts,
+  buildContextualCelebrations,
+  buildMemoryCelebrationSuggestions,
+} from '@/lib/celebration-intelligence';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 function json(data, status = 200) {
-  return NextResponse.json(data, { status });
+  return NextResponse.json(data, {
+    status,
+    headers: { 'Cache-Control': 'private, no-store' },
+  });
 }
 
 function clean(value, max = 160) {
@@ -46,15 +55,76 @@ async function resolveEvent(db, userId, eventId) {
   };
 }
 
+async function loadIntelligenceInputs(db, userId) {
+  const [profiles, events, media, people, feedback, favoriteCount] = await Promise.all([
+    db.collection('life_profiles').find({ userId, archivedAt: null }).project({ _id: 0 }).sort({ updatedAt: -1 }).toArray(),
+    db.collection('life_events').find({ userId, archivedAt: null }).project({ _id: 0 }).sort({ date: 1 }).toArray(),
+    db.collection('media').find({ userId, trashed: { $ne: true } }).project({
+      _id: 0,
+      id: 1,
+      name: 1,
+      userCategory: 1,
+      userTags: 1,
+      people_tags: 1,
+      people: 1,
+      peopleIntelligence: 1,
+      aiAnalysis: 1,
+      capturedAt: 1,
+      takenAt: 1,
+      createdAt: 1,
+      exif: 1,
+      country: 1,
+      countryCode: 1,
+      location: 1,
+    }).sort({ createdAt: -1 }).limit(750).toArray(),
+    db.collection('person_clusters').find({ userId, status: { $nin: ['hidden', 'rejected', 'legacy'] } }).project({ _id: 0, clusterId: 1, displayName: 1, isSelf: 1 }).limit(500).toArray(),
+    db.collection('life_event_suggestion_feedback').find({ userId, status: { $in: ['dismissed', 'confirmed'] } }).project({ _id: 0, suggestionId: 1 }).limit(500).toArray(),
+    db.collection('favorites').countDocuments({
+      status: 'accepted',
+      $or: [{ requesterUserId: userId }, { targetUserId: userId }],
+    }),
+  ]);
+  const peopleByCluster = Object.fromEntries(people.map((person) => [String(person.clusterId), person.isSelf ? 'You' : person.displayName]).filter(([, name]) => name));
+  return {
+    profiles,
+    events,
+    media,
+    peopleByCluster,
+    feedbackIds: feedback.map((row) => row.suggestionId).filter(Boolean),
+    favoriteCount,
+  };
+}
+
+async function buildIntelligence(db, user) {
+  const inputs = await loadIntelligenceInputs(db, user.id);
+  const [contextualCelebrations, memorySuggestions] = await Promise.all([
+    buildContextualCelebrations({ profiles: inputs.profiles, media: inputs.media }),
+    Promise.resolve(buildMemoryCelebrationSuggestions(inputs)),
+  ]);
+  return {
+    ...inputs,
+    contextualCelebrations,
+    memorySuggestions,
+    setupPrompts: buildCelebrationSetupPrompts({ user, profiles: inputs.profiles, favoriteCount: inputs.favoriteCount }),
+  };
+}
+
 export async function GET(request) {
   const ctx = await context(request);
   if (ctx.error) return ctx.error;
-  const [profiles, events, drafts] = await Promise.all([
-    ctx.db.collection('life_profiles').find({ userId: ctx.user.id, archivedAt: null }).project({ _id: 0 }).sort({ updatedAt: -1 }).toArray(),
-    ctx.db.collection('life_events').find({ userId: ctx.user.id, archivedAt: null }).project({ _id: 0 }).sort({ date: 1 }).toArray(),
+  const [intelligence, drafts] = await Promise.all([
+    buildIntelligence(ctx.db, ctx.user),
     ctx.db.collection('life_event_drafts').find({ userId: ctx.user.id, status: { $in: ['planned', 'ready'] } }).project({ _id: 0 }).sort({ updatedAt: -1 }).limit(20).toArray(),
   ]);
-  return json({ profiles, events, drafts, ...buildDirectorFeed({ profiles, events }) });
+  return json({
+    profiles: intelligence.profiles,
+    events: intelligence.events,
+    drafts,
+    ...buildDirectorFeed({ profiles: intelligence.profiles, events: intelligence.events }),
+    memorySuggestions: intelligence.memorySuggestions,
+    setupPrompts: intelligence.setupPrompts,
+    contextualCelebrations: intelligence.contextualCelebrations,
+  });
 }
 
 export async function POST(request) {
@@ -69,13 +139,16 @@ export async function POST(request) {
     const name = clean(body.name, 120);
     const relationship = clean(body.relationship, 80);
     if (!name || !relationship) return json({ error: 'Name and relationship are required.' }, 400);
+    const birthday = body.birthday ? new Date(body.birthday) : null;
+    const anniversary = body.anniversary ? new Date(body.anniversary) : null;
+    if ((birthday && Number.isNaN(birthday.getTime())) || (anniversary && Number.isNaN(anniversary.getTime()))) return json({ error: 'Use a valid birthday or anniversary date.' }, 400);
     const profile = {
       id,
       userId: ctx.user.id,
       name,
       relationship,
-      birthday: body.birthday ? new Date(body.birthday) : null,
-      anniversary: body.anniversary ? new Date(body.anniversary) : null,
+      birthday,
+      anniversary,
       photoId: clean(body.photoId, 120) || null,
       currentCountry: clean(body.currentCountry, 80) || null,
       originCountries: cleanArray(body.originCountries, 10),
@@ -98,13 +171,14 @@ export async function POST(request) {
     const id = clean(body.id, 120) || uuidv4();
     const type = clean(body.type, 40);
     const title = clean(body.title, 160);
-    if (!EVENT_TYPES.includes(type) || !title || !body.date) return json({ error: 'A valid event type, title, and date are required.' }, 400);
+    const date = body.date ? new Date(body.date) : null;
+    if (!EVENT_TYPES.includes(type) || !title || !date || Number.isNaN(date.getTime())) return json({ error: 'A valid event type, title, and date are required.' }, 400);
     const event = {
       id,
       userId: ctx.user.id,
       type,
       title,
-      date: new Date(body.date),
+      date,
       annual: body.annual !== false,
       personId: clean(body.personId, 120) || null,
       cultureTags: cleanArray(body.cultureTags, 20),
@@ -119,6 +193,63 @@ export async function POST(request) {
       { upsert: true },
     );
     return json({ event: { ...event, _id: undefined } }, 201);
+  }
+
+  if (action === 'confirm-suggestion' || action === 'dismiss-suggestion') {
+    const suggestionId = clean(body.suggestionId, 80);
+    if (!suggestionId) return json({ error: 'Suggestion is required.' }, 400);
+    const intelligence = await buildIntelligence(ctx.db, ctx.user);
+    const suggestion = intelligence.memorySuggestions.find((item) => item.id === suggestionId);
+    if (!suggestion) return json({ error: 'That suggestion is no longer available.' }, 404);
+
+    if (action === 'dismiss-suggestion') {
+      await ctx.db.collection('life_event_suggestion_feedback').updateOne(
+        { userId: ctx.user.id, suggestionId },
+        { $set: { userId: ctx.user.id, suggestionId, status: 'dismissed', updatedAt: now }, $setOnInsert: { createdAt: now } },
+        { upsert: true },
+      );
+      return json({ ok: true, dismissed: suggestionId });
+    }
+
+    const date = new Date(suggestion.date);
+    const matchingProfile = suggestion.personName
+      ? intelligence.profiles.find((profile) => String(profile.name || '').trim().toLowerCase() === suggestion.personName.toLowerCase())
+      : null;
+    let savedEvent = null;
+    if (matchingProfile && ['birthday', 'anniversary'].includes(suggestion.type)) {
+      await ctx.db.collection('life_profiles').updateOne(
+        { userId: ctx.user.id, id: matchingProfile.id },
+        { $set: { [suggestion.type]: date, updatedAt: now } },
+      );
+    } else {
+      const event = {
+        id: uuidv4(),
+        userId: ctx.user.id,
+        type: suggestion.type,
+        title: suggestion.personName
+          ? `${suggestion.personName}'s ${suggestion.type}`
+          : suggestion.type === 'birthday' ? 'Birthday celebration' : 'Anniversary',
+        date,
+        annual: true,
+        personId: null,
+        cultureTags: [],
+        countries: [],
+        notes: `Confirmed from SnapNext memory suggestion (${suggestion.confidence} confidence).`,
+        source: 'confirmed-memory-suggestion',
+        sourceMediaIds: suggestion.sourceMediaIds || [],
+        archivedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await ctx.db.collection('life_events').insertOne(event);
+      savedEvent = event;
+    }
+    await ctx.db.collection('life_event_suggestion_feedback').updateOne(
+      { userId: ctx.user.id, suggestionId },
+      { $set: { userId: ctx.user.id, suggestionId, status: 'confirmed', suggestionType: suggestion.type, personName: suggestion.personName || null, date, updatedAt: now }, $setOnInsert: { createdAt: now } },
+      { upsert: true },
+    );
+    return json({ ok: true, confirmed: suggestionId, profileId: matchingProfile?.id || null, event: savedEvent ? { ...savedEvent, _id: undefined } : null });
   }
 
   if (action === 'prepare-package') {
