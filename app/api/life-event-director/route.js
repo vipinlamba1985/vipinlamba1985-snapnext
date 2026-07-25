@@ -95,18 +95,19 @@ async function loadIntelligenceInputs(db, userId) {
   };
 }
 
-async function buildIntelligence(db, user) {
+async function buildPersonalIntelligence(db, user) {
   const inputs = await loadIntelligenceInputs(db, user.id);
-  const [contextualCelebrations, memorySuggestions] = await Promise.all([
-    buildContextualCelebrations({ profiles: inputs.profiles, media: inputs.media }),
-    Promise.resolve(buildMemoryCelebrationSuggestions(inputs)),
-  ]);
   return {
     ...inputs,
-    contextualCelebrations,
-    memorySuggestions,
+    memorySuggestions: buildMemoryCelebrationSuggestions(inputs),
     setupPrompts: buildCelebrationSetupPrompts({ user, profiles: inputs.profiles, favoriteCount: inputs.favoriteCount }),
   };
+}
+
+async function buildIntelligence(db, user) {
+  const personal = await buildPersonalIntelligence(db, user);
+  const contextualCelebrations = await buildContextualCelebrations({ profiles: personal.profiles, media: personal.media });
+  return { ...personal, contextualCelebrations };
 }
 
 export async function GET(request) {
@@ -198,7 +199,7 @@ export async function POST(request) {
   if (action === 'confirm-suggestion' || action === 'dismiss-suggestion') {
     const suggestionId = clean(body.suggestionId, 80);
     if (!suggestionId) return json({ error: 'Suggestion is required.' }, 400);
-    const intelligence = await buildIntelligence(ctx.db, ctx.user);
+    const intelligence = await buildPersonalIntelligence(ctx.db, ctx.user);
     const suggestion = intelligence.memorySuggestions.find((item) => item.id === suggestionId);
     if (!suggestion) return json({ error: 'That suggestion is no longer available.' }, 404);
 
