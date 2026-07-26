@@ -62,6 +62,7 @@ test('self People clusters retain identity for profile confirmation', () => {
   assert.equal(suggestions.length, 1);
   assert.equal(suggestions[0].personName, 'Vipin');
   assert.equal(suggestions[0].personIsSelf, true);
+  assert.equal(suggestions[0].requiresFullDate, true);
   assert.match(suggestions[0].question, /your birthday/i);
 });
 
