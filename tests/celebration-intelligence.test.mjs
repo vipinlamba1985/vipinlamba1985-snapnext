@@ -6,6 +6,7 @@ import {
   buildMemoryCelebrationSuggestions,
   countryCodeFor,
   extractCountrySignals,
+  resolveProfileCelebrationDate,
 } from '../lib/celebration-intelligence.js';
 
 test('country names and ISO codes normalize without inferring identity', () => {
@@ -45,6 +46,38 @@ test('birthday photos create a confirmation-first suggestion for a named person'
   assert.match(suggestions[0].question, /Priyansh's birthday/i);
   assert.match(suggestions[0].question, /July 24/i);
   assert.equal(suggestions[0].confidence, 'medium');
+});
+
+test('self People clusters retain identity for profile confirmation', () => {
+  const suggestions = buildMemoryCelebrationSuggestions({
+    media: [{
+      id: 'self-memory',
+      name: 'Birthday cake',
+      capturedAt: '2025-07-24T16:00:00Z',
+      peopleIntelligence: { clusterIds: ['self-cluster'] },
+    }],
+    peopleByCluster: { 'self-cluster': { name: 'Vipin', isSelf: true } },
+    profiles: [{ id: 'self', name: 'Vipin', relationship: 'You' }],
+  });
+  assert.equal(suggestions.length, 1);
+  assert.equal(suggestions[0].personName, 'Vipin');
+  assert.equal(suggestions[0].personIsSelf, true);
+  assert.match(suggestions[0].question, /your birthday/i);
+});
+
+test('profile confirmation preserves a known year and refuses to invent a missing year', () => {
+  const preserved = resolveProfileCelebrationDate({
+    monthDay: '07-24',
+    existingDate: '2015-06-10T00:00:00.000Z',
+  });
+  assert.equal(preserved.toISOString().slice(0, 10), '2015-07-24');
+  assert.equal(resolveProfileCelebrationDate({ monthDay: '07-24' }), null);
+
+  const explicit = resolveProfileCelebrationDate({
+    monthDay: '07-24',
+    confirmedDate: '2012-07-24T00:00:00.000Z',
+  });
+  assert.equal(explicit.toISOString().slice(0, 10), '2012-07-24');
 });
 
 test('confirmed profile dates suppress duplicate memory suggestions', () => {
