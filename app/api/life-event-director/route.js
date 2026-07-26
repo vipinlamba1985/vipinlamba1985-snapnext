@@ -7,6 +7,7 @@ import {
   buildCelebrationSetupPrompts,
   buildContextualCelebrations,
   buildMemoryCelebrationSuggestions,
+  resolveProfileCelebrationDate,
 } from '@/lib/celebration-intelligence';
 
 export const runtime = 'nodejs';
@@ -55,7 +56,8 @@ async function resolveEvent(db, userId, eventId) {
   };
 }
 
-async function loadIntelligenceInputs(db, userId) {
+async function loadIntelligenceInputs(db, user) {
+  const userId = user.id;
   const [profiles, events, media, people, feedback, favoriteCount] = await Promise.all([
     db.collection('life_profiles').find({ userId, archivedAt: null }).project({ _id: 0 }).sort({ updatedAt: -1 }).toArray(),
     db.collection('life_events').find({ userId, archivedAt: null }).project({ _id: 0 }).sort({ date: 1 }).toArray(),
@@ -84,7 +86,14 @@ async function loadIntelligenceInputs(db, userId) {
       $or: [{ requesterUserId: userId }, { targetUserId: userId }],
     }),
   ]);
-  const peopleByCluster = Object.fromEntries(people.map((person) => [String(person.clusterId), person.isSelf ? 'You' : person.displayName]).filter(([, name]) => name));
+  const selfProfile = profiles.find((profile) => ['you', 'self', 'me'].includes(String(profile.relationship || '').trim().toLowerCase())) || null;
+  const selfName = clean(selfProfile?.name || user.name || user.displayName, 80) || null;
+  const peopleByCluster = Object.fromEntries(people
+    .map((person) => [String(person.clusterId), {
+      name: person.isSelf ? selfName : clean(person.displayName, 80) || null,
+      isSelf: Boolean(person.isSelf),
+    }])
+    .filter(([clusterId, identity]) => clusterId && (identity.isSelf || identity.name)));
   return {
     profiles,
     events,
@@ -96,7 +105,7 @@ async function loadIntelligenceInputs(db, userId) {
 }
 
 async function buildPersonalIntelligence(db, user) {
-  const inputs = await loadIntelligenceInputs(db, user.id);
+  const inputs = await loadIntelligenceInputs(db, user);
   return {
     ...inputs,
     memorySuggestions: buildMemoryCelebrationSuggestions(inputs),
@@ -212,12 +221,26 @@ export async function POST(request) {
       return json({ ok: true, dismissed: suggestionId });
     }
 
-    const date = new Date(suggestion.date);
-    const matchingProfile = suggestion.personName
-      ? intelligence.profiles.find((profile) => String(profile.name || '').trim().toLowerCase() === suggestion.personName.toLowerCase())
-      : null;
+    const suggestedDate = new Date(suggestion.date);
+    if (Number.isNaN(suggestedDate.getTime())) return json({ error: 'That suggestion has an invalid date.' }, 400);
+    const confirmedDate = body.confirmedDate ? new Date(body.confirmedDate) : null;
+    if (confirmedDate && Number.isNaN(confirmedDate.getTime())) return json({ error: 'Use a valid confirmed date.' }, 400);
+    const matchingProfile = suggestion.personIsSelf
+      ? intelligence.profiles.find((profile) => ['you', 'self', 'me'].includes(String(profile.relationship || '').trim().toLowerCase()))
+      : suggestion.personName
+        ? intelligence.profiles.find((profile) => String(profile.name || '').trim().toLowerCase() === suggestion.personName.toLowerCase())
+        : null;
+    let date = confirmedDate || suggestedDate;
     let savedEvent = null;
     if (matchingProfile && ['birthday', 'anniversary'].includes(suggestion.type)) {
+      date = resolveProfileCelebrationDate({
+        monthDay: suggestion.monthDay,
+        existingDate: matchingProfile[suggestion.type],
+        confirmedDate,
+      });
+      if (!date) {
+        return json({ error: `Add the actual ${suggestion.type} including the year before confirming this memory suggestion.` }, 400);
+      }
       await ctx.db.collection('life_profiles').updateOne(
         { userId: ctx.user.id, id: matchingProfile.id },
         { $set: { [suggestion.type]: date, updatedAt: now } },
