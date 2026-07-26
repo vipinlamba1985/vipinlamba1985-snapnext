@@ -38,6 +38,7 @@ export default function EventDirectorPage() {
   const [event, setEvent] = useState(EMPTY_EVENT);
   const [saving, setSaving] = useState(false);
   const [suggestionBusy, setSuggestionBusy] = useState('');
+  const [suggestionDates, setSuggestionDates] = useState({});
 
   async function load() {
     try {
@@ -106,11 +107,21 @@ export default function EventDirectorPage() {
   }
 
   async function respondSuggestion(item, action) {
+    const confirmedDate = suggestionDates[item.id] || '';
+    if (action === 'confirm-suggestion' && item.requiresFullDate && !confirmedDate) {
+      toast.message(`Add the actual ${item.type} including the year first.`);
+      return;
+    }
     setSuggestionBusy(item.id);
     try {
       await apiFetch('/life-event-director', {
         method: 'POST',
-        body: JSON.stringify({ action, suggestionId: item.id }),
+        body: JSON.stringify({ action, suggestionId: item.id, ...(confirmedDate ? { confirmedDate } : {}) }),
+      });
+      setSuggestionDates(current => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
       });
       await load();
       toast.success(action === 'confirm-suggestion' ? 'Date confirmed.' : 'Suggestion dismissed.');
@@ -132,7 +143,7 @@ export default function EventDirectorPage() {
         </div>
       </section>
 
-      {data.memorySuggestions.length > 0 && <section><div className="mb-3"><h2 className="text-xl font-black">Confirm from your memories</h2><p className="mt-1 text-sm text-white/45">SnapNext noticed a possible date. Confirm it before it becomes part of your calendar.</p></div><div className="grid gap-3 md:grid-cols-2">{data.memorySuggestions.map(item => <div key={item.id} className="rounded-3xl border border-amber-300/15 bg-amber-400/[0.05] p-4"><div className="text-xs font-black uppercase tracking-wider text-amber-200">{item.confidence} confidence</div><h3 className="mt-2 text-lg font-black">{item.question}</h3><p className="mt-1 text-sm leading-5 text-white/48">{item.evidence}</p><div className="mt-4 flex gap-2"><button disabled={suggestionBusy === item.id} onClick={() => respondSuggestion(item, 'confirm-suggestion')} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-black text-black disabled:opacity-50">{suggestionBusy === item.id && <Loader2 className="h-4 w-4 animate-spin" />}Confirm date</button><button disabled={suggestionBusy === item.id} onClick={() => respondSuggestion(item, 'dismiss-suggestion')} className="min-h-10 rounded-full border border-white/10 px-4 text-sm font-bold text-white/60 disabled:opacity-50">Not this date</button></div></div>)}</div></section>}
+      {data.memorySuggestions.length > 0 && <section><div className="mb-3"><h2 className="text-xl font-black">Confirm from your memories</h2><p className="mt-1 text-sm text-white/45">SnapNext noticed a possible date. Confirm it before it becomes part of your calendar.</p></div><div className="grid gap-3 md:grid-cols-2">{data.memorySuggestions.map(item => <div key={item.id} className="rounded-3xl border border-amber-300/15 bg-amber-400/[0.05] p-4"><div className="text-xs font-black uppercase tracking-wider text-amber-200">{item.confidence} confidence</div><h3 className="mt-2 text-lg font-black">{item.question}</h3><p className="mt-1 text-sm leading-5 text-white/48">{item.evidence}</p>{item.requiresFullDate && <label className="mt-3 block text-xs font-bold text-white/55">Actual {item.type}<input type="date" value={suggestionDates[item.id] || ''} onChange={event => setSuggestionDates(current => ({ ...current, [item.id]: event.target.value }))} className="mt-1 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none" /></label>}<div className="mt-4 flex gap-2"><button disabled={suggestionBusy === item.id} onClick={() => respondSuggestion(item, 'confirm-suggestion')} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-black text-black disabled:opacity-50">{suggestionBusy === item.id && <Loader2 className="h-4 w-4 animate-spin" />}Confirm date</button><button disabled={suggestionBusy === item.id} onClick={() => respondSuggestion(item, 'dismiss-suggestion')} className="min-h-10 rounded-full border border-white/10 px-4 text-sm font-bold text-white/60 disabled:opacity-50">Not this date</button></div></div>)}</div></section>}
 
       {urgent.length > 0 && <section><h2 className="mb-3 text-xl font-black">Needs attention now</h2><div className="grid gap-3 md:grid-cols-2">{urgent.map(item => <EventCard key={item.id} item={item} prepare={prepare} />)}</div></section>}
 
