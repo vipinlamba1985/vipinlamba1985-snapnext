@@ -25,20 +25,25 @@ export async function GET(request, context) {
 
   const { id } = await context.params;
   const mediaId = String(id || '');
-  const download = new URL(request.url).searchParams.get('dl') === '1';
+  const url = new URL(request.url);
+  const download = url.searchParams.get('dl') === '1';
+  const thumbnail = url.searchParams.get('variant') === 'thumbnail';
   const db = await getDb();
   const doc = await db.collection('media').findOne({ id: mediaId, userId: user.id });
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const provider = doc.provider || 'local';
+  const useThumbnail = thumbnail && Boolean(doc.thumbnailStorageKey);
+  const provider = useThumbnail ? (doc.thumbnailProvider || doc.provider || 'local') : (doc.provider || 'local');
+  const storageKey = useThumbnail ? doc.thumbnailStorageKey : doc.storageKey;
+  const contentType = useThumbnail ? (doc.thumbnailMime || 'image/jpeg') : doc.mime;
   if (provider === 's3') {
     try {
       const signed = await storage.getReadUrl({
         provider: 's3',
-        storageKey: doc.storageKey,
+        storageKey,
         expiresSec: 600,
         filename: download ? safeFilename(doc.name) : null,
-        contentType: doc.mime || null,
+        contentType: contentType || null,
       });
       return NextResponse.redirect(signed, 302);
     } catch (error) {
@@ -48,8 +53,8 @@ export async function GET(request, context) {
   }
 
   try {
-    const buffer = await storage.read({ provider: 'local', storageKey: doc.storageKey });
-    const headers = privateHeaders(doc.mime);
+    const buffer = await storage.read({ provider: 'local', storageKey });
+    const headers = privateHeaders(contentType);
     if (download) headers['Content-Disposition'] = `attachment; filename="${safeFilename(doc.name)}"`;
     return new NextResponse(buffer, { status: 200, headers });
   } catch (error) {

@@ -5,6 +5,8 @@ import {
   applyBulkMediaAction,
   applyMediaAction,
   createTextMedia,
+  decodeMediaCursor,
+  encodeMediaCursor,
   escapeSearchPattern,
   normalizeMediaFilter,
 } from '../lib/media-library-service.js';
@@ -18,6 +20,13 @@ test('media filters fail safely to all', () => {
 test('media search escapes regex syntax and caps input length', () => {
   assert.equal(escapeSearchPattern('family.*(trip)?'), 'family\\.\\*\\(trip\\)\\?');
   assert.equal(escapeSearchPattern('x'.repeat(200)).length, 120);
+});
+
+test('gallery cursors preserve stable createdAt and id ordering', () => {
+  const createdAt = new Date('2026-07-24T10:00:00.000Z');
+  const cursor = encodeMediaCursor({ id: 'media-42', createdAt });
+  assert.deepEqual(decodeMediaCursor(cursor), { id: 'media-42', createdAt });
+  assert.equal(decodeMediaCursor('not-a-cursor'), null);
 });
 
 test('single media actions scope reads and writes to the authenticated user', async () => {
