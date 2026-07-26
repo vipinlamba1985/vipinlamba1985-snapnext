@@ -44,6 +44,21 @@ Accepted aliases: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (U
 | `OPENAI_TEXT_MODEL` | OPTIONAL (default `gpt-4o-mini`) | Text model override. |
 | `AI_PROVIDER_PRIMARY` / `AI_PROVIDER_VISION` / `AI_PROVIDER_FALLBACK` | OPTIONAL | Provider routing (defaults: openai / gemini / gemini). |
 
+## Circles social connections
+
+Circles supports manual `@profile` organization without any social credentials. Automatic following/subscription import is only enabled for connectors with legitimate API access. YouTube is the first active OAuth connector; other platforms remain link/manual until separately approved and implemented.
+
+| Variable | Classification | Purpose |
+|---|---|---|
+| `YOUTUBE_CLIENT_ID` | REQUIRED FOR FEATURE (YouTube Circles connection) | Google OAuth client ID used to authorize read-only YouTube subscription access. |
+| `YOUTUBE_CLIENT_SECRET` | REQUIRED FOR FEATURE (YouTube Circles connection) | Google OAuth client secret. Server-side only. |
+| `CIRCLES_TOKEN_ENCRYPTION_KEY` | REQUIRED FOR FEATURE (connected social accounts) | Server-side secret used to encrypt OAuth access/refresh tokens at rest before storing them in MongoDB. Use a long random value and never expose it to the browser. |
+
+For the Google OAuth client, authorize the production callback URL:
+`https://<your-domain>/api/circles/connections/youtube/callback`
+
+The requested YouTube scope is read-only. SnapNext does not follow, unfollow, like, comment, or publish through this connector.
+
 ## Storage (AWS S3)
 
 Local disk fallback (`STORAGE_PROVIDER=local`, files under `UPLOAD_DIR` or `/app/uploads`) works for
@@ -103,3 +118,4 @@ exposing provider errors to users.
 5. `BILLING_PROVIDER=stripe` + Stripe keys + price IDs — paid plans unavailable without them (mock is refused in production).
 6. `STORAGE_PROVIDER=s3` + AWS keys — uploads not durable without them.
 7. `GEMINI_API_KEY` and/or `OPENAI_API_KEY` — AI features return honest 503s without them.
+8. Circles automatic YouTube import additionally requires `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `CIRCLES_TOKEN_ENCRYPTION_KEY`; manual Circles continue to work without them.
