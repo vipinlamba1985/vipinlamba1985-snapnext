@@ -6,8 +6,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BookOpen, BrainCircuit, ChevronDown, Cloud, CreditCard, Crown, Download, Film,
   Heart, Home, Image as ImageIcon, LifeBuoy, Loader2, LogOut, Mail, Menu,
-  MessageSquare, Network, RefreshCw, Send, Settings, Shield, ShieldAlert,
-  Sparkles, Trash2, Upload, UserRound, Users, X,
+  MessageSquare, Network, RefreshCw, Send, Shield, ShieldAlert, Sparkles, Trash2,
+  Upload, UserRound, Users, X,
 } from 'lucide-react';
 import { apiFetch, logout, getStoredUser, setStoredUser, getToken } from '@/lib/api-client';
 import BrandLogo from '@/components/BrandLogo';
@@ -121,14 +121,13 @@ export default function AppShell({ children }) {
   const currentBadge = devPlan?.overrideActive ? `Testing as ${currentExperienceName}` : entitlement.badge;
   const routeCapabilityAllowed = !activeRoute?.aiCapability || canUseAiFeature(effectivePlanId, activeRoute.aiCapability);
 
-  const allowedRoutes = ROUTES.filter(route => {
+  const visibleRoutes = ROUTES.filter(route => {
     if (route.featureFlag && devPlan?.developerProfile?.featureFlags?.[route.featureFlag] === false) return false;
     if (route.adminOnly) return realIsSuper;
-    if (route.aiCapability) return canUseAiFeature(effectivePlanId, route.aiCapability);
     return true;
   });
-  const primaryNav = routesInOrder(PRIMARY_HREFS, allowedRoutes);
-  const moreNav = routesInOrder(MORE_HREFS, allowedRoutes);
+  const primaryNav = routesInOrder(PRIMARY_HREFS, visibleRoutes);
+  const moreNav = routesInOrder(MORE_HREFS, visibleRoutes).filter(route => !route.aiCapability || canUseAiFeature(effectivePlanId, route.aiCapability));
   const moreActive = moreNav.some(item => pathname === item.href || pathname.startsWith(`${item.href}/`));
 
   useEffect(() => {
