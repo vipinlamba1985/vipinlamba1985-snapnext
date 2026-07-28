@@ -20,9 +20,12 @@ import {
   Smartphone,
   Sparkles,
   Square,
+  Unplug,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
+
+const WEB_WORKERS = new Set(['google_drive', 'google_photos', 'dropbox', 'onedrive']);
 
 const MODES = [
   {
@@ -47,10 +50,14 @@ const MODES = [
 ];
 
 const RULES = [
-  { type: 'favorites', label: 'Favourites first', description: 'Uses the provider’s explicit favourite or starred signal.' },
+  { type: 'favorites', label: 'Favourites first', description: 'Uses the source’s explicit favourite or starred signal when available.' },
   { type: 'recent', label: 'Recent memories', description: 'Prioritizes memories from roughly the last two years.' },
   { type: 'photos_first', label: 'Photos before videos', description: 'Makes available storage go further.' },
 ];
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function bytes(value) {
   const amount = Number(value || 0);
@@ -127,7 +134,15 @@ export default function SmartSyncPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const params = new URLSearchParams(window.location.search);
+    const oauth = params.get('oauth');
+    const provider = params.get('provider');
+    if (oauth === 'connected') toast.success(`${provider === 'onedrive' ? 'OneDrive' : provider === 'google_photos' ? 'Google Photos' : provider === 'dropbox' ? 'Dropbox' : 'Cloud source'} connected.`);
+    if (oauth && oauth !== 'connected') toast.error('The cloud connection was not completed.');
+    if (oauth) window.history.replaceState({}, '', '/smart-sync');
+  }, []);
 
   const selectedProvider = useMemo(
     () => providers.find(provider => provider.id === profile?.providerId),
@@ -141,9 +156,10 @@ export default function SmartSyncPage() {
   const selectedMode = MODES.find(mode => mode.id === profile?.syncMode) || MODES[1];
   const nativeSelected = selectedProvider?.surface === 'native';
   const durableProviderReady = selectedProvider?.syncStrategy === 'durable_cloud_job' && selectedProvider?.connected;
+  const pickerProviderReady = selectedProvider?.syncStrategy === 'user_selected_picker' && selectedProvider?.connected;
 
   async function runBatch(job) {
-    if (!job || runnerBusy.current || !['queued', 'running'].includes(job.status) || job.providerId !== 'google_drive') return;
+    if (!job || runnerBusy.current || !['queued', 'running'].includes(job.status) || !WEB_WORKERS.has(job.providerId)) return;
     runnerBusy.current = true;
     try {
       await apiFetch(`/smart-sync/jobs/${job.id}/run`, { method: 'POST', body: '{}' });
@@ -156,11 +172,11 @@ export default function SmartSyncPage() {
   }
 
   useEffect(() => {
-    if (!activeJob || activeJob.providerId !== 'google_drive' || !['queued', 'running'].includes(activeJob.status)) return undefined;
+    if (!activeJob || !WEB_WORKERS.has(activeJob.providerId) || !['queued', 'running'].includes(activeJob.status)) return undefined;
     const timer = setInterval(() => runBatch(activeJob), 5000);
     runBatch(activeJob);
     return () => clearInterval(timer);
-  }, [activeJob?.id, activeJob?.status]);
+  }, [activeJob?.id, activeJob?.providerId, activeJob?.status]);
 
   function toggleRule(type) {
     setProfile(current => {
@@ -177,6 +193,36 @@ export default function SmartSyncPage() {
           }];
       return { ...current, rules, enabled: false };
     });
+  }
+
+  async function connectProvider(provider) {
+    if (provider.id === 'google_drive') {
+      window.location.assign('/imports');
+      return;
+    }
+    setBusy(`connect:${provider.id}`);
+    try {
+      const data = await apiFetch(`/smart-sync/oauth/${provider.id}/start`);
+      if (!data.authorizationUrl) throw new Error('The provider did not return a connection page.');
+      window.location.assign(data.authorizationUrl);
+    } catch (error) {
+      toast.error(error.message || `Could not connect ${provider.name}.`);
+      setBusy('');
+    }
+  }
+
+  async function disconnectProvider(provider) {
+    setBusy(`disconnect:${provider.id}`);
+    try {
+      await apiFetch(`/smart-sync/oauth/${provider.id}/status`, { method: 'DELETE' });
+      if (profile.providerId === provider.id) setProfile(current => ({ ...current, enabled: false }));
+      await load();
+      toast.success(`${provider.name} disconnected. Protected SnapNext copies remain safe.`);
+    } catch (error) {
+      toast.error(error.message || `Could not disconnect ${provider.name}.`);
+    } finally {
+      setBusy('');
+    }
   }
 
   async function savePlan({ start = false } = {}) {
@@ -201,6 +247,48 @@ export default function SmartSyncPage() {
       }
     } catch (error) {
       toast.error(error.message || 'We could not save your Smart Sync plan.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function startGooglePhotosPicker() {
+    const popup = window.open('about:blank', 'snapnext-google-photos', 'popup,width=560,height=760');
+    setBusy('google-photos-picker');
+    let sessionId = '';
+    try {
+      const approved = await apiFetch('/smart-sync', {
+        method: 'POST',
+        body: JSON.stringify({ profile: { ...profile, enabled: true }, approved: true }),
+      });
+      setProfile(approved.profile);
+      const session = await apiFetch('/smart-sync/google-photos/session', {
+        method: 'POST',
+        body: JSON.stringify({ maxItemCount: 500 }),
+      });
+      sessionId = session.sessionId;
+      if (!session.pickerUri) throw new Error('Google Photos did not return a picker page.');
+      if (popup) popup.location.href = session.pickerUri;
+      else window.open(session.pickerUri, '_blank', 'noopener,noreferrer');
+      toast.success('Choose your Google Photos. SnapNext will continue after you finish.');
+
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        await sleep(3000);
+        const status = await apiFetch(`/smart-sync/google-photos/session?sessionId=${encodeURIComponent(sessionId)}`);
+        if (status.ready) {
+          if (popup && !popup.closed) popup.close();
+          await load();
+          toast.success(status.itemCount ? `${status.itemCount} selected items are ready for Smart Sync.` : 'Google Photos selection is ready.');
+          return;
+        }
+      }
+      throw new Error('Google Photos selection timed out. Start a new selection when ready.');
+    } catch (error) {
+      if (popup && !popup.closed) popup.close();
+      if (sessionId) {
+        await apiFetch(`/smart-sync/google-photos/session?sessionId=${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => {});
+      }
+      toast.error(error.message || 'Google Photos selection could not finish.');
     } finally {
       setBusy('');
     }
@@ -272,10 +360,8 @@ export default function SmartSyncPage() {
             : provider.surface === 'native'
               ? 'Use mobile app'
               : provider.syncStrategy === 'user_selected_picker'
-                ? 'Manual selection'
-                : provider.available
-                  ? 'Connect'
-                  : 'Coming later';
+                ? provider.available ? 'Connect to choose' : 'Keys required'
+                : provider.available ? 'Connect' : 'Keys required';
           return <button
             type="button"
             key={provider.id}
@@ -284,13 +370,18 @@ export default function SmartSyncPage() {
             className={`rounded-2xl border p-4 text-left transition disabled:opacity-40 ${selected ? 'border-cyan-400 bg-cyan-500/10' : 'border-white/10 bg-black/10 hover:border-white/20'}`}
           >
             <div className="flex items-center justify-between gap-3"><span className="font-black">{provider.name}</span><span className="text-[11px] text-white/45">{status}</span></div>
-            <p className="mt-2 text-xs leading-5 text-white/40">{provider.surface === 'native' ? 'Camera-roll access with native permission' : provider.syncStrategy === 'user_selected_picker' ? 'You explicitly choose the items' : provider.syncStrategy === 'durable_cloud_job' ? 'Incremental read-only cloud sync' : 'Connector is not enabled yet'}</p>
+            <p className="mt-2 text-xs leading-5 text-white/40">{provider.surface === 'native' ? 'Camera-roll access with native permission' : provider.syncStrategy === 'user_selected_picker' ? 'You explicitly choose the items' : 'Incremental read-only cloud sync'}</p>
           </button>;
         })}
       </div>
 
-      {!selectedProvider?.connected && profile.providerId === 'google_drive' && selectedProvider?.available && <Link href="/imports" className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-black"><Cloud className="h-4 w-4" /> Connect Google Drive</Link>}
-      {selectedProvider?.syncStrategy === 'user_selected_picker' && <Link href="/imports" className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-black"><Check className="h-4 w-4" /> Choose from Google Photos</Link>}
+      {selectedProvider && !selectedProvider.connected && selectedProvider.surface === 'web' && selectedProvider.available && (
+        selectedProvider.id === 'google_drive'
+          ? <Link href="/imports" className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-black"><Cloud className="h-4 w-4" /> Connect Google Drive</Link>
+          : <button type="button" disabled={Boolean(busy)} onClick={() => connectProvider(selectedProvider)} className="mt-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-black disabled:opacity-40">{busy === `connect:${selectedProvider.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />} Connect {selectedProvider.name}</button>
+      )}
+      {selectedProvider?.connected && selectedProvider.id !== 'google_drive' && <button type="button" disabled={Boolean(busy) || Boolean(activeJob)} onClick={() => disconnectProvider(selectedProvider)} className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-black text-white/65 disabled:opacity-40"><Unplug className="h-4 w-4" /> Disconnect {selectedProvider.name}</button>}
+      {selectedProvider && !selectedProvider.available && selectedProvider.surface === 'web' && <p className="mt-4 text-xs text-amber-100/70">This source needs its OAuth client ID and secret in the production environment before it can connect.</p>}
       {nativeSelected && <div className="mt-4 flex items-start gap-3 rounded-2xl border border-white/10 bg-black/15 p-4 text-sm text-white/55"><Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-cyan-200" /><p>Open the SnapNext mobile app and approve photo access there. Web browsers cannot provide reliable background camera-roll sync.</p></div>}
     </section>
 
@@ -319,7 +410,7 @@ export default function SmartSyncPage() {
 
       {profile.syncMode === 'protect_important' && <div className="mt-5 rounded-2xl border border-white/10 bg-black/15 p-4">
         <h3 className="font-black">What comes first</h3>
-        <p className="mt-1 text-xs text-white/45">These are explainable rules, not irreversible AI decisions.</p>
+        <p className="mt-1 text-xs text-white/45">These are explainable rules, not irreversible AI decisions. Google Photos selections are always treated as explicitly important.</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
           {RULES.map(rule => {
             const enabled = profile.rules.some(item => item.type === rule.type && item.enabled);
@@ -347,12 +438,13 @@ export default function SmartSyncPage() {
         <div className="min-w-[190px] rounded-2xl border border-white/10 bg-black/20 p-4"><HardDrive className="h-5 w-5 text-purple-200" /><p className="mt-3 text-xl font-black">{bytes(storage?.usedBytes)}</p><p className="mt-1 text-xs text-white/45">used by {storage?.itemCount || 0} protected memories</p></div>
       </div>
       <div className="mt-5 flex flex-wrap gap-2">
-        {!profile.enabled && <button type="button" disabled={Boolean(busy) || !durableProviderReady || nativeSelected} onClick={() => savePlan({ start: true })} className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-5 py-3 text-sm font-black text-black disabled:cursor-not-allowed disabled:opacity-35">{busy === 'start' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Start Smart Sync</button>}
+        {selectedProvider?.syncStrategy === 'durable_cloud_job' && !profile.enabled && <button type="button" disabled={Boolean(busy) || !durableProviderReady || nativeSelected} onClick={() => savePlan({ start: true })} className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-5 py-3 text-sm font-black text-black disabled:cursor-not-allowed disabled:opacity-35">{busy === 'start' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Start Smart Sync</button>}
+        {selectedProvider?.syncStrategy === 'user_selected_picker' && <button type="button" disabled={Boolean(busy) || !pickerProviderReady || Boolean(activeJob)} onClick={startGooglePhotosPicker} className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-5 py-3 text-sm font-black text-black disabled:cursor-not-allowed disabled:opacity-35">{busy === 'google-photos-picker' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Choose photos & start</button>}
         <button type="button" disabled={Boolean(busy) || Boolean(activeJob)} onClick={() => savePlan()} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black disabled:opacity-35">Save for later</button>
         {profile.enabled && <button type="button" disabled={Boolean(busy)} onClick={stopSmartSync} className="inline-flex items-center gap-2 rounded-full border border-rose-300/25 px-5 py-3 text-sm font-black text-rose-100 disabled:opacity-35"><Square className="h-4 w-4" /> Turn off Smart Sync</button>}
       </div>
       {!durableProviderReady && selectedProvider?.syncStrategy === 'durable_cloud_job' && <p className="mt-3 text-xs text-amber-100/70">Connect this source before starting.</p>}
-      {selectedProvider?.syncStrategy === 'adapter_required' && <p className="mt-3 text-xs text-amber-100/70">This connector is visible for planning but its import adapter is not enabled yet.</p>}
+      {!pickerProviderReady && selectedProvider?.syncStrategy === 'user_selected_picker' && <p className="mt-3 text-xs text-amber-100/70">Connect Google Photos before opening the picker.</p>}
     </section>
 
     <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
