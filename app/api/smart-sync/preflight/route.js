@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { entitlementForUser } from '@/lib/entitlements';
-import { normalizeSmartSyncProfile, SMART_SYNC_PROVIDERS, smartSyncSummary } from '@/lib/smart-sync';
+import {
+  normalizeSmartSyncProfile,
+  SMART_SYNC_MODE_DETAILS,
+  SMART_SYNC_PROVIDERS,
+  smartSyncSummary,
+} from '@/lib/smart-sync';
 
 export const runtime = 'nodejs';
 
@@ -24,11 +29,14 @@ export async function POST(request) {
   const remainingBytes = limitBytes ? Math.max(0, limitBytes - usedBytes) : 0;
   const estimatedBytes = Math.max(0, Number(estimate.bytes || 0));
   const estimatedItems = Math.max(0, Number(estimate.items || 0));
+  const indexOnly = profile.syncMode === 'index_only';
 
   return NextResponse.json({
     preflight: {
       source: provider?.name || profile.providerId,
       providerId: profile.providerId,
+      syncMode: profile.syncMode,
+      syncModeLabel: SMART_SYNC_MODE_DETAILS[profile.syncMode]?.label || profile.syncMode,
       rules: smartSyncSummary(profile),
       priority: profile.rules.filter(rule => rule.enabled).sort((a, b) => a.priority - b.priority).map(rule => rule.type),
       estimatedItems,
@@ -36,7 +44,8 @@ export async function POST(request) {
       usedBytes,
       limitBytes,
       remainingBytes,
-      fitsAvailableStorage: !limitBytes || !estimatedBytes || estimatedBytes <= remainingBytes,
+      storageRequired: !indexOnly,
+      fitsAvailableStorage: indexOnly || !limitBytes || !estimatedBytes || estimatedBytes <= remainingBytes,
       actionWhenFull: profile.stopAtCapacity ? 'stop_at_capacity' : 'require_user_action',
       duplicates: 'skip',
       originals: 'untouched',

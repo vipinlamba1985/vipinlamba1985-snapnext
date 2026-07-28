@@ -8,10 +8,17 @@ test('Smart Sync source IDs are unique and capped', () => {
   assert.deepEqual(ids, ['a', 'b']);
 });
 
-test('Smart Sync jobs use durable counters and safe transitions', () => {
-  const job = createSmartSyncJob({ userId: 'u1', providerId: 'google_drive', profile: { rules: [] }, sourceFileIds: ['a', 'b'] });
+test('Smart Sync jobs use durable counters, an explicit outcome, and safe transitions', () => {
+  const job = createSmartSyncJob({
+    userId: 'u1',
+    providerId: 'google_drive',
+    profile: { rules: [], syncMode: 'index_only' },
+    sourceFileIds: ['a', 'b'],
+  });
   assert.equal(job.estimatedItems, 2);
   assert.equal(job.activeKey, 'u1:google_drive');
+  assert.equal(job.syncMode, 'index_only');
+  assert.equal(job.indexedItems, 0);
   assert.equal(jobProgress({ ...job, processedItems: 1 }).percent, 50);
   assert.equal(nextJobState({ status: 'running' }, 'pause').status, 'paused');
   assert.equal(nextJobState({ status: 'completed' }, 'resume'), null);
