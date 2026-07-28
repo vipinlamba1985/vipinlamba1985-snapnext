@@ -147,7 +147,7 @@ export default function AppShell({ children }) {
   function VerifyBanner({ user: bannerUser, onVerified }) {
     const [sending, setSending] = useState(false);
     const [dismissed, setDismissed] = useState(false);
-    if (!bannerUser || bannerUser.emailVerified || dismissed) return null;
+    if (!bannerUser || bannerUser.isPreview || bannerUser.emailVerified || dismissed) return null;
     async function resend() {
       setSending(true);
       try {
