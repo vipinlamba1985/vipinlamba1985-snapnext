@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { nextJobState, publicSmartSyncJob } from '@/lib/smart-sync/jobs';
 import { processGoogleDriveJobBatch } from '@/lib/smart-sync/google-drive-worker';
+import { processProviderJobBatch } from '@/lib/smart-sync/provider-job-worker';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -36,8 +37,14 @@ export async function POST(request, routeContext) {
   if (!job) return json({ error: 'Sync job not found.' }, 404);
 
   if (command === 'run') {
-    if (job.providerId !== 'google_drive') return json({ error: 'This provider is prepared for the native app worker.' }, 409);
-    const result = await processGoogleDriveJobBatch({ db, jobId: id, userId: user.id });
+    let result;
+    if (job.providerId === 'google_drive') {
+      result = await processGoogleDriveJobBatch({ db, jobId: id, userId: user.id });
+    } else if (['dropbox', 'onedrive', 'google_photos'].includes(job.providerId)) {
+      result = await processProviderJobBatch({ db, jobId: id, userId: user.id });
+    } else {
+      return json({ error: 'This source requires the SnapNext mobile worker.' }, 409);
+    }
     const updated = await db.collection('smart_sync_jobs').findOne({ id, userId: user.id });
     return json({ result, job: publicSmartSyncJob(updated || job) });
   }
