@@ -54,18 +54,21 @@ export async function GET(request, context) {
     if (!state || state.provider !== provider || !safeEqual(returnedState, cookieState) || url.searchParams.get('error')) return finish(request, provider, 'cancelled');
     if (!clientId || !clientSecret || !secret()) return finish(request, provider, 'not-configured');
 
+    const tokenParams = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code: url.searchParams.get('code') || '',
+      redirect_uri: redirectUri(request, provider),
+      grant_type: 'authorization_code',
+    });
+    if (provider === 'onedrive') tokenParams.set('scope', adapter.scopes.join(' '));
+
     const tokenResponse = await fetch(adapter.tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code: url.searchParams.get('code') || '',
-        redirect_uri: redirectUri(request, provider),
-        grant_type: 'authorization_code',
-      }),
+      body: tokenParams,
     });
-    const token = await tokenResponse.json();
+    const token = await tokenResponse.json().catch(() => ({}));
     if (!tokenResponse.ok || !token.access_token) return finish(request, provider, 'failed');
 
     const now = new Date();
@@ -76,10 +79,16 @@ export async function GET(request, context) {
       refreshToken: token.refresh_token ? encryptCloudToken(token.refresh_token) : null,
       expiresAt: token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000) : null,
       scope: token.scope || adapter.scopes.join(' '),
+      providerAccountId: token.account_id || token.user_id || null,
       connectedAt: now,
+      lastAutoSyncError: null,
       updatedAt: now,
     };
-    await (await getDb()).collection('cloud_connections').updateOne({ userId: state.userId, provider }, { $set: set }, { upsert: true });
+    await (await getDb()).collection('cloud_connections').updateOne(
+      { userId: state.userId, provider },
+      { $set: set, $setOnInsert: { autoSyncEnabled: false } },
+      { upsert: true },
+    );
     return finish(request, provider, 'connected');
   }
 
@@ -103,10 +112,10 @@ export async function GET(request, context) {
   if (provider === 'google_photos') {
     params.set('access_type', 'offline');
     params.set('prompt', 'consent');
+    params.set('include_granted_scopes', 'true');
   }
-  if (provider === 'dropbox') {
-    params.set('token_access_type', 'offline');
-  }
+  if (provider === 'dropbox') params.set('token_access_type', 'offline');
+  if (provider === 'onedrive') params.set('response_mode', 'query');
 
   const response = json({ authorizationUrl: `${adapter.authorizeUrl}?${params}` });
   response.cookies.set(COOKIE, state, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 10 * 60 });
@@ -117,6 +126,10 @@ export async function DELETE(request, context) {
   const { provider } = await context.params;
   const user = await getUserFromRequest(request);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
-  await (await getDb()).collection('cloud_connections').deleteOne({ userId: user.id, provider });
+  const db = await getDb();
+  await Promise.all([
+    db.collection('cloud_connections').deleteOne({ userId: user.id, provider }),
+    db.collection('smart_sync_picker_sessions').deleteMany({ userId: user.id, provider }),
+  ]);
   return json({ ok: true });
 }
