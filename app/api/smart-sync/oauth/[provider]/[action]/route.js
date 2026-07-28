@@ -76,7 +76,6 @@ export async function GET(request, context) {
       userId: state.userId,
       provider,
       accessToken: encryptCloudToken(token.access_token),
-      refreshToken: token.refresh_token ? encryptCloudToken(token.refresh_token) : null,
       expiresAt: token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000) : null,
       scope: token.scope || adapter.scopes.join(' '),
       providerAccountId: token.account_id || token.user_id || null,
@@ -84,6 +83,7 @@ export async function GET(request, context) {
       lastAutoSyncError: null,
       updatedAt: now,
     };
+    if (token.refresh_token) set.refreshToken = encryptCloudToken(token.refresh_token);
     await (await getDb()).collection('cloud_connections').updateOne(
       { userId: state.userId, provider },
       { $set: set, $setOnInsert: { autoSyncEnabled: false } },
