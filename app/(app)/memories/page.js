@@ -1,19 +1,32 @@
 'use client';
-import { useEffect, useState } from 'react';
+
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { 
-  Sparkles, Heart, Calendar, Loader2, Plane, Baby, 
-  Flame, Cat, ShieldAlert, Award, FileText, ArrowRight,
-  BookOpen, Film, Play, Wand2
+import {
+  ArrowRight, Baby, BookOpen, Calendar, Cat, Film, Heart, Loader2, Plane, Play,
+  Sparkles, Users, Wand2, X,
 } from 'lucide-react';
-import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
+
+function yearsAgo(value) {
+  if (!value) return null;
+  const year = new Date(value).getFullYear();
+  if (!Number.isFinite(year)) return null;
+  const diff = new Date().getFullYear() - year;
+  return diff > 0 ? diff : null;
+}
+
+function dateLabel(value) {
+  if (!value) return '';
+  try { return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value)); }
+  catch { return ''; }
+}
 
 export default function MemoriesPage() {
   const [timelineData, setTimelineData] = useState(null);
-  const [activeTab, setActiveTab] = useState('highlights'); // highlights, family, travel, kids, love, pets
-  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [viewer, setViewer] = useState(null);
+  const [selectedChapter, setSelectedChapter] = useState(null);
   const [generatingEffect, setGeneratingEffect] = useState(false);
   const [cinematicVideo, setCinematicVideo] = useState(null);
   const [reelData, setReelData] = useState(null);
@@ -22,383 +35,95 @@ export default function MemoriesPage() {
   useEffect(() => {
     apiFetch('/memories/timeline')
       .then(setTimelineData)
-      .catch(e => toast.error("Could not fetch memory timelines. Please verify you have uploaded photos."));
+      .catch(() => toast.error('Your memories could not be opened right now.'));
   }, []);
 
-  const handleImageToVideo = async (mediaId) => {
+  const chapters = useMemo(() => {
+    if (!timelineData) return [];
+    return [
+      { id: 'family', title: 'Family', subtitle: 'The people who keep showing up', icon: Users, items: timelineData.familyJourney || [] },
+      { id: 'travel', title: 'Trips & places', subtitle: 'Where your memories live', icon: Plane, items: timelineData.travelHistory || [] },
+      { id: 'kids', title: 'Growing up', subtitle: 'Little changes worth remembering', icon: Baby, items: timelineData.childGrowth || [] },
+      { id: 'love', title: 'Relationships', subtitle: 'Moments you shared together', icon: Heart, items: timelineData.relationship || [] },
+      { id: 'pets', title: 'Pets', subtitle: 'The companions in your story', icon: Cat, items: timelineData.petTimeline || [] },
+    ].filter(chapter => chapter.items.length > 0);
+  }, [timelineData]);
+
+  async function handleImageToVideo(item) {
+    if (!item?.id) return;
     setGeneratingEffect(true);
     try {
-      const res = await apiFetch('/ai/image-to-video', {
-        method: 'POST',
-        body: JSON.stringify({ mediaId })
-      });
-      if (res.success) {
-        setCinematicVideo(res.motionEffect);
-        setSelectedMedia(mediaId);
-        toast.success("Premium cinematic motion successfully generated using Veo Lite!");
+      const response = await apiFetch('/ai/image-to-video', { method: 'POST', body: JSON.stringify({ mediaId: item.id }) });
+      if (response.success) {
+        setCinematicVideo(response.motionEffect);
+        toast.success('Your cinematic memory is ready.');
       }
     } catch (e) {
-      toast.error(e.message);
+      toast.error(e.message || 'This memory could not be animated.');
     } finally {
       setGeneratingEffect(false);
     }
-  };
+  }
 
-  const handleCreateReel = async (themeName, items) => {
+  async function handleCreateReel(chapter) {
+    if (!chapter?.items?.length) return;
     setGeneratingReel(true);
+    setReelData(null);
     try {
-      const mediaIds = items.slice(0, 8).map(i => i.id);
-      const res = await apiFetch('/ai/generate-reel', {
+      const response = await apiFetch('/ai/generate-reel', {
         method: 'POST',
-        body: JSON.stringify({ theme: themeName, mediaIds })
+        body: JSON.stringify({ theme: chapter.id, mediaIds: chapter.items.slice(0, 8).map(item => item.id) }),
       });
-      setReelData(res);
-      toast.success("AI Reel Created Successfully!");
+      setReelData(response);
+      toast.success('Your reel draft is ready to review.');
     } catch (e) {
-      toast.error(e.message);
+      toast.error(e.message || 'SnapNext could not prepare that reel.');
     } finally {
       setGeneratingReel(false);
     }
-  };
-
-  if (!timelineData) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-white/50 space-y-3">
-        <Loader2 className="h-8 w-8 animate-spin text-pink-500" />
-        <p className="text-sm font-medium">Assembling your digital life timeline...</p>
-      </div>
-    );
   }
 
-  const tabs = [
-    { id: 'highlights', label: '🌟 Highlights', count: timelineData.onThisDay?.length || 0 },
-    { id: 'family', label: '👨‍👩‍👧 Family', count: timelineData.familyJourney?.length || 0 },
-    { id: 'travel', label: '✈️ Travel', count: timelineData.travelHistory?.length || 0 },
-    { id: 'kids', label: '🍼 Kids', count: timelineData.childGrowth?.length || 0 },
-    { id: 'love', label: '💕 Relationships', count: timelineData.relationship?.length || 0 },
-    { id: 'pets', label: '🐾 Pets', count: timelineData.petTimeline?.length || 0 },
-  ];
+  if (!timelineData) return <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-white/45"><Loader2 className="h-7 w-7 animate-spin text-pink-300" /><p className="text-sm font-semibold">Bringing your memories together…</p></div>;
 
-  const getActiveTimeline = () => {
-    switch (activeTab) {
-      case 'family': return timelineData.familyJourney || [];
-      case 'travel': return timelineData.travelHistory || [];
-      case 'kids': return timelineData.childGrowth || [];
-      case 'love': return timelineData.relationship || [];
-      case 'pets': return timelineData.petTimeline || [];
-      default: return timelineData.onThisDay || [];
-    }
-  };
-
-  const activeItems = getActiveTimeline();
+  const onThisDay = Array.isArray(timelineData.onThisDay) ? timelineData.onThisDay : [];
+  const todayHero = onThisDay[0] || null;
+  const recaps = [
+    timelineData.monthlyRecap && { id: 'month', label: 'This month', text: timelineData.monthlyRecap },
+    timelineData.yearlyRecap && { id: 'year', label: 'Your year', text: timelineData.yearlyRecap },
+  ].filter(Boolean);
 
   return (
-    <div className="space-y-8 pb-12">
-      <div>
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-pink-400 via-fuchsia-300 to-purple-400 bg-clip-text text-transparent">
-          AI Smart Timelines
-        </h1>
-        <p className="text-white/60 mt-1">
-          Your digital life organized, understood, and brought back to life automatically.
-        </p>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-8 pb-32 md:pb-12">
+      <header data-testid="memories-header">
+        <div className="inline-flex items-center gap-2 rounded-full border border-pink-300/15 bg-pink-500/10 px-3 py-1.5 text-xs font-black text-pink-100"><Heart className="h-3.5 w-3.5 fill-pink-300" />Memories</div>
+        <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Rediscover the moments that made your life.</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/48 md:text-base">No dashboard, no sorting work. Just the moments SnapNext can bring back for you.</p>
+      </header>
 
-      {/* Tab Selector */}
-      <div className="flex gap-2 overflow-x-auto bg-white/[0.02] p-1.5 rounded-2xl border border-white/5 no-scrollbar">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => {
-              setActiveTab(t.id);
-              setReelData(null);
-            }}
-            className={`px-4.5 py-2.5 rounded-xl text-sm font-medium transition whitespace-nowrap flex items-center gap-2 ${
-              activeTab === t.id 
-                ? 'bg-gradient-to-r from-pink-500/20 to-purple-600/25 border border-pink-500/30 text-white shadow-sm' 
-                : 'text-white/60 border border-transparent hover:text-white hover:bg-white/5'
-            }`}
-          >
-            {t.label}
-            {t.count > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/80">
-                {t.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      <section data-testid="memories-today">
+        <SectionHeader title="Today" />
+        {todayHero ? <button data-testid="memories-today-hero" onClick={() => { setViewer(todayHero); setCinematicVideo(null); }} className="relative block h-72 w-full overflow-hidden rounded-[2rem] border border-white/8 text-left md:h-80"><img src={mediaSrc(todayHero.id)} alt={todayHero.name || 'Memory'} className="h-full w-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" /><div className="absolute inset-x-0 bottom-0 p-5 md:p-7"><span className="inline-flex rounded-full bg-purple-500/75 px-3 py-1 text-xs font-black">This day{yearsAgo(todayHero.createdAt) ? ` · ${yearsAgo(todayHero.createdAt)} years ago` : ''}</span><h2 className="mt-3 line-clamp-2 text-2xl font-black md:text-3xl">{todayHero.name || 'A memory worth revisiting'}</h2><p className="mt-1 text-sm text-white/65">{onThisDay.length} moment{onThisDay.length === 1 ? '' : 's'} from this date</p></div></button> : <Link data-testid="memories-today-empty" href="/upload" className="flex min-h-44 items-center justify-center rounded-[2rem] border border-dashed border-white/12 bg-white/[0.025] p-8 text-center"><div><Calendar className="mx-auto h-7 w-7 text-white/30" /><h2 className="mt-3 font-black">Nothing from this exact day yet</h2><p className="mt-1 text-sm text-white/42">As your library grows, little windows back in time will appear here.</p></div></Link>}
+      </section>
 
-      <AnimatePresence mode="wait">
-        {activeTab === 'highlights' ? (
-          <motion.div 
-            key="highlights"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            className="space-y-8"
-          >
-            {/* Recaps Board */}
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="p-6 rounded-3xl border border-white/10 bg-gradient-to-b from-purple-950/20 to-transparent flex flex-col justify-between">
-                <div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-xs font-semibold text-purple-300 mb-4">
-                    <Sparkles className="h-3 w-3" /> Monthly Recap
-                  </div>
-                  <p className="text-sm text-white/85 leading-relaxed italic">
-                    “{timelineData.monthlyRecap}”
-                  </p>
-                </div>
-                <div className="mt-6 flex items-center gap-2 text-xs text-white/50">
-                  <Calendar className="h-4 w-4" /> Recapped just now
-                </div>
-              </div>
+      {onThisDay.length > 1 && <section data-testid="memories-past-years"><SectionHeader title="This day, in past years" subtitle="Little windows back in time" /><div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">{onThisDay.map(item => <button data-testid={`memories-past-${item.id}`} key={item.id} onClick={() => { setViewer(item); setCinematicVideo(null); }} className="relative h-52 w-40 shrink-0 overflow-hidden rounded-3xl border border-white/8 text-left"><img src={mediaSrc(item.id)} alt="" className="h-full w-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" /><div className="absolute inset-x-0 bottom-0 p-3"><p className="text-xs font-black text-white/70">{yearsAgo(item.createdAt) ? `${yearsAgo(item.createdAt)} years ago` : dateLabel(item.createdAt)}</p><p className="mt-1 truncate text-sm font-black">{item.name || 'Memory'}</p></div></button>)}</div></section>}
 
-              <div className="p-6 rounded-3xl border border-white/10 bg-gradient-to-b from-pink-950/20 to-transparent flex flex-col justify-between">
-                <div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-500/10 border border-pink-500/20 text-xs font-semibold text-pink-300 mb-4">
-                    <Sparkles className="h-3 w-3" /> Annual life Recap
-                  </div>
-                  <p className="text-sm text-white/85 leading-relaxed italic">
-                    “{timelineData.yearlyRecap}”
-                  </p>
-                </div>
-                <div className="mt-6 flex items-center gap-2 text-xs text-white/50">
-                  <Calendar className="h-4 w-4" /> Comprehensive digest
-                </div>
-              </div>
-            </div>
+      {recaps.length > 0 && <section data-testid="memories-recaps"><SectionHeader title="Stories SnapNext noticed" subtitle="Quiet summaries from memories you already own" /><div className="grid gap-3 md:grid-cols-2">{recaps.map(recap => <div key={recap.id} className="rounded-3xl border border-white/8 bg-gradient-to-br from-purple-500/[0.08] to-pink-500/[0.04] p-5"><span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1 text-xs font-black text-purple-100"><Sparkles className="h-3.5 w-3.5" />{recap.label}</span><p className="mt-4 text-sm leading-6 text-white/68">{recap.text}</p></div>)}</div></section>}
 
-            {/* This Day Last Year Section */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Heart className="h-5 w-5 text-pink-400 fill-pink-400" />
-                  <h2 className="text-xl font-bold">On This Day</h2>
-                </div>
-              </div>
+      {chapters.length > 0 && <section data-testid="memories-chapters"><SectionHeader title="Your chapters" subtitle="Real collections from your own library" /><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{chapters.map(chapter => { const Icon = chapter.icon; const cover = chapter.items[0]; return <button data-testid={`memories-chapter-${chapter.id}`} key={chapter.id} onClick={() => { setSelectedChapter(chapter); setReelData(null); }} className="relative min-h-48 overflow-hidden rounded-[1.7rem] border border-white/8 bg-white/[0.03] text-left">{cover && <img src={mediaSrc(cover.id)} alt="" className="absolute inset-0 h-full w-full object-cover opacity-55" />}<div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-black/10" /><div className="relative flex min-h-48 flex-col justify-between p-5"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-black/35 backdrop-blur"><Icon className="h-5 w-5 text-pink-100" /></div><div><h3 className="text-xl font-black">{chapter.title}</h3><p className="mt-1 text-sm text-white/58">{chapter.subtitle}</p><p className="mt-2 text-xs font-bold text-white/40">{chapter.items.length} memories</p></div></div></button>; })}</div></section>}
 
-              {timelineData.onThisDay?.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.01] p-10 text-center text-white/50">
-                  No previous memories on this exact day. Check again tomorrow!
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                  {timelineData.onThisDay.map(m => (
-                    <div key={m.id} className="group relative aspect-square rounded-2xl overflow-hidden border border-white/15 bg-white/5 shadow-md hover:shadow-xl transition-all duration-300">
-                      <img src={mediaSrc(m.id)} alt="" className="h-full w-full object-cover group-hover:scale-105 transition duration-500" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end">
-                        <p className="text-xs text-white font-medium truncate">{m.name}</p>
-                        <button 
-                          onClick={() => handleImageToVideo(m.id)}
-                          disabled={generatingEffect}
-                          className="mt-2 text-[10px] w-full py-1.5 rounded-lg bg-pink-500 hover:bg-pink-600 font-semibold transition flex items-center justify-center gap-1"
-                        >
-                          {generatingEffect && selectedMedia === m.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Wand2 className="h-3 w-3" />
-                          )}
-                          Cinematic Zoom
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div 
-            key="category-timeline"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            className="space-y-6"
-          >
-            {/* Dynamic Reel Creator Box at top of stream */}
-            <div className="p-5 rounded-3xl border border-white/10 bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-transparent flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-md font-semibold text-white flex items-center gap-2">
-                  <Film className="h-4.5 w-4.5 text-pink-300" /> Auto-generate {tabs.find(t=>t.id===activeTab)?.label} Reel
-                </h3>
-                <p className="text-xs text-white/55 mt-1">
-                  AI extracts key moments, suggests transitions, and pairs it with licensing-free music dynamically!
-                </p>
-              </div>
-              <button
-                onClick={() => handleCreateReel(activeTab, activeItems)}
-                disabled={generatingReel || activeItems.length === 0}
-                className="inline-flex items-center gap-2 px-4.5 py-2 rounded-xl bg-pink-500 hover:bg-pink-600 disabled:opacity-40 font-semibold text-sm transition text-white shrink-0"
-              >
-                {generatingReel ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Generate Reel
-              </button>
-            </div>
+      {selectedChapter && <section data-testid="memories-selected-chapter" className="rounded-[2rem] border border-white/8 bg-white/[0.025] p-4 md:p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[0.14em] text-pink-200/70">Your chapter</p><h2 className="mt-1 text-2xl font-black">{selectedChapter.title}</h2><p className="mt-1 text-sm text-white/45">{selectedChapter.subtitle}</p></div><button data-testid="memories-close-chapter" onClick={() => { setSelectedChapter(null); setReelData(null); }} className="grid h-10 w-10 place-items-center rounded-full bg-white/5"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-6">{selectedChapter.items.slice(0, 18).map(item => <button key={item.id} onClick={() => { setViewer(item); setCinematicVideo(null); }} className="aspect-square overflow-hidden rounded-xl bg-white/5"><img src={mediaSrc(item.id)} alt="" className="h-full w-full object-cover" /></button>)}</div><div className="mt-5 flex flex-wrap gap-2"><button data-testid="memories-create-reel" onClick={() => handleCreateReel(selectedChapter)} disabled={generatingReel} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 text-sm font-black disabled:opacity-50">{generatingReel ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}Make a reel</button><Link href="/ai-studio" className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/8 bg-white/5 px-5 text-sm font-black text-white/70"><Wand2 className="h-4 w-4" />Create something else</Link></div>{reelData && <ReelPreview data={reelData} cover={selectedChapter.items[0]} />}</section>}
 
-            {/* Simulated interactive reel player inside timeline if generated */}
-            {reelData && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="p-6 rounded-3xl border border-pink-500/25 bg-pink-950/10 space-y-4"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs bg-pink-500/20 text-pink-300 font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full">
-                    🎬 AI Reel Studio Preview
-                  </span>
-                  <span className="text-xs text-white/60">
-                    Transitions: {reelData.transitions?.join(' · ')}
-                  </span>
-                </div>
-                <div className="grid md:grid-cols-[240px_1fr] gap-6">
-                  {/* Left: simulated smart player */}
-                  <div className="relative aspect-[9/16] max-h-[300px] rounded-2xl overflow-hidden bg-black border border-white/10 flex flex-col items-center justify-center">
-                    {activeItems[0] ? (
-                      <div className="absolute inset-0">
-                        <img src={mediaSrc(activeItems[0].id)} alt="" className="h-full w-full object-cover animate-pulse" />
-                        <div className="absolute inset-0 bg-black/40 flex flex-col justify-end p-3 text-center">
-                          <p className="text-xs font-semibold text-white">{reelData.caption}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <Film className="h-10 w-10 text-white/30" />
-                    )}
-                    <div className="absolute bottom-3 right-3 p-2 bg-pink-500 rounded-full animate-bounce">
-                      <Play className="h-4 w-4 text-white fill-white" />
-                    </div>
-                  </div>
+      {!chapters.length && !onThisDay.length && !recaps.length && <section data-testid="memories-empty" className="rounded-[2rem] border border-dashed border-white/12 bg-white/[0.025] p-10 text-center"><BookOpen className="mx-auto h-8 w-8 text-white/30" /><h2 className="mt-4 text-xl font-black">Your story starts with a few moments</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/45">Back up photos and videos and SnapNext will begin bringing meaningful chapters back to you.</p><Link href="/upload" className="mt-5 inline-flex min-h-11 items-center rounded-full bg-white px-5 text-sm font-black text-black">Add memories</Link></section>}
 
-                  {/* Right: details */}
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="text-md font-bold text-white">{reelData.title}</h4>
-                      <p className="text-xs text-white/50 mt-1">Recommended Music Tracks:</p>
-                    </div>
-                    <div className="space-y-2">
-                      {reelData.music?.map((m, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/10">
-                          <div>
-                            <p className="text-xs font-medium text-white">{m.title}</p>
-                            <p className="text-[10px] text-white/40">{m.artist} · {m.genre}</p>
-                          </div>
-                          <span className="text-xs font-semibold text-pink-300 bg-pink-500/10 px-2 py-0.5 rounded-md">
-                            {m.duration}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {activeItems.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.01] p-16 text-center text-white/50">
-                Our Core AI Brain hasn't sorted any memories into this timeline yet. Upload photos and let the vision engine classify them!
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {activeItems.map((m) => (
-                  <div key={m.id} className="group relative aspect-square rounded-2xl overflow-hidden border border-white/10 bg-white/5 shadow-md">
-                    <img src={mediaSrc(m.id)} alt="" className="h-full w-full object-cover group-hover:scale-105 transition duration-500" />
-                    
-                    {/* Tags overlay */}
-                    {m.aiAnalysis?.tags && (
-                      <div className="absolute top-2 left-2 flex flex-wrap gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {m.aiAnalysis.tags.slice(0, 2).map((t, i) => (
-                          <span key={i} className="text-[9px] bg-black/60 text-white px-1.5 py-0.5 rounded">
-                            #{t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Bottom overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-3 flex flex-col justify-end">
-                      <p className="text-xs text-white font-medium truncate">{m.name}</p>
-                      {m.aiAnalysis?.description && (
-                        <p className="text-[10px] text-white/70 line-clamp-2 mt-1">{m.aiAnalysis.description}</p>
-                      )}
-                      <button 
-                        onClick={() => handleImageToVideo(m.id)}
-                        disabled={generatingEffect}
-                        className="mt-2 text-[10px] w-full py-1.5 rounded-lg bg-pink-500 hover:bg-pink-600 font-semibold transition flex items-center justify-center gap-1 text-white"
-                      >
-                        {generatingEffect && selectedMedia === m.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Wand2 className="h-3 w-3" />
-                        )}
-                        Cinematic Zoom
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Cinematic Ken Burns visualizer modal for premium Image to Video */}
-      {selectedMedia && cinematicVideo && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
-          <div className="relative max-w-lg w-full rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-md font-bold text-white flex items-center gap-2">
-                <Sparkles className="h-4.5 w-4.5 text-pink-300" /> Premium Cinematic Memory Video
-              </h3>
-              <button 
-                onClick={() => {
-                  setSelectedMedia(null);
-                  setCinematicVideo(null);
-                }}
-                className="text-white/60 hover:text-white text-xs bg-white/10 px-2.5 py-1 rounded-md"
-              >
-                Close
-              </button>
-            </div>
-
-            {/* Breathtaking interactive Ken Burns zoom element */}
-            <div className="relative aspect-video rounded-2xl overflow-hidden bg-black border border-white/10 flex items-center justify-center">
-              <img 
-                src={mediaSrc(selectedMedia)} 
-                alt="" 
-                className="h-full w-full object-cover animate-ken-burns" 
-                style={{
-                  animation: 'kenburns 8s ease-in-out infinite alternate'
-                }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
-              <div className="absolute bottom-4 left-4 text-left">
-                <span className="text-[10px] bg-pink-500 text-white font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider mb-1 inline-block">
-                  {cinematicVideo.zoom}
-                </span>
-                <p className="text-xs text-white/90 font-medium">Framerate: {cinematicVideo.framerate} · Style: {cinematicVideo.vibe}</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-white/60 leading-relaxed text-center">
-              Your childhood or family photo converted into an animated memory. Power provided by Veo Lite and Gemini.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Add custom CSS injection for Ken Burns animations */}
-      <style jsx global>{`
-        @keyframes kenburns {
-          0% {
-            transform: scale(1) translate(0px, 0px);
-          }
-          100% {
-            transform: scale(1.18) translate(-10px, -5px);
-          }
-        }
-        .animate-ken-burns {
-          animation: kenburns 8s ease-in-out infinite alternate;
-        }
-      `}</style>
+      {viewer && <div data-testid="memories-viewer" className="fixed inset-0 z-50 overflow-y-auto bg-black/92 p-4 backdrop-blur-xl" onClick={() => { setViewer(null); setCinematicVideo(null); }}><div className="mx-auto max-w-2xl pt-6" onClick={event => event.stopPropagation()}><div className="overflow-hidden rounded-[2rem] border border-white/8 bg-[#0b0711]"><div className="relative bg-black"><img src={mediaSrc(viewer.id)} alt={viewer.name || 'Memory'} className="max-h-[68vh] w-full object-contain" /><button data-testid="memories-viewer-close" onClick={() => { setViewer(null); setCinematicVideo(null); }} className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-black/65"><X className="h-4 w-4" /></button></div><div className="p-5"><h2 className="text-xl font-black">{viewer.name || 'Memory'}</h2><p className="mt-1 text-sm text-white/42">{dateLabel(viewer.createdAt)}</p>{cinematicVideo ? <div className="mt-5 rounded-2xl border border-pink-300/15 bg-pink-500/[0.06] p-4"><div className="flex items-center gap-2 text-sm font-black text-pink-100"><Sparkles className="h-4 w-4" />Cinematic memory ready</div><p className="mt-2 text-xs leading-5 text-white/50">{cinematicVideo.zoom ? `${cinematicVideo.zoom} · ` : ''}{cinematicVideo.framerate ? `${cinematicVideo.framerate} · ` : ''}{cinematicVideo.vibe || 'Motion effect prepared'}</p></div> : <button data-testid="memories-cinematic-action" onClick={() => handleImageToVideo(viewer)} disabled={generatingEffect} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/8 bg-white/5 px-5 text-sm font-black disabled:opacity-50">{generatingEffect ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}Bring this memory to life</button>}</div></div></div></div>}
     </div>
   );
+}
+
+function SectionHeader({ title, subtitle }) {
+  return <div className="mb-4"><h2 className="text-xl font-black md:text-2xl">{title}</h2>{subtitle && <p className="mt-1 text-sm text-white/42">{subtitle}</p>}</div>;
+}
+
+function ReelPreview({ data, cover }) {
+  return <div data-testid="memories-reel-preview" className="mt-5 rounded-3xl border border-pink-300/15 bg-pink-500/[0.06] p-4"><div className="flex items-center gap-2 text-sm font-black"><Play className="h-4 w-4 fill-white" />Reel draft</div><div className="mt-3 flex gap-4">{cover && <img src={mediaSrc(cover.id)} alt="" className="h-24 w-20 shrink-0 rounded-2xl object-cover" />}<div className="min-w-0"><h3 className="font-black">{data.title || 'Your memory reel'}</h3>{data.caption && <p className="mt-1 line-clamp-3 text-sm leading-5 text-white/50">{data.caption}</p>}<Link href="/ai-video" className="mt-3 inline-flex items-center gap-1 text-xs font-black text-pink-200">Open video tools<ArrowRight className="h-3.5 w-3.5" /></Link></div></div></div>;
 }
