@@ -8,7 +8,7 @@ import { entitlementForUser } from '@/lib/entitlements';
 import { toast } from 'sonner';
 import {
   CheckCircle2, ChevronRight, Cloud, Crown, Download, Heart, LifeBuoy, Loader2,
-  LogOut, Mail, Network, Settings2, ShieldCheck, Sparkles, Trash2, WalletCards,
+  LogOut, Mail, Network, Settings2, Shield, ShieldCheck, Sparkles, Trash2, WalletCards,
 } from 'lucide-react';
 
 const PREF_LABELS = {
@@ -118,6 +118,7 @@ export default function Settings() {
   }
 
   const entitlement = entitlementForUser(user);
+  const realIsSuper = !!entitlement.realIsSuper;
   const isSuper = devPlan?.effectivePlan ? devPlan.effectivePlan === 'super_user' : entitlement.isSuper;
   const profile = devPlan?.developerProfile || {};
   const planLabel = devPlan?.overrideActive ? `Testing as ${devPlan.effectivePlanName}` : entitlement.badge;
@@ -131,6 +132,7 @@ export default function Settings() {
     { id: 'circles', title: 'Circles', detail: 'People and interests you follow', href: '/circles', icon: Network },
     { id: 'downloads', title: 'Downloads & export', detail: 'Take your memories with you', href: '/downloads', icon: Download },
     { id: 'support', title: 'Help & support', detail: 'Get help when you need it', href: '/support', icon: LifeBuoy },
+    ...(realIsSuper ? [{ id: 'admin', title: 'Admin', detail: 'Owner-only operations and controls', href: '/admin', icon: Shield }] : []),
   ];
 
   return (
