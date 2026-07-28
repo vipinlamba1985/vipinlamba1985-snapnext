@@ -127,9 +127,21 @@ export async function DELETE(request, context) {
   const user = await getUserFromRequest(request);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
   const db = await getDb();
+  const now = new Date();
   await Promise.all([
     db.collection('cloud_connections').deleteOne({ userId: user.id, provider }),
     db.collection('smart_sync_picker_sessions').deleteMany({ userId: user.id, provider }),
+    db.collection('smart_sync_profiles').updateOne(
+      { userId: user.id, providerId: provider },
+      { $set: { enabled: false, approvedAt: null, updatedAt: now } },
+    ),
+    db.collection('smart_sync_jobs').updateMany(
+      { userId: user.id, providerId: provider, status: { $in: ['queued', 'running', 'paused'] } },
+      {
+        $set: { status: 'stopped', stopRequested: true, pauseRequested: false, completedAt: now, updatedAt: now },
+        $unset: { activeKey: '', leaseToken: '', leaseUntil: '' },
+      },
+    ),
   ]);
   return json({ ok: true });
 }
