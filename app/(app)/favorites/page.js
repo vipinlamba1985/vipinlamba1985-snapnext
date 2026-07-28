@@ -1,15 +1,20 @@
 'use client';
+
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { Heart, UserPlus, Check, X, Loader2, Mail, ShieldCheck, ImageIcon, FolderPlus, Trash2, ExternalLink, Send, Sparkles } from 'lucide-react';
+import {
+  Check, ChevronRight, FolderPlus, Heart, ImageIcon, Loader2, LockKeyhole, Mail,
+  Send, ShieldCheck, Sparkles, Trash2, UserPlus, Users, X,
+} from 'lucide-react';
 
 const PERM_LABELS = {
-  shareSharedPhotos: 'Allow sharing individual photos',
-  shareAlbums: 'Allow sharing albums',
-  shareMemories: 'Allow sharing memory stories',
-  shareFuturePhotos: 'Auto-share future uploads (off by default)',
-  shareProfilePicture: 'Show my profile picture',
+  shareSharedPhotos: { label: 'Individual photos', detail: 'Allow photos you explicitly choose to share.' },
+  shareAlbums: { label: 'Shared albums', detail: 'Allow access to albums you explicitly share.' },
+  shareMemories: { label: 'Memory stories', detail: 'Allow memory stories you explicitly share.' },
+  shareFuturePhotos: { label: 'Future-photo sharing', detail: 'Automatic future sharing stays off unless you turn it on.' },
+  shareProfilePicture: { label: 'Profile picture', detail: 'Let this trusted person see your profile picture.' },
 };
 
 export default function FavoritesPage() {
@@ -26,329 +31,206 @@ export default function FavoritesPage() {
   const [selectedPhotos, setSelectedPhotos] = useState(new Set());
   const [newAlbumName, setNewAlbumName] = useState('');
   const [aiInsights, setAiInsights] = useState(null);
- 
+
   async function load() {
     try {
-      const [f, a, sp, sm, ai] = await Promise.all([
+      const [favorites, albumData, photoData, memoryData, ai] = await Promise.all([
         apiFetch('/favorites'),
         apiFetch('/shared/albums'),
         apiFetch('/shared/photos'),
         apiFetch('/shared/memories'),
         apiFetch('/favorites/ai').catch(() => null),
       ]);
-      setData(f); setAlbums(a); setSharedPhotos(sp.items || []); setMemories(sm.memories || []);
-      if (ai) setAiInsights(ai);
-    } catch (e) { toast.error(e.message); }
+      setData(favorites || { accepted: [], incoming: [], outgoing: [], blocked: [] });
+      setAlbums(albumData || { owned: [], shared: [] });
+      setSharedPhotos(photoData?.items || []);
+      setMemories(memoryData?.memories || []);
+      setAiInsights(ai || null);
+    } catch (e) {
+      toast.error(e.message || 'Trusted people could not be opened.');
+    }
   }
+
   useEffect(() => { load(); }, []);
 
-  async function invite(e) {
-    e?.preventDefault();
+  async function invite(event) {
+    event?.preventDefault();
     if (!inviteEmail.trim()) return;
     setBusy('invite');
     try {
-      const r = await apiFetch('/favorites/invite', { method: 'POST', body: JSON.stringify({ email: inviteEmail }) });
-      if (r.alreadyFavorites) toast('Already favorites');
-      else if (r.alreadyPending) toast('Request already pending');
-      else toast.success('Favorite request sent');
+      const response = await apiFetch('/favorites/invite', { method: 'POST', body: JSON.stringify({ email: inviteEmail.trim() }) });
+      if (response.alreadyFavorites) toast('You already trust this person.');
+      else if (response.alreadyPending) toast('An invitation is already waiting.');
+      else toast.success('Invitation sent.');
       setInviteEmail('');
-      load();
-    } catch (e) { toast.error(e.message); }
-    finally { setBusy(''); }
-  }
-  async function favAction(id, action) {
-    setBusy(`${id}-${action}`);
-    try { await apiFetch(`/favorites/${id}/${action}`, { method: 'POST' }); load(); toast.success(action[0].toUpperCase() + action.slice(1)); }
-    catch (e) { toast.error(e.message); }
-    finally { setBusy(''); }
-  }
-  async function openPerms(fav) {
-    setPermsFor(fav); setPerms(null);
-    try { const r = await apiFetch(`/favorites/${fav.id}/permissions`); setPerms(r.perms); }
-    catch (e) { toast.error(e.message); }
-  }
-  async function togglePerm(key) {
-    const next = { ...perms, [key]: !perms[key] };
-    setPerms(next);
-    try { await apiFetch(`/favorites/${permsFor.id}/permissions`, { method: 'PUT', body: JSON.stringify({ [key]: next[key] }) }); }
-    catch (e) { toast.error(e.message); setPerms(perms); }
-  }
-  async function openShare(fav) {
-    setShareFor(fav); setSelectedPhotos(new Set());
-    if (myPhotos.length === 0) {
-      const d = await apiFetch('/media?filter=photo');
-      setMyPhotos(d.items?.slice(0, 48) || []);
+      await load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBusy('');
     }
   }
+
+  async function favAction(id, action) {
+    setBusy(`${id}-${action}`);
+    try {
+      await apiFetch(`/favorites/${id}/${action}`, { method: 'POST' });
+      await load();
+      const copy = { accept: 'Trusted person added.', decline: 'Invitation declined.', cancel: 'Invitation cancelled.', remove: 'Trusted person removed.' };
+      toast.success(copy[action] || 'Updated.');
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function openPerms(favorite) {
+    setPermsFor(favorite);
+    setPerms(null);
+    try {
+      const response = await apiFetch(`/favorites/${favorite.id}/permissions`);
+      setPerms(response.perms);
+    } catch (e) {
+      toast.error(e.message);
+    }
+  }
+
+  async function togglePerm(key) {
+    const previous = perms;
+    const next = { ...perms, [key]: !perms[key] };
+    setPerms(next);
+    try {
+      await apiFetch(`/favorites/${permsFor.id}/permissions`, { method: 'PUT', body: JSON.stringify({ [key]: next[key] }) });
+    } catch (e) {
+      setPerms(previous);
+      toast.error(e.message);
+    }
+  }
+
+  async function openShare(favorite) {
+    setShareFor(favorite);
+    setSelectedPhotos(new Set());
+    if (!myPhotos.length) {
+      try {
+        const response = await apiFetch('/media?filter=photo');
+        setMyPhotos(response.items?.slice(0, 48) || []);
+      } catch (e) {
+        toast.error(e.message);
+      }
+    }
+  }
+
   async function doSharePhotos() {
-    if (!selectedPhotos.size) return;
+    if (!selectedPhotos.size || !shareFor?.other?.id) return;
     setBusy('share');
     try {
-      await apiFetch('/shared/photos', { method: 'POST', body: JSON.stringify({ mediaIds: [...selectedPhotos], recipientUserId: shareFor.other.id }) });
-      toast.success(`Shared ${selectedPhotos.size} photo${selectedPhotos.size === 1 ? '' : 's'}`);
-      setShareFor(null); setSelectedPhotos(new Set());
-      load();
-    } catch (e) { toast.error(e.message); }
-    finally { setBusy(''); }
+      await apiFetch('/shared/photos', {
+        method: 'POST',
+        body: JSON.stringify({ mediaIds: [...selectedPhotos], recipientUserId: shareFor.other.id }),
+      });
+      toast.success(`Shared ${selectedPhotos.size} photo${selectedPhotos.size === 1 ? '' : 's'}.`);
+      setShareFor(null);
+      setSelectedPhotos(new Set());
+      await load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBusy('');
+    }
   }
-  async function createAlbum(e) {
-    e?.preventDefault();
+
+  async function createAlbum(event) {
+    event?.preventDefault();
     if (!newAlbumName.trim()) return;
-    try { await apiFetch('/shared/albums', { method: 'POST', body: JSON.stringify({ name: newAlbumName }) }); setNewAlbumName(''); load(); toast.success('Album created'); }
-    catch (e) { toast.error(e.message); }
+    try {
+      await apiFetch('/shared/albums', { method: 'POST', body: JSON.stringify({ name: newAlbumName.trim() }) });
+      setNewAlbumName('');
+      await load();
+      toast.success('Album created.');
+    } catch (e) {
+      toast.error(e.message);
+    }
   }
+
+  const accepted = Array.isArray(data.accepted) ? data.accepted : [];
+  const incoming = Array.isArray(data.incoming) ? data.incoming : [];
+  const outgoing = Array.isArray(data.outgoing) ? data.outgoing : [];
+  const sharedAlbums = [...(albums.owned || []).map(album => ({ ...album, mine: true })), ...(albums.shared || []).map(album => ({ ...album, mine: false }))];
+  const relationshipObservation = aiInsights?.relationshipHighlights || null;
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold flex items-center gap-2"><Heart className="h-7 w-7 text-pink-400"/> Favorites</h1>
-        <p className="text-white/60 mt-1">Trusted people you choose to share memories with. <strong>Nothing is shared until you say so.</strong></p>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-8 pb-32 md:pb-12">
+      <header data-testid="trusted-header">
+        <div className="inline-flex items-center gap-2 rounded-full border border-pink-300/15 bg-pink-500/10 px-3 py-1.5 text-xs font-black text-pink-100"><Heart className="h-3.5 w-3.5 fill-pink-300" />Trusted people</div>
+        <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">People you trust with your memories.</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/48 md:text-base">Connections are private and permission-based. Sharing stays under your control and can be changed or revoked.</p>
+      </header>
 
-      {/* Favorites AI Co-Processor Panel */}
-      {aiInsights && (
-        <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-500/10 to-transparent p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-pink-300 flex items-center gap-2">
-              <Sparkles className="h-4.5 w-4.5 text-pink-300" /> AI Relationship Insights
-            </h2>
-            <span className="text-[10px] bg-pink-500/25 px-2.5 py-0.5 rounded-full text-white font-medium">
-              Core Brain active
-            </span>
-          </div>
-
-          <div className="grid md:grid-cols-[1fr_280px] gap-6">
-            <div className="space-y-3">
-              <p className="text-sm text-white/90 leading-relaxed italic font-medium">
-                “{aiInsights.relationshipHighlights || "Analyzing relationships from faces found in uploaded memory photos..."}”
-              </p>
-              
-              {aiInsights.suggestions && aiInsights.suggestions.length > 0 && (
-                <div className="space-y-1.5 pt-2">
-                  <span className="text-[10px] uppercase font-bold text-white/40 tracking-wider block">Suggestions:</span>
-                  {aiInsights.suggestions.map((s, i) => (
-                    <p key={i} className="text-xs text-white/70 flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-pink-400"></span>
-                      {s}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Favorite People / Most Seen Faces list */}
-            <div className="border-l border-white/10 pl-6 space-y-3">
-              <span className="text-[10px] uppercase font-bold text-white/40 tracking-wider block">Frequently Seen Faces:</span>
-              {aiInsights.favoritePeople && aiInsights.favoritePeople.length > 0 ? (
-                <div className="space-y-2 max-h-[140px] overflow-y-auto pr-2 no-scrollbar">
-                  {aiInsights.favoritePeople.slice(0, 4).map((person, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-xs bg-white/5 border border-white/10 px-3 py-2 rounded-xl">
-                      <span className="font-semibold text-white/90">{person.name}</span>
-                      <span className="text-[10px] text-pink-300 bg-pink-500/10 px-2 py-0.5 rounded-md">
-                        {person.count} photos
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-white/45">No faces identified yet. Upload photos to start tracking relationships.</p>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Invite */}
-      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-        <div className="text-sm font-medium mb-3 flex items-center gap-2"><UserPlus className="h-4 w-4 text-pink-300"/> Add a favorite</div>
-        <form onSubmit={invite} className="flex flex-wrap gap-2">
-          <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="friend@snapnext.ai" className="flex-1 min-w-[200px] bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 outline-none focus:border-pink-400/50 text-sm" />
-          <button disabled={busy === 'invite' || !inviteEmail.trim()} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 font-medium text-sm disabled:opacity-60">
-            {busy === 'invite' ? <Loader2 className="h-4 w-4 animate-spin"/> : <Mail className="h-4 w-4"/>} Send request
-          </button>
-        </form>
-        <p className="text-xs text-white/50 mt-2">They must have a SnapNext AI account. They'll be notified to accept.</p>
+      <section data-testid="trusted-privacy-explainer" className="rounded-[2rem] border border-purple-300/15 bg-gradient-to-br from-purple-500/[0.10] via-pink-500/[0.07] to-cyan-500/[0.05] p-5 md:p-6">
+        <div className="flex gap-4"><div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/[0.06]"><LockKeyhole className="h-6 w-6 text-pink-100" /></div><div><h2 className="text-xl font-black">Sharing starts private</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">Adding someone as trusted does not open your whole library. Photos, albums, memory stories, future sharing, and your profile picture each stay behind the permissions you control.</p></div></div>
       </section>
 
-      {/* Incoming */}
-      {data.incoming.length > 0 && (
-        <Section title="Pending requests" subtitle="People who want to be your favorite">
-          <div className="space-y-2">
-            {data.incoming.map((f) => (
-              <div key={f.id} className="flex items-center gap-3 rounded-2xl border border-amber-400/30 bg-amber-400/5 p-3">
-                <Avatar u={f.other}/>
-                <div className="flex-1 min-w-0"><div className="text-sm font-medium truncate">{f.other.name}</div><div className="text-xs text-white/50 truncate">{f.other.email}</div></div>
-                <button onClick={() => favAction(f.id, 'decline')} disabled={busy === f.id+'-decline'} className="text-sm px-3 py-1.5 rounded-full bg-white/5 border border-white/10"><X className="h-3.5 w-3.5 inline mr-1"/>Decline</button>
-                <button onClick={() => favAction(f.id, 'accept')} disabled={busy === f.id+'-accept'} className="text-sm px-3 py-1.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 font-medium"><Check className="h-3.5 w-3.5 inline mr-1"/>Accept</button>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
-      {data.outgoing.length > 0 && (
-        <Section title="Sent invitations" subtitle="Waiting for response">
-          <div className="space-y-2">
-            {data.outgoing.map((f) => (
-              <div key={f.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-                <Avatar u={f.other}/>
-                <div className="flex-1 min-w-0"><div className="text-sm font-medium">{f.other.name}</div><div className="text-xs text-white/50">{f.other.email}</div></div>
-                <span className="text-xs text-white/50">Pending</span>
-                <button onClick={() => favAction(f.id, 'cancel')} className="text-xs px-3 py-1.5 rounded-full bg-white/5 border border-white/10">Cancel</button>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
+      <section data-testid="trusted-invite" className="rounded-3xl border border-white/8 bg-white/[0.03] p-5">
+        <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-pink-500/12"><UserPlus className="h-5 w-5 text-pink-100" /></div><div><h2 className="font-black">Invite someone you love</h2><p className="mt-0.5 text-xs text-white/42">They can accept before any sharing begins.</p></div></div>
+        <form onSubmit={invite} className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <input data-testid="trusted-invite-email" type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="Email address" className="min-h-12 flex-1 rounded-2xl border border-white/8 bg-black/20 px-4 text-sm outline-none placeholder:text-white/25 focus:border-pink-400/40" />
+          <button data-testid="trusted-invite-submit" disabled={busy === 'invite' || !inviteEmail.trim()} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-6 text-sm font-black disabled:opacity-50">{busy === 'invite' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Send invitation</button>
+        </form>
+        <p className="mt-2 text-xs text-white/35">Invitations currently connect existing SnapNext accounts.</p>
+      </section>
 
-      {/* Accepted */}
-      <Section title="My favorites" subtitle={`${data.accepted.length} trusted ${data.accepted.length === 1 ? 'person' : 'people'}`}>
-        {data.accepted.length === 0 ? (
-          <Empty label="No favorites yet. Invite someone above to get started."/>
-        ) : (
-          <div className="grid md:grid-cols-2 gap-3">
-            {data.accepted.map((f) => (
-              <div key={f.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 flex items-center gap-3">
-                <Avatar u={f.other} lg/>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">{f.other.name}</div>
-                  <div className="text-xs text-white/50 truncate">{f.other.email}</div>
-                </div>
-                <button onClick={() => openShare(f)} className="text-sm px-3 py-1.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 font-medium"><Send className="h-3.5 w-3.5 inline mr-1"/>Share</button>
-                <button onClick={() => openPerms(f)} className="text-xs px-3 py-1.5 rounded-full bg-white/5 border border-white/10"><ShieldCheck className="h-3.5 w-3.5 inline mr-1"/>Perms</button>
-                <button onClick={() => favAction(f.id, 'remove')} className="text-xs text-rose-300 hover:text-rose-200 p-1.5" title="Remove"><Trash2 className="h-3.5 w-3.5"/></button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
+      {incoming.length > 0 && <section data-testid="trusted-incoming"><SectionHeader title="Wants to connect" subtitle="Review each invitation before trusting them" /><div className="space-y-2">{incoming.map(favorite => <div key={favorite.id} className="flex flex-wrap items-center gap-3 rounded-3xl border border-cyan-300/15 bg-cyan-400/[0.05] p-4"><Avatar user={favorite.other} /><div className="min-w-0 flex-1"><h3 className="truncate font-black">{favorite.other?.name || 'SnapNext user'}</h3><p className="mt-1 truncate text-xs text-white/40">{favorite.other?.email}</p><span className="mt-2 inline-flex rounded-full bg-cyan-400/10 px-2.5 py-1 text-[10px] font-black text-cyan-100">Wants to connect</span></div><button data-testid={`trusted-decline-${favorite.id}`} onClick={() => favAction(favorite.id, 'decline')} disabled={busy === `${favorite.id}-decline`} className="min-h-10 rounded-full border border-white/8 bg-white/5 px-4 text-xs font-black text-white/60">Decline</button><button data-testid={`trusted-accept-${favorite.id}`} onClick={() => favAction(favorite.id, 'accept')} disabled={busy === `${favorite.id}-accept`} className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-white px-4 text-xs font-black text-black"><Check className="h-3.5 w-3.5" />Trust</button></div>)}</div></section>}
 
-      {/* Shared with you */}
-      {sharedPhotos.length > 0 && (
-        <Section title="Photos shared with you" subtitle={`${sharedPhotos.length} ${sharedPhotos.length === 1 ? 'photo' : 'photos'}`}>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-            {sharedPhotos.map((s) => (
-              <div key={s.id} className="relative aspect-square rounded-xl overflow-hidden bg-white/5">
-                <img src={mediaSrc(s.media.id)} className="absolute inset-0 h-full w-full object-cover" alt=""/>
-                <div className="absolute bottom-1 left-1 right-1 text-[10px] bg-black/60 px-1.5 py-0.5 rounded truncate">From {s.owner?.name}</div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
+      {outgoing.length > 0 && <section data-testid="trusted-outgoing"><SectionHeader title="Waiting for reply" subtitle="Invitations you have sent" /><div className="space-y-2">{outgoing.map(favorite => <div key={favorite.id} className="flex items-center gap-3 rounded-3xl border border-white/8 bg-white/[0.025] p-4"><Avatar user={favorite.other} /><div className="min-w-0 flex-1"><h3 className="truncate font-black">{favorite.other?.name || favorite.other?.email || 'Invitation'}</h3><p className="mt-1 truncate text-xs text-white/40">Invitation pending</p></div><span className="rounded-full bg-amber-400/10 px-2.5 py-1 text-[10px] font-black text-amber-100">Waiting for reply</span><button data-testid={`trusted-cancel-${favorite.id}`} onClick={() => favAction(favorite.id, 'cancel')} disabled={busy === `${favorite.id}-cancel`} className="min-h-9 rounded-full border border-white/8 px-3 text-xs font-bold text-white/45">Cancel</button></div>)}</div></section>}
 
-      {/* Albums */}
-      <Section title="Shared albums" subtitle="Create an album and invite favorites to view">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 mb-3">
-          <form onSubmit={createAlbum} className="flex gap-2">
-            <input value={newAlbumName} onChange={(e) => setNewAlbumName(e.target.value)} placeholder="Weekend in Lisbon" className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 outline-none focus:border-pink-400/50 text-sm"/>
-            <button className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-white/10 border border-white/10 text-sm"><FolderPlus className="h-4 w-4"/>Create album</button>
-          </form>
-        </div>
-        {(albums.owned.length === 0 && albums.shared.length === 0) ? <Empty label="No albums yet."/> : (
-          <div className="grid md:grid-cols-3 gap-3">
-            {[...albums.owned.map(a => ({...a, mine: true})), ...albums.shared.map(a => ({...a, mine: false}))].map((a) => (
-              <a key={a.id} href={`/favorites/album/${a.id}`} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition">
-                <div className="text-sm font-medium">{a.name}</div>
-                <div className="text-xs text-white/50 mt-1">{a.mine ? 'You created' : 'Shared with you'} · {new Date(a.createdAt).toLocaleDateString()}</div>
-                <div className="mt-3 text-xs text-pink-300 inline-flex items-center gap-1">Open <ExternalLink className="h-3 w-3"/></div>
-              </a>
-            ))}
-          </div>
-        )}
-      </Section>
+      <section data-testid="trusted-people-list">
+        <SectionHeader title="Your trusted people" subtitle={accepted.length ? `${accepted.length} connected` : 'People you approve will appear here'} />
+        {accepted.length ? <div className="grid gap-3 md:grid-cols-2">{accepted.map(favorite => <div key={favorite.id} className="rounded-3xl border border-white/8 bg-white/[0.03] p-4"><div className="flex items-center gap-3"><Avatar user={favorite.other} large /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate font-black">{favorite.other?.name || 'Trusted person'}</h3><span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-black text-emerald-100">Trusted</span></div><p className="mt-1 truncate text-xs text-white/40">{favorite.other?.email}</p></div></div><div className="mt-4 grid grid-cols-2 gap-2"><button data-testid={`trusted-share-${favorite.id}`} onClick={() => openShare(favorite)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 text-xs font-black"><Send className="h-3.5 w-3.5" />Share photos</button><button data-testid={`trusted-permissions-${favorite.id}`} onClick={() => openPerms(favorite)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-white/8 bg-white/5 text-xs font-black text-white/65"><ShieldCheck className="h-3.5 w-3.5" />Permissions</button></div><button data-testid={`trusted-remove-${favorite.id}`} onClick={() => favAction(favorite.id, 'remove')} disabled={busy === `${favorite.id}-remove`} className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-rose-200/65"><Trash2 className="h-3.5 w-3.5" />Remove trusted access</button></div>)}</div> : <EmptyState icon={Users} title="No trusted people yet" detail="Invite someone when you are ready. Nothing in your library changes until you choose to share." />}
+      </section>
 
-      {/* Memories */}
-      {memories.length > 0 && (
-        <Section title="Memories shared with you" subtitle={`${memories.length} stories`}>
-          <div className="space-y-3">
-            {memories.map((m) => (
-              <div key={m.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="text-sm font-medium">{m.title}</div>
-                <div className="text-xs text-white/50">From {m.owner?.name} · {new Date(m.sharedAt).toLocaleDateString()}</div>
-                <div className="mt-3 grid grid-cols-4 md:grid-cols-8 gap-2">
-                  {m.mediaItems.slice(0, 8).map((mi) => (
-                    <div key={mi.id} className="aspect-square rounded-lg overflow-hidden bg-white/5"><img src={mediaSrc(mi.id)} className="h-full w-full object-cover" alt=""/></div>
-                  ))}
-                </div>
-                <button onClick={() => apiFetch(`/shared/memories/${m.id}/react`, { method:'POST', body: JSON.stringify({ emoji: '❤️' })}).then(() => toast.success('Reacted ❤️'))} className="mt-3 text-sm px-3 py-1.5 rounded-full bg-white/5 border border-white/10">❤️ React</button>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
+      {relationshipObservation && <section data-testid="trusted-observation" className="flex gap-4 rounded-3xl border border-white/8 bg-white/[0.025] p-4"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-500/20 to-purple-500/15"><Sparkles className="h-4.5 w-4.5 text-pink-100" /></div><div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35">SnapNext noticed</p><p className="mt-1 text-sm leading-6 text-white/58">{relationshipObservation}</p></div></section>}
 
-      {/* Permissions modal */}
-      {permsFor && (
-        <Modal onClose={() => setPermsFor(null)}>
-          <div className="text-lg font-semibold flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-emerald-300"/> Permissions for {permsFor.other.name}</div>
-          <p className="text-xs text-white/50 mt-1">You control what YOU share with them. Nothing is shared until you explicitly share it.</p>
-          {!perms ? <div className="py-6 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto"/></div> : (
-            <div className="mt-4 space-y-3">
-              {Object.entries(PERM_LABELS).map(([k, label]) => (
-                <label key={k} className="flex items-center justify-between gap-3">
-                  <span className="text-sm">{label}</span>
-                  <button onClick={() => togglePerm(k)} className={`relative h-6 w-11 rounded-full ${perms[k] ? 'bg-gradient-to-r from-pink-500 to-purple-600' : 'bg-white/15'}`}>
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${perms[k] ? 'left-[22px]' : 'left-0.5'}`}/>
-                  </button>
-                </label>
-              ))}
-            </div>
-          )}
-        </Modal>
-      )}
+      <section data-testid="trusted-shared-with-you">
+        <SectionHeader title="Shared with you" subtitle="Memories other trusted people chose to send" />
+        {!sharedPhotos.length && !sharedAlbums.length && !memories.length ? <EmptyState icon={ImageIcon} title="Nothing shared yet" detail="When a trusted person shares a photo, album, or memory story with you, it will appear here." /> : <div className="space-y-5">
+          {sharedPhotos.length > 0 && <div><MiniHeading title="Photos" /><div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 md:grid-cols-6">{sharedPhotos.slice(0, 18).map(item => <div key={item.id} className="relative aspect-square overflow-hidden rounded-xl bg-white/5"><img src={mediaSrc(item.media.id)} className="h-full w-full object-cover" alt="" /><div className="absolute inset-x-1 bottom-1 truncate rounded-lg bg-black/65 px-1.5 py-1 text-[9px] text-white/75">From {item.owner?.name || 'a trusted person'}</div></div>)}</div></div>}
+          {sharedAlbums.length > 0 && <div><MiniHeading title="Albums" /><div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">{sharedAlbums.map(album => <Link data-testid={`trusted-album-${album.id}`} key={album.id} href={`/favorites/album/${album.id}`} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4"><div className="grid h-10 w-10 place-items-center rounded-xl bg-purple-500/10"><ImageIcon className="h-4.5 w-4.5 text-purple-100" /></div><div className="min-w-0 flex-1"><h3 className="truncate text-sm font-black">{album.name}</h3><p className="mt-1 text-xs text-white/38">{album.mine ? 'You created this album' : 'Shared with you'}</p></div><ChevronRight className="h-4 w-4 text-white/25" /></Link>)}</div></div>}
+          {memories.length > 0 && <div><MiniHeading title="Memory stories" /><div className="space-y-2">{memories.map(memory => <div key={memory.id} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{memory.title}</h3><p className="mt-1 text-xs text-white/40">From {memory.owner?.name || 'a trusted person'}</p></div><button data-testid={`trusted-react-${memory.id}`} onClick={() => apiFetch(`/shared/memories/${memory.id}/react`, { method: 'POST', body: JSON.stringify({ emoji: '❤️' }) }).then(() => toast.success('Reaction sent ❤️')).catch(error => toast.error(error.message))} className="rounded-full bg-white/5 px-3 py-2 text-xs">❤️</button></div>{memory.mediaItems?.length > 0 && <div className="mt-3 flex gap-1.5 overflow-x-auto no-scrollbar">{memory.mediaItems.slice(0, 8).map(media => <img key={media.id} src={mediaSrc(media.id)} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />)}</div>}</div>)}</div></div>}
+        </div>}
+      </section>
 
-      {/* Share photos modal */}
-      {shareFor && (
-        <Modal onClose={() => setShareFor(null)}>
-          <div className="text-lg font-semibold">Share photos with {shareFor.other.name}</div>
-          <p className="text-xs text-white/50 mt-1">Pick photos to share. Only the photos you select will be visible.</p>
-          {myPhotos.length === 0 ? <div className="py-6 text-white/50 text-sm">No photos uploaded yet.</div> : (
-            <div className="mt-4 max-h-[420px] overflow-y-auto grid grid-cols-4 md:grid-cols-6 gap-2">
-              {myPhotos.map((p) => {
-                const sel = selectedPhotos.has(p.id);
-                return (
-                  <button key={p.id} onClick={() => { const n = new Set(selectedPhotos); sel ? n.delete(p.id) : n.add(p.id); setSelectedPhotos(n); }} className={`relative aspect-square rounded-lg overflow-hidden border-2 ${sel ? 'border-pink-400' : 'border-transparent'}`}>
-                    <img src={mediaSrc(p.id)} className="h-full w-full object-cover" alt=""/>
-                    {sel && <Check className="absolute top-1 left-1 h-4 w-4 bg-pink-500 rounded-full p-0.5"/>}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          <div className="mt-4 flex justify-end gap-2">
-            <button onClick={() => setShareFor(null)} className="text-sm px-4 py-2 rounded-full bg-white/5 border border-white/10">Cancel</button>
-            <button onClick={doSharePhotos} disabled={!selectedPhotos.size || busy === 'share'} className="text-sm px-4 py-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 font-medium disabled:opacity-50">
-              {busy === 'share' ? <Loader2 className="h-3.5 w-3.5 animate-spin inline mr-1"/> : <Send className="h-3.5 w-3.5 inline mr-1"/>} Share {selectedPhotos.size > 0 && `(${selectedPhotos.size})`}
-            </button>
-          </div>
-        </Modal>
-      )}
+      <section data-testid="trusted-album-create" className="rounded-3xl border border-white/8 bg-white/[0.025] p-5">
+        <div className="flex items-center gap-3"><FolderPlus className="h-5 w-5 text-purple-100" /><div><h2 className="font-black">Start a shared album</h2><p className="mt-0.5 text-xs text-white/40">Create the album first, then choose who gets access.</p></div></div>
+        <form onSubmit={createAlbum} className="mt-4 flex flex-col gap-2 sm:flex-row"><input data-testid="trusted-album-name" value={newAlbumName} onChange={event => setNewAlbumName(event.target.value)} placeholder="Album name" className="min-h-11 flex-1 rounded-2xl border border-white/8 bg-black/20 px-4 text-sm outline-none placeholder:text-white/25" /><button data-testid="trusted-album-create-button" disabled={!newAlbumName.trim()} className="min-h-11 rounded-full border border-white/8 bg-white/5 px-5 text-sm font-black disabled:opacity-40">Create album</button></form>
+      </section>
+
+      <section data-testid="trusted-privacy-reminder" className="rounded-3xl border border-emerald-300/10 bg-emerald-400/[0.04] p-5"><div className="flex gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-200" /><div><h2 className="font-black">You can change your mind</h2><p className="mt-1 text-sm leading-6 text-white/48">Permissions can be turned off, trusted access can be removed, and new sharing requires your action. SnapNext should prepare and suggest—not silently widen access.</p></div></div></section>
+
+      {permsFor && <Modal testId="trusted-permissions-modal" onClose={() => setPermsFor(null)}><div className="pr-10"><div className="flex items-center gap-2 text-lg font-black"><ShieldCheck className="h-5 w-5 text-emerald-200" />Permissions for {permsFor.other?.name}</div><p className="mt-1 text-xs leading-5 text-white/45">These settings control what your account is allowed to share with this person.</p></div>{!perms ? <div className="py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div> : <div className="mt-5 divide-y divide-white/5">{Object.entries(PERM_LABELS).map(([key, meta]) => <div key={key} className="flex items-center gap-4 py-4 first:pt-0 last:pb-0"><div className="min-w-0 flex-1"><h3 className="text-sm font-bold">{meta.label}</h3><p className="mt-1 text-xs leading-5 text-white/40">{meta.detail}</p></div><button data-testid={`trusted-permission-${key}`} onClick={() => togglePerm(key)} aria-pressed={!!perms[key]} className={`relative h-7 w-12 shrink-0 rounded-full ${perms[key] ? 'bg-gradient-to-r from-pink-500 to-purple-600' : 'bg-white/15'}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${perms[key] ? 'left-6' : 'left-1'}`} /></button></div>)}</div>}</Modal>}
+
+      {shareFor && <Modal testId="trusted-share-modal" onClose={() => setShareFor(null)}><div className="pr-10"><h2 className="text-lg font-black">Share photos with {shareFor.other?.name}</h2><p className="mt-1 text-xs leading-5 text-white/45">Only the photos you select in this step will be sent.</p></div>{myPhotos.length ? <div className="mt-4 grid max-h-[55vh] grid-cols-4 gap-1.5 overflow-y-auto sm:grid-cols-5 md:grid-cols-6">{myPhotos.map(photo => { const selected = selectedPhotos.has(photo.id); return <button data-testid={`trusted-photo-${photo.id}`} key={photo.id} onClick={() => { const next = new Set(selectedPhotos); selected ? next.delete(photo.id) : next.add(photo.id); setSelectedPhotos(next); }} className={`relative aspect-square overflow-hidden rounded-xl border-2 ${selected ? 'border-pink-400' : 'border-transparent'}`}><img src={mediaSrc(photo.id)} className="h-full w-full object-cover" alt="" />{selected && <span className="absolute left-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-pink-500"><Check className="h-3.5 w-3.5" /></span>}</button>; })}</div> : <EmptyState icon={ImageIcon} title="No photos to share" detail="Back up photos first, then return here." />}
+        <div className="mt-5 flex justify-end gap-2"><button onClick={() => setShareFor(null)} className="min-h-10 rounded-full border border-white/8 px-4 text-xs font-black text-white/55">Cancel</button><button data-testid="trusted-share-confirm" onClick={doSharePhotos} disabled={!selectedPhotos.size || busy === 'share'} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 text-xs font-black disabled:opacity-40">{busy === 'share' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}Share {selectedPhotos.size || ''}</button></div></Modal>}
     </div>
   );
 }
 
-function Section({ title, subtitle, children }) {
-  return (
-    <section>
-      <div className="mb-3">
-        <div className="text-xl font-semibold">{title}</div>
-        {subtitle && <div className="text-sm text-white/50">{subtitle}</div>}
-      </div>
-      {children}
-    </section>
-  );
+function SectionHeader({ title, subtitle }) {
+  return <div className="mb-4"><h2 className="text-xl font-black md:text-2xl">{title}</h2>{subtitle && <p className="mt-1 text-sm text-white/42">{subtitle}</p>}</div>;
 }
-function Avatar({ u, lg }) {
-  return <div className={`grid place-items-center rounded-full font-semibold flex-none ${lg ? 'h-11 w-11 text-base' : 'h-9 w-9 text-sm'}`} style={{ background: u?.avatarColor || '#a855f7' }}>{u?.name?.[0]?.toUpperCase() || '?'}</div>;
+
+function MiniHeading({ title }) {
+  return <h3 className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-white/35">{title}</h3>;
 }
-function Empty({ label }) { return <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center text-sm text-white/50">{label}</div>; }
-function Modal({ onClose, children }) {
-  return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur p-4 grid place-items-center" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0b0414] p-6 relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-white/60 hover:text-white"><X className="h-5 w-5"/></button>
-        {children}
-      </div>
-    </div>
-  );
+
+function Avatar({ user, large = false }) {
+  return <div className={`grid shrink-0 place-items-center rounded-full font-black ${large ? 'h-12 w-12 text-base' : 'h-10 w-10 text-sm'}`} style={{ background: user?.avatarColor || '#a855f7' }}>{user?.name?.[0]?.toUpperCase() || '?'}</div>;
+}
+
+function EmptyState({ icon: Icon, title, detail }) {
+  return <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-7 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-white/5"><Icon className="h-5 w-5 text-white/30" /></div><h3 className="mt-3 font-black">{title}</h3><p className="mx-auto mt-1 max-w-md text-sm leading-5 text-white/40">{detail}</p></div>;
+}
+
+function Modal({ testId, onClose, children }) {
+  return <div data-testid={testId} className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/85 p-4 backdrop-blur-xl" onClick={onClose}><div onClick={event => event.stopPropagation()} className="relative w-full max-w-2xl rounded-[2rem] border border-white/10 bg-[#0b0414] p-5 md:p-6"><button aria-label="Close" onClick={onClose} className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/5"><X className="h-4 w-4" /></button>{children}</div></div>;
 }
