@@ -1,5 +1,3 @@
-import { apiFetch } from '@/lib/api-client';
-
 export async function sendReply(fetcher, { threadId, messageId, content }) {
   return fetcher('/social-chat-interactions', {
     method: 'POST',
@@ -14,12 +12,17 @@ export async function toggleReaction(fetcher, { threadId, messageId, emoji }) {
   });
 }
 
-// Community page uses these convenience wrappers. Keep the lower-level helpers above
-// injectable for tests while exposing the page-level API expected by the UI.
+async function appApiFetch(path, options) {
+  const { apiFetch } = await import('@/lib/api-client');
+  return apiFetch(path, options);
+}
+
+// UI convenience wrappers preserve the page API while the lower-level helpers stay
+// dependency-injected for Node tests and other callers.
 export async function replyToMessage(input) {
-  return sendReply(apiFetch, input);
+  return sendReply(appApiFetch, input);
 }
 
 export async function reactToMessage(input) {
-  return toggleReaction(apiFetch, input);
+  return toggleReaction(appApiFetch, input);
 }
