@@ -7,22 +7,23 @@ import {
   smartSyncPlanFingerprint,
 } from '../lib/smart-sync/profile-service.js';
 
-test('Smart Sync plan fingerprint changes when the approved plan changes', () => {
+test('Smart Sync plan fingerprint changes when the approved outcome changes', () => {
   const base = {
     providerId: 'google_drive',
     mode: 'manual',
+    syncMode: 'protect_important',
     rules: [{ type: 'recent', enabled: true, priority: 1 }],
     stopAtCapacity: true,
     notifyOnComplete: true,
   };
   const same = { ...base };
-  const changed = { ...base, stopAtCapacity: false };
+  const changed = { ...base, syncMode: 'index_only' };
 
   assert.equal(smartSyncPlanFingerprint(base), smartSyncPlanFingerprint(same));
   assert.notEqual(smartSyncPlanFingerprint(base), smartSyncPlanFingerprint(changed));
 });
 
-test('Smart Sync public cloud asset omits private/internal fields', () => {
+test('Smart Sync public cloud asset omits private fields and exposes safe provider signals', () => {
   const asset = publicCloudAsset({
     id: 'asset-1',
     userId: 'user-1',
@@ -31,12 +32,14 @@ test('Smart Sync public cloud asset omits private/internal fields', () => {
     name: 'photo.jpg',
     mime: 'image/jpeg',
     size: 123,
+    favorite: true,
     checksum: 'secret-checksum',
     storageKey: 'users/user-1/media/private',
   });
 
   assert.equal(asset.id, 'asset-1');
   assert.equal(asset.size, 123);
+  assert.equal(asset.favorite, true);
   assert.equal('userId' in asset, false);
   assert.equal('checksum' in asset, false);
   assert.equal('storageKey' in asset, false);
@@ -59,6 +62,7 @@ test('Smart Sync profile service requires explicit approval before enabling', as
         profile: {
           enabled: true,
           providerId: 'google_drive',
+          syncMode: 'index_only',
           rules: [{ id: 'recent', type: 'recent', enabled: true, priority: 1 }],
         },
       },
