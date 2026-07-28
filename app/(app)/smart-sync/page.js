@@ -175,7 +175,7 @@ export default function SmartSyncPage() {
             priority: current.rules.length + 1,
             targetIds: [],
           }];
-      return { ...current, rules };
+      return { ...current, rules, enabled: false };
     });
   }
 
