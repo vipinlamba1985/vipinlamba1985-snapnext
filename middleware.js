@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { distributedRateLimit } from './lib/distributed-rate-limit';
 
 const PROTECTED_PREFIXES = [
-  '/dashboard','/upload','/gallery','/memories','/life-graph','/journal','/health','/imports',
+  '/dashboard','/upload','/gallery','/memories','/life-graph','/journal','/health','/imports','/circles',
   '/ai-studio','/ai-video','/ai-command','/ready-to-post','/favorites','/community','/chat',
   '/downloads','/trash','/billing','/settings','/admin','/support',
 ];
@@ -146,7 +146,7 @@ export async function middleware(request) {
 
 export const config = { matcher: [
   '/api/:path*','/dashboard/:path*','/upload/:path*','/gallery/:path*','/memories/:path*',
-  '/life-graph/:path*','/journal/:path*','/health/:path*','/imports/:path*','/ai-studio/:path*',
+  '/life-graph/:path*','/journal/:path*','/health/:path*','/imports/:path*','/circles/:path*','/ai-studio/:path*',
   '/ai-video/:path*','/ai-command/:path*','/ready-to-post/:path*','/favorites/:path*',
   '/community/:path*','/chat/:path*','/downloads/:path*','/trash/:path*','/billing/:path*',
   '/settings/:path*','/admin/:path*','/support/:path*',
