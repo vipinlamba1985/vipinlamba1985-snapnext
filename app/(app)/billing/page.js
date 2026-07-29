@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Capacitor } from '@capacitor/core';
 import { apiFetch } from '@/lib/api-client';
@@ -17,6 +17,9 @@ export default function BillingPage() {
 
 function BillingInner() {
   const params = useSearchParams();
+  const requestedPlanId = String(params.get('plan') || '').toLowerCase();
+  const shouldAutoCheckout = params.get('checkout') === '1';
+  const checkoutStarted = useRef(false);
   const [plans, setPlans] = useState([]);
   const [me, setMe] = useState(null);
   const [usage, setUsage] = useState(null);
@@ -26,10 +29,14 @@ function BillingInner() {
   const [nativePlatform, setNativePlatform] = useState('');
 
   async function load() {
-    const p = await fetch('/api/plans').then(r => r.json()); setPlans(p.plans || []);
-    const u = await apiFetch('/auth/me'); setMe(u.user);
-    const s = await apiFetch('/storage/usage'); setUsage(s);
-    const b = await apiFetch('/billing/status'); setBilling(b);
+    const p = await fetch('/api/plans').then((response) => response.json());
+    setPlans(p.plans || []);
+    const u = await apiFetch('/auth/me');
+    setMe(u.user);
+    const s = await apiFetch('/storage/usage');
+    setUsage(s);
+    const b = await apiFetch('/billing/status');
+    setBilling(b);
   }
 
   useEffect(() => {
@@ -56,12 +63,33 @@ function BillingInner() {
     }
     setBusy(planId);
     try {
-      const r = await apiFetch('/billing/checkout', { method: 'POST', body: JSON.stringify({ planId, interval }) });
-      if (r.url && !r.mock) window.location.href = r.url;
-      else { toast.success('Plan activated (mock)'); load(); }
-    } catch (e) { toast.error(e.message); }
-    finally { setBusy(''); }
+      const response = await apiFetch('/billing/checkout', {
+        method: 'POST',
+        body: JSON.stringify({ planId, interval }),
+      });
+      if (response.url && !response.mock) window.location.href = response.url;
+      else {
+        toast.success('Plan activated (mock)');
+        load();
+      }
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setBusy('');
+    }
   }
+
+  useEffect(() => {
+    if (!shouldAutoCheckout || checkoutStarted.current || Capacitor.isNativePlatform()) return;
+    if (!requestedPlanId || !plans.length || !me || !billing) return;
+    const requestedPlan = plans.find((plan) => plan.id === requestedPlanId);
+    if (!requestedPlan || requestedPlan.id === 'free' || me.plan === requestedPlan.id) return;
+    const selectedPrice = requestedPlan.prices?.[interval];
+    const checkoutReady = billing.provider !== 'stripe' || !!selectedPrice?.stripePriceId;
+    if (!checkoutReady) return;
+    checkoutStarted.current = true;
+    checkout(requestedPlan.id);
+  }, [billing, interval, me, plans, requestedPlanId, shouldAutoCheckout]);
 
   async function openPortal() {
     if (Capacitor.isNativePlatform()) {
@@ -70,13 +98,18 @@ function BillingInner() {
     }
     setBusy('portal');
     try {
-      const r = await apiFetch('/billing/portal', { method: 'POST' });
-      if (r.url) window.location.href = r.url;
-    } catch (e) { toast.error(e.message); }
-    finally { setBusy(''); }
+      const response = await apiFetch('/billing/portal', { method: 'POST' });
+      if (response.url) window.location.href = response.url;
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setBusy('');
+    }
   }
 
-  const pct = usage && !usage.isSuper && usage.plan?.storageBytes ? Math.min(100, Math.round((usage.usage.bytes / usage.plan.storageBytes) * 100)) : 0;
+  const pct = usage && !usage.isSuper && usage.plan?.storageBytes
+    ? Math.min(100, Math.round((usage.usage.bytes / usage.plan.storageBytes) * 100))
+    : 0;
   const sub = billing?.subscription;
   const isStripeMode = billing?.provider === 'stripe';
   const showPortal = !nativePlatform && !!sub && sub.provider === 'stripe' && me?.stripeCustomerId;
@@ -87,7 +120,11 @@ function BillingInner() {
       <div>
         <h1 className="text-3xl font-bold">Billing & Plans</h1>
         <p className="mt-1 text-white/60">
-          {nativePlatform ? <span className="inline-flex items-center gap-1 text-sm"><Smartphone className="h-4 w-4" />Native app plan status</span> : isStripeMode ? 'Powered by Stripe' : <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs text-amber-200"><AlertTriangle className="h-3 w-3" /> Mock checkout — development mode</span>}
+          {nativePlatform
+            ? <span className="inline-flex items-center gap-1 text-sm"><Smartphone className="h-4 w-4" />Native app plan status</span>
+            : isStripeMode
+              ? 'Powered by Stripe'
+              : <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-2 py-0.5 text-xs text-amber-200"><AlertTriangle className="h-3 w-3" /> Mock checkout — development mode</span>}
         </p>
       </div>
 
@@ -104,7 +141,7 @@ function BillingInner() {
               </div>
               {sub?.currentPeriodEnd && !usage.isSuper && (
                 <div className="mt-1 text-xs text-white/50">
-                  {sub.cancelAtPeriodEnd ? 'Ends' : 'Renews'} {new Date(sub.currentPeriodEnd).toLocaleDateString()}
+                  {sub.cancelAtPeriodEnd ? 'Ends' : 'Renews'} {new Date(sub.currentPeriodEnd).toLocaleDateString('en-CA')}
                 </div>
               )}
             </div>
@@ -115,19 +152,19 @@ function BillingInner() {
           </div>
           {!usage.isSuper && (
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-label="Storage used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
-              <div className="h-full bg-gradient-to-r from-pink-500 to-purple-600" style={{ width: pct + '%' }} />
+              <div className="h-full bg-gradient-to-r from-pink-500 to-purple-600" style={{ width: `${pct}%` }} />
             </div>
           )}
           <div className="mt-4 flex flex-wrap gap-2">
             {showPortal && (
-              <button onClick={openPortal} disabled={busy === 'portal'} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">
+              <button type="button" onClick={openPortal} disabled={busy === 'portal'} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">
                 {busy === 'portal' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />} Manage billing
               </button>
             )}
             {!nativePlatform && !showPortal && sub && sub.provider !== 'stripe' && (
               <span className="inline-flex items-center gap-1 text-xs text-white/50"><Loader2 className="h-3 w-3" /> Stripe customer portal available once you upgrade via Stripe.</span>
             )}
-            <button onClick={load} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
+            <button type="button" onClick={load} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
           </div>
         </div>
       )}
@@ -145,40 +182,44 @@ function BillingInner() {
       ) : (
         <>
           <div className="inline-flex rounded-full border border-white/10 bg-white/5 p-1 text-sm" role="group" aria-label="Billing interval">
-            {['monthly', 'yearly'].map(opt => (
-              <button key={opt} onClick={() => setInterval(opt)} aria-pressed={interval === opt} className={`min-h-10 rounded-full px-4 py-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${interval === opt ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white' : 'text-white/60'}`}>
-                {opt === 'monthly' ? 'Monthly' : 'Yearly · save 16%'}
+            {['monthly', 'yearly'].map((option) => (
+              <button key={option} type="button" onClick={() => setInterval(option)} aria-pressed={interval === option} className={`min-h-10 rounded-full px-4 py-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${interval === option ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white' : 'text-white/60'}`}>
+                {option === 'monthly' ? 'Monthly' : 'Yearly · save 16%'}
               </button>
             ))}
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {plans.filter(p => p.id !== 'super_user').map(p => {
-              const current = currentPlanId === p.id;
-              const price = p.prices?.[interval]?.amount ?? p.price;
-              const priceId = p.prices?.[interval]?.stripePriceId;
-              const stripeReady = !isStripeMode || !!priceId || p.id === 'free';
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            {plans.filter((plan) => plan.id !== 'super_user').map((plan) => {
+              const current = currentPlanId === plan.id;
+              const requested = requestedPlanId === plan.id;
+              const price = plan.prices?.[interval]?.amount ?? plan.price;
+              const priceId = plan.prices?.[interval]?.stripePriceId;
+              const stripeReady = !isStripeMode || !!priceId || plan.id === 'free';
+              const freeDowngrade = plan.id === 'free' && !current;
               return (
-                <div key={p.id} className={`relative rounded-2xl border p-6 ${p.popular ? 'border-pink-400/40 bg-gradient-to-b from-pink-500/10 to-transparent' : 'border-white/10 bg-white/[0.03]'}`}>
-                  {p.popular && <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-3 py-1 text-xs font-medium">Most popular</div>}
-                  <div className="font-semibold">{p.name}</div>
+                <div key={plan.id} aria-current={requested ? 'true' : undefined} className={`relative rounded-2xl border p-6 ${requested ? 'ring-2 ring-pink-300/70' : ''} ${plan.popular ? 'border-pink-400/40 bg-gradient-to-b from-pink-500/10 to-transparent' : 'border-white/10 bg-white/[0.03]'}`}>
+                  {plan.popular && <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-3 py-1 text-xs font-medium">Most popular</div>}
+                  {requested && !current && <div className="mb-3 text-xs font-bold uppercase tracking-wider text-pink-200">Selected during signup</div>}
+                  <div className="font-semibold">{plan.name}</div>
                   <div className="mt-2 text-3xl font-bold">${price}<span className="text-base font-normal text-white/50">/{interval === 'monthly' ? 'mo' : 'yr'}</span></div>
                   <ul className="mt-4 space-y-2 text-sm text-white/70">
-                    {p.features.map((f, i) => <li key={i} className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-pink-400" />{f}</li>)}
+                    {plan.features.map((feature, index) => <li key={index} className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-pink-400" />{feature}</li>)}
                   </ul>
                   {!stripeReady && (
                     <div className="mt-3 flex items-start gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 p-2 text-[11px] text-amber-200" role="alert">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" />
-                      <span>Stripe price ID missing for {interval}. Admin must set <code className="rounded bg-white/10 px-1">STRIPE_PRICE_{p.id.toUpperCase()}_{interval.toUpperCase()}</code>.</span>
+                      <span>Checkout configuration is unavailable for {interval} billing.</span>
                     </div>
                   )}
                   <button
-                    disabled={current || busy === p.id || (p.id !== 'free' && !stripeReady)}
-                    onClick={() => checkout(p.id)}
-                    className={`mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full px-4 py-2.5 font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${current ? 'bg-white/10' : p.popular ? 'bg-gradient-to-r from-pink-500 to-purple-600' : 'border border-white/15 hover:bg-white/5'} disabled:opacity-50`}
+                    type="button"
+                    disabled={current || freeDowngrade || busy === plan.id || (plan.id !== 'free' && !stripeReady)}
+                    onClick={() => checkout(plan.id)}
+                    className={`mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full px-4 py-2.5 font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${current || freeDowngrade ? 'bg-white/10' : plan.popular ? 'bg-gradient-to-r from-pink-500 to-purple-600' : 'border border-white/15 hover:bg-white/5'} disabled:opacity-50`}
                   >
-                    {busy === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : current ? <CheckCircle2 className="h-4 w-4" /> : null}
-                    {current ? 'Current plan' : isStripeMode && p.id !== 'free' ? `Subscribe to ${p.name}` : `Switch to ${p.name}`}
+                    {busy === plan.id ? <Loader2 className="h-4 w-4 animate-spin" /> : current ? <CheckCircle2 className="h-4 w-4" /> : null}
+                    {current ? 'Current plan' : freeDowngrade ? 'Manage billing to downgrade' : isStripeMode && plan.id !== 'free' ? `Subscribe to ${plan.name}` : `Switch to ${plan.name}`}
                   </button>
                 </div>
               );

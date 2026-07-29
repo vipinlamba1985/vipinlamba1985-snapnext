@@ -10,6 +10,8 @@ test('public plan catalogue mirrors the authoritative launch plans', () => {
   assert.deepEqual(plans.map((plan) => plan.storageGb), [15, 20, 75, 200, 400]);
   assert.equal(plans.some((plan) => plan.id === 'super_user'), false);
   assert.equal(plans.find((plan) => plan.id === 'starter').prices.yearly.amount, 9.99);
+  assert.equal(plans.find((plan) => plan.id === 'starter').prices.monthly.stripePriceId, 'inline');
+  assert.equal(plans.find((plan) => plan.id === 'starter').prices.monthly.checkoutMode, 'inline_price');
 });
 
 test('plans API has no second hardcoded catalogue', () => {
