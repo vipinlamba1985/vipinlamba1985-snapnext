@@ -3,7 +3,7 @@ export const runtime = 'nodejs';
 
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { runAiTask } from '@/lib/ai-router';
+import { runAiTask } from '@/lib/ai-router-budgeted';
 import { textToSpeechWithBudget } from '@/lib/budgeted-direct-ai';
 
 function readAiResult(result, key) {
