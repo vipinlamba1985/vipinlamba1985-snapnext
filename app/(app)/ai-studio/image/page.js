@@ -36,7 +36,7 @@ export default function CreateImagePage() {
     try {
       const response = await apiFetch('/ai-create-image', {
         method: 'POST',
-        body: JSON.stringify({ templateId, mediaId: mediaId || null, prompt, aspectRatio }),
+        body: JSON.stringify({ templateId, mediaId: mediaId || null, prompt, aspectRatio, approved: true }),
       });
       setResult(response.job);
       toast.success('Your image is ready!');
@@ -62,7 +62,7 @@ export default function CreateImagePage() {
         <div className="flex items-center gap-2 text-sm font-bold"><Sparkles className="h-4 w-4 text-cyan-200"/> Pick a ready-made style</div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {templates.map((item) => (
-            <button key={item.id} onClick={() => setTemplateId(item.id)} className={`rounded-3xl border p-4 text-left transition ${templateId === item.id ? 'border-cyan-300 bg-cyan-500/10' : 'border-white/10 bg-black/15 hover:bg-white/[0.05]'}`}>
+            <button type="button" key={item.id} onClick={() => setTemplateId(item.id)} className={`rounded-3xl border p-4 text-left transition ${templateId === item.id ? 'border-cyan-300 bg-cyan-500/10' : 'border-white/10 bg-black/15 hover:bg-white/[0.05]'}`}>
               <div className="flex items-center justify-between gap-3"><span className="font-black">{item.name}</span><ImageIcon className="h-4 w-4 text-cyan-200"/></div>
               <p className="mt-2 text-xs leading-5 text-white/55">{item.description}</p>
               <p className="mt-3 text-[11px] font-bold text-white/40">Uses {item.credits} Credits</p>
@@ -80,16 +80,16 @@ export default function CreateImagePage() {
 
           <div>
             <label className="text-xs font-bold text-white/55">Choose a shape</label>
-            <div className="mt-2 flex flex-wrap gap-2">{['1:1','4:5','9:16','16:9'].map((ratio) => <button key={ratio} onClick={() => setAspectRatio(ratio)} className={`rounded-full px-4 py-2 text-sm font-bold ${aspectRatio === ratio ? 'bg-white text-black' : 'bg-white/5 text-white/60'}`}>{ratio}</button>)}</div>
+            <div className="mt-2 flex flex-wrap gap-2">{['1:1','4:5','9:16','16:9'].map((ratio) => <button type="button" key={ratio} onClick={() => setAspectRatio(ratio)} className={`rounded-full px-4 py-2 text-sm font-bold ${aspectRatio === ratio ? 'bg-white text-black' : 'bg-white/5 text-white/60'}`}>{ratio}</button>)}</div>
           </div>
 
           <div>
-            <div className="flex items-center justify-between gap-3"><label className="text-xs font-bold text-white/55">Use one of your photos (optional)</label>{mediaId && <button onClick={() => setMediaId('')} className="text-xs text-white/45 hover:text-white">Remove photo</button>}</div>
-            {photos.length ? <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">{photos.map((photo) => <button key={photo.id} onClick={() => setMediaId(photo.id)} className={`aspect-square overflow-hidden rounded-2xl border-2 ${mediaId === photo.id ? 'border-cyan-300' : 'border-transparent'}`}><img src={mediaSrc(photo.id)} alt="" className="h-full w-full object-cover"/></button>)}</div> : <p className="mt-3 text-sm text-white/45">You can create from your idea now, or upload a photo to give it a new style.</p>}
+            <div className="flex items-center justify-between gap-3"><label className="text-xs font-bold text-white/55">Use one of your photos (optional)</label>{mediaId && <button type="button" onClick={() => setMediaId('')} className="text-xs text-white/45 hover:text-white">Remove photo</button>}</div>
+            {photos.length ? <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">{photos.map((photo) => <button type="button" key={photo.id} onClick={() => setMediaId(photo.id)} className={`aspect-square overflow-hidden rounded-2xl border-2 ${mediaId === photo.id ? 'border-cyan-300' : 'border-transparent'}`}><img src={mediaSrc(photo.id)} alt="" className="h-full w-full object-cover"/></button>)}</div> : <p className="mt-3 text-sm text-white/45">You can create from your idea now, or upload a photo to give it a new style.</p>}
           </div>
 
-          <button onClick={createImage} disabled={busy || !prompt.trim()} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 via-purple-500 to-pink-500 px-5 py-3 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin"/> : <Wand2 className="h-4 w-4"/>} {busy ? 'Creating something special…' : 'Create image'}</button>
-          <p className="text-xs leading-5 text-white/40">Uses {active?.credits || '—'} Credits. You are only charged when your image is ready. Nothing is shared automatically.</p>
+          <button type="button" onClick={createImage} disabled={busy || !prompt.trim()} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 via-purple-500 to-pink-500 px-5 py-3 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin"/> : <Wand2 className="h-4 w-4"/>} {busy ? 'Creating something special…' : `Create image · ${active?.credits || '—'} Credits`}</button>
+          <p className="text-xs leading-5 text-white/40">Tapping Create image confirms this Credit charge. You are only charged when your image is ready. Nothing is shared automatically.</p>
         </section>
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
