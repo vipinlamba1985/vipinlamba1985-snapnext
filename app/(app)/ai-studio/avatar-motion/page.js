@@ -45,7 +45,7 @@ export default function AvatarMotionStudio() {
     try {
       const response = await apiFetch('/ai-avatar-motion', {
         method: 'POST',
-        body: JSON.stringify({ mediaId: selectedPhoto, templateId: selectedTemplate, prompt }),
+        body: JSON.stringify({ mediaId: selectedPhoto, templateId: selectedTemplate, prompt, approved: true }),
       });
       setResult(response.job);
       toast.success('Your creation is ready.');
@@ -70,14 +70,14 @@ export default function AvatarMotionStudio() {
       <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-pink-500/15 via-purple-500/10 to-cyan-500/10 p-5">
         <div className="flex items-center gap-2 text-sm font-bold"><Sparkles className="h-4 w-4 text-pink-300"/> Ready-to-use styles</div>
         <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-          {GROUPS.map((item) => <button key={item.id} onClick={() => { setGroup(item.id); setSelectedTemplate(''); }} className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-bold ${group === item.id ? 'bg-white text-black' : 'bg-white/5 text-white/65'}`}>{item.label}</button>)}
+          {GROUPS.map((item) => <button type="button" key={item.id} onClick={() => { setGroup(item.id); setSelectedTemplate(''); }} className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-bold ${group === item.id ? 'bg-white text-black' : 'bg-white/5 text-white/65'}`}>{item.label}</button>)}
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {visibleTemplates.map((item) => (
-            <button key={item.id} onClick={() => setSelectedTemplate(item.id)} className={`rounded-3xl border p-4 text-left transition ${selectedTemplate === item.id ? 'border-pink-400 bg-pink-500/10' : 'border-white/10 bg-black/15 hover:bg-white/[0.05]'}`}>
+            <button type="button" key={item.id} onClick={() => setSelectedTemplate(item.id)} className={`rounded-3xl border p-4 text-left transition ${selectedTemplate === item.id ? 'border-pink-400 bg-pink-500/10' : 'border-white/10 bg-black/15 hover:bg-white/[0.05]'}`}>
               <div className="flex items-center justify-between gap-3"><span className="font-black">{item.name}</span>{item.output === 'video' ? <Film className="h-4 w-4 text-cyan-200"/> : <ImageIcon className="h-4 w-4 text-pink-200"/>}</div>
               <p className="mt-2 text-xs leading-5 text-white/55">{item.description}</p>
-              <p className="mt-3 text-[11px] font-bold text-white/40">Estimated {item.credits} AI credits</p>
+              <p className="mt-3 text-[11px] font-bold text-white/40">Uses {item.credits} AI Credits</p>
             </button>
           ))}
         </div>
@@ -86,11 +86,11 @@ export default function AvatarMotionStudio() {
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
           <h2 className="font-black">Choose your photo</h2>
-          {photos.length ? <div className="mt-4 grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">{photos.map((photo) => <button key={photo.id} onClick={() => setSelectedPhoto(photo.id)} className={`aspect-square overflow-hidden rounded-2xl border-2 ${selectedPhoto === photo.id ? 'border-pink-400' : 'border-transparent'}`}><img src={mediaSrc(photo.id)} alt="" className="h-full w-full object-cover"/></button>)}</div> : <p className="mt-4 text-sm text-white/50">Upload a portrait or photo first.</p>}
+          {photos.length ? <div className="mt-4 grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">{photos.map((photo) => <button type="button" key={photo.id} onClick={() => setSelectedPhoto(photo.id)} className={`aspect-square overflow-hidden rounded-2xl border-2 ${selectedPhoto === photo.id ? 'border-pink-400' : 'border-transparent'}`}><img src={mediaSrc(photo.id)} alt="" className="h-full w-full object-cover"/></button>)}</div> : <p className="mt-4 text-sm text-white/50">Upload a portrait or photo first.</p>}
           <label className="mt-5 block text-xs font-bold text-white/55">Optional direction</label>
           <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} maxLength={500} placeholder="Example: soft pastel colors, playful expression, clean background" className="mt-2 min-h-24 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm outline-none focus:border-pink-400/50"/>
-          <button onClick={create} disabled={busy || !selectedPhoto || !selectedTemplate} className="mt-4 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 py-3 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin"/> : <Wand2 className="h-4 w-4"/>} Create {active?.output === 'video' ? 'motion' : 'image'}</button>
-          <p className="mt-3 text-xs leading-5 text-white/40">Nothing is posted or shared automatically. Failed generations do not use AI credits.</p>
+          <button type="button" onClick={create} disabled={busy || !selectedPhoto || !selectedTemplate} className="mt-4 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 py-3 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin"/> : <Wand2 className="h-4 w-4"/>} {busy ? 'Creating…' : `Create ${active?.output === 'video' ? 'motion' : 'image'} · ${active?.credits || '—'} Credits`}</button>
+          <p className="mt-3 text-xs leading-5 text-white/40">Tapping Create confirms the displayed Credit charge. Nothing is posted or shared automatically, and failed generations do not use AI Credits.</p>
         </section>
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
