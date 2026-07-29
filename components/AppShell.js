@@ -6,8 +6,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BookOpen, BrainCircuit, ChevronDown, Cloud, CreditCard, Crown, Download, Film,
   Heart, Home, Image as ImageIcon, LifeBuoy, Loader2, LogOut, Mail, Menu,
-  MessageSquare, Network, RefreshCw, Send, Shield, ShieldAlert, Sparkles, Trash2,
-  Upload, UserRound, Users, X,
+  MessageSquare, Network, Plus, RefreshCw, Send, Shield, ShieldAlert, Sparkles, Trash2,
+  UserRound, Users, X,
 } from 'lucide-react';
 import { apiFetch, logout, getStoredUser, setStoredUser, getToken } from '@/lib/api-client';
 import BrandLogo from '@/components/BrandLogo';
@@ -20,9 +20,9 @@ import NotificationBell from '@/components/NotificationBell';
 const ROUTES = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/gallery', label: 'Library', icon: ImageIcon },
+  { href: '/upload', label: 'Add', icon: Plus },
   { href: '/ai-studio', label: 'Create', icon: Sparkles, aiCapability: 'studio', featureFlag: 'aiStudio' },
   { href: '/settings', label: 'You', icon: UserRound },
-  { href: '/upload', label: 'Back up', icon: Upload },
   { href: '/memories', label: 'Memories', icon: Heart, featureFlag: 'aiMemory' },
   { href: '/smart-sync', label: 'Smart Backup', icon: Cloud, featureFlag: 'premiumBackup' },
   { href: '/event-director', label: 'Moments', icon: Sparkles },
@@ -44,9 +44,9 @@ const ROUTES = [
   { href: '/admin', label: 'Admin', icon: Shield, adminOnly: true },
 ];
 
-const PRIMARY_HREFS = ['/dashboard', '/gallery', '/ai-studio', '/settings'];
+const PRIMARY_HREFS = ['/dashboard', '/gallery', '/upload', '/ai-studio', '/settings'];
 const MORE_HREFS = [
-  '/upload', '/memories', '/smart-sync', '/event-director', '/circles', '/favorites',
+  '/memories', '/smart-sync', '/event-director', '/circles', '/favorites',
   '/chat', '/journal', '/health', '/imports', '/life-graph', '/ready-to-post', '/ai-video',
   '/community', '/downloads', '/trash', '/support',
 ];
@@ -203,8 +203,8 @@ export default function AppShell({ children }) {
           {primaryNav.map(item => {
             const Active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
-            const isCreate = item.href === '/ai-studio';
-            return <Link key={item.href} href={item.href} aria-current={Active ? 'page' : undefined} className="relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[10px] font-semibold transition active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">{isCreate ? <div className="grid h-12 w-12 -mt-8 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-purple-600 shadow-2xl shadow-pink-500/40 ring-4 ring-[#0b0414]/90"><Sparkles className="h-5 w-5 text-white" /></div> : <Icon className={`h-5 w-5 transition ${Active ? 'text-pink-300 drop-shadow-[0_0_10px_rgba(236,72,153,0.65)]' : 'text-white/55'}`} />}{Active && !isCreate && <span className="absolute inset-x-3 top-1 h-8 rounded-2xl bg-white/[0.07] -z-10" />}<span className={Active ? 'text-white' : 'text-white/55'}>{item.label}</span></Link>;
+            const isAdd = item.href === '/upload';
+            return <Link key={item.href} href={item.href} aria-label={isAdd ? 'Add photos and videos' : item.label} aria-current={Active ? 'page' : undefined} className="relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl py-2 text-[10px] font-semibold transition active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">{isAdd ? <div className={`grid h-14 w-14 -mt-8 place-items-center rounded-full bg-gradient-to-br from-pink-500 to-purple-600 shadow-2xl shadow-pink-500/40 ring-4 ring-[#0b0414]/90 transition ${Active ? 'scale-105 ring-pink-300/35' : ''}`}><Plus className="h-7 w-7 text-white" strokeWidth={2.5} /></div> : <Icon className={`h-5 w-5 transition ${Active ? 'text-pink-300 drop-shadow-[0_0_10px_rgba(236,72,153,0.65)]' : 'text-white/55'}`} />}{Active && !isAdd && <span className="absolute inset-x-3 top-1 h-8 rounded-2xl bg-white/[0.07] -z-10" />}{!isAdd && <span className={Active ? 'text-white' : 'text-white/55'}>{item.label}</span>}</Link>;
           })}
         </div>
       </nav>
