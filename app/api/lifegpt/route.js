@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { runAiTask } from '@/lib/ai-router';
+import { runAiTask } from '@/lib/ai-router-budgeted';
 import { buildLifeIntelligenceContext, contextPromptSummary } from '@/lib/life-intelligence-context';
 import { averageMatchConfidence, recordLifeGptAudit, validateLifeGptCitations } from '@/lib/lifegpt-trust';
 
