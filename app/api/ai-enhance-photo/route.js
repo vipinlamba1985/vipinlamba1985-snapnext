@@ -13,7 +13,6 @@ const ACTIONS = {
   'low-light': { name: 'Low-light Fix', credits: 10, multiplier: 5 },
   denoise: { name: 'Denoise & Sharpen', credits: 10, multiplier: 5 },
   portrait: { name: 'Portrait Improve', credits: 12, multiplier: 6 },
-  restore: { name: 'Restore Old Photo', credits: 20, multiplier: 10 },
 };
 
 function json(data, status = 200) {
@@ -30,6 +29,7 @@ export async function GET(request) {
   return json({
     providerReady: Boolean(process.env.ENHANCE_PHOTO_PROVIDER_URL),
     actions: Object.entries(ACTIONS).map(([id, action]) => ({ id, name: action.name, credits: action.credits })),
+    restoration: { href: '/ai-studio/restoration', billing: 'prepaid_restoration_credits' },
     maximumProviderCostUsd: aiTaskCostCeiling('photo_enhance'),
     approvalRequired: true,
     privacy: 'Your original photo is never overwritten. Enhancement creates a separate result.',
@@ -40,6 +40,13 @@ export async function POST(request) {
   const user = await getUserFromRequest(request);
   if (!user) return json({ error: 'Unauthorized' }, 401);
   const body = await request.json().catch(() => ({}));
+  if (body.action === 'restore') {
+    return json({
+      error: 'Old-photo restoration now uses Restoration Credits so it stays available without consuming plan AI allowance.',
+      code: 'restoration_pack_required',
+      href: '/ai-studio/restoration',
+    }, 409);
+  }
   const action = ACTIONS[body.action];
   if (!action) return json({ error: 'Choose a valid enhancement.' }, 400);
   if (body.approved !== true) {
