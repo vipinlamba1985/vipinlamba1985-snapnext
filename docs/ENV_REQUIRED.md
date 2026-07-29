@@ -90,18 +90,23 @@ Vercel production storage operations fail closed unless `STORAGE_PROVIDER=s3`, p
 
 Mock billing refuses production. Stripe checkout is available on the web only. Capacitor iOS/Android builds intentionally hide checkout, portal links and paid-plan purchase controls until StoreKit/Google Play Billing is implemented.
 
+SnapNext supports two Stripe pricing modes:
+1. **Configured Price mode** — set Stripe Price IDs and reuse products/prices created in Stripe.
+2. **Inline recurring-price mode** — when a Price ID is absent, Checkout creates recurring `price_data` from the authoritative amounts in `lib/plans.js`. Plan, interval, and user identity remain attached through Checkout and subscription metadata for webhook reconciliation.
+
 | Variable | Classification | Purpose |
 |---|---|---|
 | `BILLING_PROVIDER` | REQUIRED FOR WEB PRODUCTION (`stripe`) | `mock` is development-only. |
-| `STRIPE_SECRET_KEY` | REQUIRED FOR WEB PRODUCTION | Stripe API key |
-| `STRIPE_WEBHOOK_SECRET` | REQUIRED FOR WEB PRODUCTION | Webhook signature verification |
-| `STRIPE_PRICE_STARTER_MONTHLY` / `STRIPE_PRICE_STARTER_YEARLY` | REQUIRED FOR PAID STARTER | Starter price IDs ($0.99 monthly / $9.99 yearly product configuration) |
-| `STRIPE_PRICE_PLUS_MONTHLY` / `STRIPE_PRICE_PLUS_YEARLY` | REQUIRED FOR PAID PLUS | Plus price IDs |
-| `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_YEARLY` | REQUIRED FOR PAID PRO | Pro price IDs |
-| `STRIPE_PRICE_FAMILY_MONTHLY` / `STRIPE_PRICE_FAMILY_YEARLY` | REQUIRED FOR PAID FAMILY | Family price IDs |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | OPTIONAL | Client-side Stripe.js if used |
+| `STRIPE_SECRET_KEY` | REQUIRED FOR WEB PRODUCTION | Creates customers, subscriptions, Checkout and portal sessions. |
+| `STRIPE_WEBHOOK_SECRET` | REQUIRED FOR WEB PRODUCTION | Verifies webhook signatures before changing entitlements. |
+| `STRIPE_CURRENCY` | OPTIONAL (default `usd`) | Three-letter currency used by inline recurring-price Checkout. |
+| `STRIPE_PRICE_STARTER_MONTHLY` / `STRIPE_PRICE_STARTER_YEARLY` | OPTIONAL | Reuse pre-created Starter Stripe Prices instead of inline pricing. |
+| `STRIPE_PRICE_PLUS_MONTHLY` / `STRIPE_PRICE_PLUS_YEARLY` | OPTIONAL | Reuse pre-created Plus Stripe Prices instead of inline pricing. |
+| `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_YEARLY` | OPTIONAL | Reuse pre-created Pro Stripe Prices instead of inline pricing. |
+| `STRIPE_PRICE_FAMILY_MONTHLY` / `STRIPE_PRICE_FAMILY_YEARLY` | OPTIONAL | Reuse pre-created Family Stripe Prices instead of inline pricing. |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | OPTIONAL | Client-side Stripe.js if used. Current Checkout redirects are created server-side. |
 
-The source-of-truth launch ladder is Free, Starter $0.99, Plus $3.99, Pro $8.99 and Family $14.99 per month. Stripe products must be configured to match before enabling checkout.
+The source-of-truth launch ladder is Free, Starter $0.99, Plus $3.99, Pro $8.99 and Family $14.99 per month. Updating `lib/plans.js` updates entitlements, Billing, the public plans API and landing pricing. Pre-created Stripe Price IDs are no longer required for checkout, but their amounts should match the source of truth when configured.
 
 ## Email (Resend)
 
@@ -127,7 +132,7 @@ The source-of-truth launch ladder is Free, Starter $0.99, Plus $3.99, Pro $8.99 
 4. Strong JWT secret for the legacy migration path.
 5. On Vercel: `STORAGE_PROVIDER=s3` plus all AWS values. Persistent Docker local storage remains supported.
 6. `CRON_SECRET`; automatic Trash deletion and Smart Sync continuation depend on it.
-7. `BILLING_PROVIDER=stripe`, Stripe keys, webhook secret and matching price IDs for web subscriptions.
+7. `BILLING_PROVIDER=stripe`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and a valid public app/base URL for web subscriptions. Stripe Price IDs are optional because inline recurring pricing is available.
 8. Gemini and/or OpenAI keys for the AI features being launched.
 9. Provider credentials and token-encryption keys for each enabled Smart Sync/Circles connection.
 10. Native apps must continue hiding Stripe purchase controls until platform-native billing is integrated.
