@@ -21,7 +21,7 @@ for local development. Names only — no values are documented here.
 | `NEXT_PUBLIC_APP_URL` | OPTIONAL (falls back to BASE_URL) | Same as above, legacy alias | Hosting env |
 | `JWT_SECRET` | REQUIRED FOR PRODUCTION | Legacy session validation. MUST be a random string of 32+ chars. In production, a missing/weak value disables the legacy token path entirely. | Hosting env |
 | `CRON_SECRET` | REQUIRED FOR PRODUCTION | Authorizes Google Drive continuation and automatic Trash purge jobs. | Hosting env |
-| `TRASH_RETENTION_DAYS` | OPTIONAL (default `30`) | Days before trashed media is permanently removed. Bounded to 1–365. | Hosting env |
+| `TRASH_RETENTION_DAYS` | OPTIONAL (default `30`) | Days before trashed media is permanently removed. Bounded to 1–365 and shown in the Trash UI. | Hosting env |
 | `TRASH_PURGE_BATCH_SIZE` | OPTIONAL (default `100`) | Maximum expired Trash records processed per cron run. Bounded to 1–500. | Hosting env |
 
 ## Authentication (Supabase) — LAUNCH-BLOCKING
@@ -70,20 +70,21 @@ Authorize: `https://<your-domain>/api/circles/connections/youtube/callback`
 | `ONEDRIVE_TENANT_ID` | OPTIONAL (default `common`) | Microsoft tenant for OneDrive OAuth. |
 | `SMART_SYNC_TOKEN_ENCRYPTION_KEY` | REQUIRED FOR FEATURE | Encrypts cloud refresh tokens at rest. |
 
-## Storage (AWS S3)
+## Storage (AWS S3 and persistent local volumes)
 
-Local disk (`STORAGE_PROVIDER=local`) is development-only. Production storage operations now fail closed unless `STORAGE_PROVIDER=s3`. This prevents Vercel’s ephemeral filesystem from being treated as durable memory storage.
+Vercel production storage operations fail closed unless `STORAGE_PROVIDER=s3`, preventing its ephemeral filesystem from being treated as durable memory storage. The documented Docker production setup may continue using `STORAGE_PROVIDER=local` because `/app/uploads` is mounted to a persistent volume. Other ephemeral hosts should set `REQUIRE_DURABLE_S3=true`.
 
 | Variable | Classification | Purpose |
 |---|---|---|
-| `STORAGE_PROVIDER` | REQUIRED FOR PRODUCTION (`s3`) | Production must use `s3`; `local` is refused at runtime. |
-| `AWS_ACCESS_KEY_ID` | REQUIRED FOR PRODUCTION | S3 credentials |
-| `AWS_SECRET_ACCESS_KEY` | REQUIRED FOR PRODUCTION | S3 credentials |
-| `AWS_REGION` | REQUIRED FOR PRODUCTION | S3 bucket region |
-| `AWS_S3_BUCKET` | REQUIRED FOR PRODUCTION | Bucket name |
+| `STORAGE_PROVIDER` | REQUIRED ON VERCEL (`s3`) | `s3` on Vercel; `local` is allowed for development or a persistent Docker volume. |
+| `REQUIRE_DURABLE_S3` | OPTIONAL SAFETY FLAG | Set `true` on non-Vercel ephemeral production hosts to reject local storage. |
+| `AWS_ACCESS_KEY_ID` | REQUIRED WHEN USING S3 | S3 credentials |
+| `AWS_SECRET_ACCESS_KEY` | REQUIRED WHEN USING S3 | S3 credentials |
+| `AWS_REGION` | REQUIRED WHEN USING S3 | S3 bucket region |
+| `AWS_S3_BUCKET` | REQUIRED WHEN USING S3 | Bucket name |
 | `S3_SIGNED_URL_TTL` | OPTIONAL | Signed URL expiry in seconds |
 | `MAX_UPLOAD_SIZE_MB` | OPTIONAL | Per-file upload cap |
-| `UPLOAD_DIR` | DEVELOPMENT ONLY | Local storage directory |
+| `UPLOAD_DIR` | OPTIONAL FOR LOCAL STORAGE | Local/persistent-volume storage directory |
 
 ## Billing (Stripe web + native boundary)
 
@@ -124,7 +125,7 @@ The source-of-truth launch ladder is Free, Starter $0.99, Plus $3.99, Pro $8.99 
 2. MongoDB connection.
 3. Public base URL.
 4. Strong JWT secret for the legacy migration path.
-5. `STORAGE_PROVIDER=s3` plus all AWS values; production local storage is refused.
+5. On Vercel: `STORAGE_PROVIDER=s3` plus all AWS values. Persistent Docker local storage remains supported.
 6. `CRON_SECRET`; automatic Trash deletion and Smart Sync continuation depend on it.
 7. `BILLING_PROVIDER=stripe`, Stripe keys, webhook secret and matching price IDs for web subscriptions.
 8. Gemini and/or OpenAI keys for the AI features being launched.
