@@ -25,13 +25,24 @@ function clean(value, max = 500) {
   return String(value || '').trim().slice(0, max);
 }
 
+function taskPolicy(template) {
+  const video = template.output === 'video';
+  return {
+    taskId: video ? 'short_video_generation' : 'image_create',
+    entitlementFeature: video ? 'videoScript' : 'story',
+    maximumProviderCostUsd: aiTaskCostCeiling(video ? 'short_video_generation' : 'image_create'),
+  };
+}
+
 export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) return json({ error: 'Unauthorized' }, 401);
   return json({
-    templates: TEMPLATES,
+    templates: TEMPLATES.map((template) => ({
+      ...template,
+      maximumProviderCostUsd: taskPolicy(template).maximumProviderCostUsd,
+    })),
     providerReady: Boolean(process.env.AVATAR_MOTION_PROVIDER_URL),
-    maximumProviderCostUsd: aiTaskCostCeiling('avatar_motion'),
     approvalRequired: true,
     privacy: 'Your selected photo is used only for this creation. SnapNext never publishes or shares the result automatically.',
   });
@@ -43,13 +54,14 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const template = TEMPLATES.find((item) => item.id === body.templateId);
   if (!template) return json({ error: 'Choose a valid creation style.' }, 400);
+  const policy = taskPolicy(template);
   if (body.approved !== true) {
     return json({
       error: 'Review the Credits and confirm before creation starts.',
       code: 'approval_required',
       approvalRequired: true,
       credits: template.credits,
-      maximumProviderCostUsd: aiTaskCostCeiling('avatar_motion'),
+      maximumProviderCostUsd: policy.maximumProviderCostUsd,
     }, 409);
   }
   const mediaId = clean(body.mediaId, 100);
@@ -74,7 +86,9 @@ export async function POST(request) {
     templateName: template.name,
     status: 'processing',
     outputType: template.output,
+    taskId: policy.taskId,
     creditsReserved: template.credits,
+    maximumProviderCostUsd: policy.maximumProviderCostUsd,
     prompt: clean(body.prompt),
     createdAt,
     updatedAt: createdAt,
@@ -84,15 +98,15 @@ export async function POST(request) {
     db,
     user,
     request,
-    taskId: 'avatar_motion',
-    entitlementFeature: 'story',
-    creditMultiplier: template.credits / 3,
+    taskId: policy.taskId,
+    entitlementFeature: policy.entitlementFeature,
+    creditMultiplier: template.credits / (template.output === 'video' ? 5 : 3),
     approved: true,
     prompt: clean(body.prompt) || template.name,
     media: { mediaId, mimeType: media.mime || 'image/jpeg', size: media.size || media.bytes || buffer.length },
     providerUrl,
     providerKey,
-    providerName: 'avatar_motion',
+    providerName: template.output === 'video' ? 'photo_motion' : 'avatar_image',
     providerBody: {
       requestId: jobId,
       mode: template.id,
