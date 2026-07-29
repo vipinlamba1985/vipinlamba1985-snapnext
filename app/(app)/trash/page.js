@@ -6,7 +6,15 @@ import { toast } from 'sonner';
 
 export default function TrashPage() {
   const [items, setItems] = useState([]);
-  async function load() { const d = await apiFetch('/media?filter=trash'); setItems(d.items || []); }
+  const [retentionDays, setRetentionDays] = useState(30);
+  async function load() {
+    const [media, policy] = await Promise.all([
+      apiFetch('/media?filter=trash'),
+      fetch('/api/trash/policy').then((response) => response.json()).catch(() => ({ retentionDays: 30 })),
+    ]);
+    setItems(media.items || []);
+    setRetentionDays(Number(policy.retentionDays) || 30);
+  }
   useEffect(() => { load(); }, []);
 
   async function restore(id) { await apiFetch(`/media/${id}/restore`, { method: 'POST' }); toast.success('Restored'); load(); }
@@ -16,7 +24,7 @@ export default function TrashPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-3xl font-bold">Trash</h1>
-        <p className="mt-1 text-white/60">Items are automatically removed after 30 days. You can restore or permanently delete them sooner.</p>
+        <p className="mt-1 text-white/60">Items are automatically removed after {retentionDays} {retentionDays === 1 ? 'day' : 'days'}. You can restore or permanently delete them sooner.</p>
       </div>
       {items.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-white/15 p-10 text-center text-white/50">Trash is empty.</div>
