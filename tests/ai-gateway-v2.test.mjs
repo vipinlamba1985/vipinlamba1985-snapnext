@@ -23,6 +23,7 @@ test('the task registry is the authoritative source for Starter limits and cost 
   assert.match(registry, /AI_TASK_REGISTRY/);
   assert.match(registry, /upload_image_analysis/);
   assert.match(registry, /upload_video_analysis/);
+  assert.match(registry, /memory_story_director/);
   assert.match(registry, /image_create/);
   assert.match(registry, /photo_enhance/);
   assert.match(registry, /avatar_motion/);
@@ -31,11 +32,11 @@ test('the task registry is the authoritative source for Starter limits and cost 
   assert.match(registry, /validateAiTaskRegistry/);
 });
 
-test('all aliased text AI calls default to gateway v2 with an emergency rollback', () => {
+test('production text routes use the budgeted gateway switcher', () => {
   const paths = read('jsconfig.json');
   const wrapper = read('lib/ai-router-budgeted.js');
   const router = read('lib/ai-router-v2.js');
-  assert.match(paths, /ai-router-budgeted\.js/);
+  assert.match(paths, /"@\/lib\/ai-router": \["\.\/lib\/ai-router-budgeted\.js"\]/);
   assert.match(wrapper, /AI_GATEWAY_V2_ENABLED/);
   assert.match(wrapper, /gatewayV2\.runAiTask/);
   assert.match(wrapper, /legacy\.runAiTask/);
@@ -44,6 +45,36 @@ test('all aliased text AI calls default to gateway v2 with an emergency rollback
   assert.match(router, /costBasis/);
   assert.doesNotMatch(router, /gemini-2\.0-flash/);
   assert.doesNotMatch(router, /gpt-4o-mini/);
+
+  for (const path of [
+    'app/api/ai/chat/route.js',
+    'app/api/lifegpt/route.js',
+    'app/api/memory-stories/route.js',
+    'app/api/memory-story-director/route.js',
+  ]) {
+    assert.match(read(path), /@\/lib\/ai-router-budgeted/);
+  }
+
+  const catchAll = read('app/api/[[...path]]/route.js');
+  assert.match(catchAll, /from '@\/lib\/ai-router'/);
+  assert.match(paths, /ai-router-budgeted\.js/);
+});
+
+test('Memory Story Director executes and settles through the registered gateway task', () => {
+  const route = read('app/api/memory-story-director/route.js');
+  const provider = read('lib/ai/memory-story-director.js');
+  const registry = read('lib/ai/registry.js');
+  assert.match(route, /executeAiGatewayTask/);
+  assert.match(route, /taskId: 'memory_story_director'/);
+  assert.match(route, /generateMemoryStoryDirectorPackage/);
+  assert.match(route, /actualCostUsd/);
+  assert.match(route, /providerUsage/);
+  assert.doesNotMatch(route, /new OpenAI/);
+  assert.doesNotMatch(route, /gpt-4o-mini/);
+  assert.doesNotMatch(route, /estimatedCost:\s*0/);
+  assert.match(provider, /AI_MODELS\.openai\.balanced/);
+  assert.match(provider, /estimateTokenCostUsd/);
+  assert.match(registry, /memory_story_director: task/);
 });
 
 test('the gateway reserves, settles, releases, audits, retries, and requires approval', () => {

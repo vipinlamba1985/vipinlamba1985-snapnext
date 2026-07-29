@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createHash, randomUUID } from 'crypto';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
-import { runAiTask } from '@/lib/ai-router';
+import { runAiTask } from '@/lib/ai-router-budgeted';
 import { buildMemoryIndex } from '@/lib/memory-brain';
 
 export const runtime = 'nodejs';
