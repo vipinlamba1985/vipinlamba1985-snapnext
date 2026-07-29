@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
+import { useAccessibleDialog } from '@/hooks/use-escape-close';
 import { toast } from 'sonner';
 import {
-  Check, CheckCircle2, Download, FileText, Heart, Images, Play, Search,
+  Check, Download, FileText, Heart, Images, Play, Search,
   Star, Trash2, Upload, X,
 } from 'lucide-react';
 
@@ -24,11 +25,7 @@ function dateLabel(value) {
   try { return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value)); }
   catch { return ''; }
 }
-
-function metadataList(value) {
-  return Array.isArray(value) ? value.filter(Boolean) : [];
-}
-
+function metadataList(value) { return Array.isArray(value) ? value.filter(Boolean) : []; }
 function matchesCollection(item, collection) {
   if (collection === 'people') return metadataList(item?.aiAnalysis?.faces).length > 0;
   if (collection === 'places') return metadataList(item?.aiAnalysis?.locations).length > 0;
@@ -49,7 +46,6 @@ export default function GalleryPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [viewer, setViewer] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const serverFilter = collection === 'favorite' || collection === 'video' ? collection : 'all';
 
   async function load() {
@@ -70,31 +66,18 @@ export default function GalleryPage() {
 
   const visibleItems = useMemo(() => items.filter(item => matchesCollection(item, collection)), [items, collection]);
   const submitSearch = value => setSearch(String(value ?? query).trim());
-  const chooseCollection = id => {
-    setCollection(id);
-    setSelected(new Set());
-  };
-  const clearAll = () => {
-    setCollection('all');
-    setQuery('');
-    setSearch('');
-    setSelected(new Set());
-  };
+  const chooseCollection = id => { setCollection(id); setSelected(new Set()); };
+  const clearAll = () => { setCollection('all'); setQuery(''); setSearch(''); setSelected(new Set()); };
   const toggle = id => setSelected(current => {
     const next = new Set(current);
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-  const toggleSelectMode = () => {
-    setSelectMode(current => {
-      if (current) setSelected(new Set());
-      return !current;
-    });
-  };
-  const favorite = async id => {
-    await apiFetch(`/media/${id}/favorite`, { method: 'POST' });
-    await load();
-  };
+  const toggleSelectMode = () => setSelectMode(current => {
+    if (current) setSelected(new Set());
+    return !current;
+  });
+  const favorite = async id => { await apiFetch(`/media/${id}/favorite`, { method: 'POST' }); await load(); };
   const trash = async id => {
     await apiFetch(`/media/${id}/trash`, { method: 'POST' });
     setViewer(null);
@@ -126,27 +109,28 @@ export default function GalleryPage() {
           <div className="flex items-center justify-between gap-4">
             <div><h1 className="text-[28px] font-black tracking-tight">Library</h1><p className="mt-0.5 text-sm text-white/45">Your moments, ready when you need them.</p></div>
             <div className="flex items-center gap-2">
-              <button data-testid="library-select-toggle" onClick={toggleSelectMode} className={`min-h-10 rounded-full px-4 text-sm font-black ${selectMode ? 'bg-white text-black' : 'border border-white/10 bg-white/[0.04] text-white/70'}`}>{selectMode ? 'Cancel' : 'Select'}</button>
-              <Link data-testid="library-upload-link" href="/upload" aria-label="Back up memories" className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-pink-500 to-purple-600"><Upload className="h-4 w-4" /></Link>
+              <button data-testid="library-select-toggle" onClick={toggleSelectMode} aria-pressed={selectMode} className={`min-h-11 rounded-full px-4 text-sm font-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${selectMode ? 'bg-white text-black' : 'border border-white/10 bg-white/[0.04] text-white/70'}`}>{selectMode ? 'Cancel' : 'Select'}</button>
+              <Link data-testid="library-upload-link" href="/upload" aria-label="Add photos and videos" className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-pink-500 to-purple-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><Upload className="h-4 w-4" /></Link>
             </div>
           </div>
 
-          <div className="relative mt-4">
-            <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/35" />
-            <input data-testid="library-search-input" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => event.key === 'Enter' && submitSearch()} placeholder="Search by moment, person, place, or date" className="h-12 w-full rounded-full border border-white/10 bg-white/[0.04] pl-11 pr-20 text-sm outline-none placeholder:text-white/30 focus:border-pink-400/40" />
-            {query ? <button data-testid="library-search-clear" aria-label="Clear search" onClick={() => { setQuery(''); setSearch(''); }} className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-white/5"><X className="h-4 w-4 text-white/55" /></button> : <button data-testid="library-search-submit" onClick={() => submitSearch()} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-3 py-1.5 text-xs font-black text-pink-200">Search</button>}
+          <div className="relative mt-4" role="search">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/35" aria-hidden="true" />
+            <input aria-label="Search your library" data-testid="library-search-input" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => event.key === 'Enter' && submitSearch()} placeholder="Search by moment, person, place, or date" className="h-12 w-full rounded-full border border-white/10 bg-white/[0.04] pl-11 pr-20 text-sm outline-none placeholder:text-white/30 focus:border-pink-400/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300" />
+            {query ? <button data-testid="library-search-clear" aria-label="Clear search" onClick={() => { setQuery(''); setSearch(''); }} className="absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><X className="h-4 w-4 text-white/55" /></button> : <button aria-label="Submit library search" data-testid="library-search-submit" onClick={() => submitSearch()} className="absolute right-2 top-1/2 min-h-9 -translate-y-1/2 rounded-full px-3 py-1.5 text-xs font-black text-pink-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Search</button>}
           </div>
 
-          <div data-testid="library-filter-row" className="mt-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-            {CHIPS.map(([id, label]) => <button data-testid={`library-filter-${id}`} key={id} onClick={() => chooseCollection(id)} className={`h-9 shrink-0 rounded-full border px-4 text-sm transition ${collection === id ? 'border-pink-400/45 bg-pink-500/15 text-pink-200' : 'border-white/8 bg-white/[0.035] text-white/55'}`}>{label}</button>)}
+          <div data-testid="library-filter-row" className="no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Library filters" tabIndex={0}>
+            {CHIPS.map(([id, label]) => <button data-testid={`library-filter-${id}`} key={id} onClick={() => chooseCollection(id)} aria-pressed={collection === id} className={`h-10 shrink-0 rounded-full border px-4 text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${collection === id ? 'border-pink-400/45 bg-pink-500/15 text-pink-200' : 'border-white/8 bg-white/[0.035] text-white/55'}`}>{label}</button>)}
           </div>
 
-          {selectMode && <div data-testid="library-selection-bar" className="mt-3 flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3"><span className="text-sm font-black">{selected.size} selected</span><div className="ml-auto flex gap-2"><button data-testid="library-bulk-favorite" disabled={!selected.size} onClick={() => bulk('favorite')} className="rounded-full bg-white/7 px-3 py-2 text-xs font-black disabled:opacity-35">Favorite</button><button data-testid="library-bulk-trash" disabled={!selected.size} onClick={() => bulk('trash')} className="rounded-full bg-white/7 px-3 py-2 text-xs font-black disabled:opacity-35">Trash</button></div></div>}
+          {selectMode && <div data-testid="library-selection-bar" className="mt-3 flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3" aria-live="polite"><span className="text-sm font-black">{selected.size} selected</span><div className="ml-auto flex gap-2"><button data-testid="library-bulk-favorite" disabled={!selected.size} onClick={() => bulk('favorite')} className="min-h-10 rounded-full bg-white/7 px-3 py-2 text-xs font-black disabled:opacity-35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Favorite</button><button data-testid="library-bulk-trash" disabled={!selected.size} onClick={() => bulk('trash')} className="min-h-10 rounded-full bg-white/7 px-3 py-2 text-xs font-black disabled:opacity-35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Trash</button></div></div>}
         </div>
       </header>
 
-      <main data-testid="library-grid-region">
-        {loading ? <div className="grid grid-cols-2 gap-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">{Array.from({ length: 12 }).map((_, index) => <div key={index} className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" />)}</div> : visibleItems.length === 0 ? <Empty filtered={collection !== 'all' || !!search} onClear={clearAll} /> : <div data-testid="library-grid" className="grid grid-cols-2 gap-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">{visibleItems.map(item => <MemoryCard key={item.id} item={item} selectMode={selectMode} selected={selected.has(item.id)} onSelect={() => toggle(item.id)} onOpen={() => setViewer(item)} />)}</div>}
+      <p className="sr-only" aria-live="polite">{loading ? 'Loading library.' : `${visibleItems.length} memories shown.`}</p>
+      <main data-testid="library-grid-region" aria-busy={loading}>
+        {loading ? <div className="grid grid-cols-2 gap-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" aria-hidden="true">{Array.from({ length: 12 }).map((_, index) => <div key={index} className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" />)}</div> : visibleItems.length === 0 ? <Empty filtered={collection !== 'all' || !!search} onClear={clearAll} /> : <div data-testid="library-grid" className="grid grid-cols-2 gap-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" aria-label="Memory library">{visibleItems.map(item => <MemoryCard key={item.id} item={item} selectMode={selectMode} selected={selected.has(item.id)} onSelect={() => toggle(item.id)} onOpen={() => setViewer(item)} />)}</div>}
       </main>
 
       {viewer && <Viewer item={viewer} onClose={() => setViewer(null)} onFavorite={() => favorite(viewer.id)} onDownload={() => download(viewer)} onTrash={() => trash(viewer.id)} />}
@@ -156,26 +140,29 @@ export default function GalleryPage() {
 
 function Media({ item, className = '' }) {
   if (item.kind === 'photo') return <img src={mediaSrc(item.id)} className={`${className} object-cover`} alt={item.name || 'Memory'} loading="lazy" decoding="async" />;
-  if (item.kind === 'video') return <div className={`relative ${className}`}><video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline preload="metadata" /><div className="absolute inset-0 grid place-items-center bg-black/15"><Play className="h-7 w-7 fill-white" /></div></div>;
-  return <div className={`grid place-items-center bg-white/5 p-4 text-center ${className}`}><FileText className="h-8 w-8 text-white/45" /></div>;
+  if (item.kind === 'video') return <div className={`relative ${className}`}><video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline preload="metadata" aria-label={item.name || 'Memory video'} /><div className="absolute inset-0 grid place-items-center bg-black/15" aria-hidden="true"><Play className="h-7 w-7 fill-white" /></div></div>;
+  return <div className={`grid place-items-center bg-white/5 p-4 text-center ${className}`} aria-label={item.name || 'Text memory'}><FileText className="h-8 w-8 text-white/45" /></div>;
 }
 
 function MemoryCard({ item, selectMode, selected, onSelect, onOpen }) {
   const open = () => selectMode ? onSelect() : onOpen();
-  return <button data-testid={`library-media-${item.id}`} onClick={open} className={`relative aspect-square overflow-hidden rounded-xl bg-white/[0.035] text-left ring-inset ${selected ? 'ring-2 ring-pink-400' : 'ring-0'}`}><Media item={item} className="h-full w-full" />{(item.favorite || item.isFavorite) && <Star className="absolute right-2 top-2 h-4 w-4 fill-pink-400 text-pink-400 drop-shadow" />}{item.kind === 'video' && <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-1 text-[10px] font-black"><Play className="h-3 w-3 fill-white" />Video</span>}{selectMode && <span className={`absolute left-2 top-2 grid h-[22px] w-[22px] place-items-center rounded-full border-2 ${selected ? 'border-pink-400 bg-pink-500' : 'border-white bg-black/30'}`}>{selected && <Check className="h-3.5 w-3.5 stroke-[3]" />}</span>}</button>;
+  const label = selectMode ? `${selected ? 'Deselect' : 'Select'} ${item.name || 'memory'}` : `Open ${item.name || 'memory'}`;
+  return <button aria-label={label} aria-pressed={selectMode ? selected : undefined} data-testid={`library-media-${item.id}`} onClick={open} className={`relative aspect-square overflow-hidden rounded-xl bg-white/[0.035] text-left ring-inset focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${selected ? 'ring-2 ring-pink-400' : 'ring-0'}`}><Media item={item} className="h-full w-full" />{(item.favorite || item.isFavorite) && <Star className="absolute right-2 top-2 h-4 w-4 fill-pink-400 text-pink-400 drop-shadow" aria-label="Favorite" />}{item.kind === 'video' && <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-1 text-[10px] font-black"><Play className="h-3 w-3 fill-white" aria-hidden="true" />Video</span>}{selectMode && <span aria-hidden="true" className={`absolute left-2 top-2 grid h-[22px] w-[22px] place-items-center rounded-full border-2 ${selected ? 'border-pink-400 bg-pink-500' : 'border-white bg-black/30'}`}>{selected && <Check className="h-3.5 w-3.5 stroke-[3]" />}</span>}</button>;
 }
 
 function Viewer({ item, onClose, onFavorite, onDownload, onTrash }) {
   const people = metadataList(item?.aiAnalysis?.faces);
   const places = metadataList(item?.aiAnalysis?.locations);
   const description = item?.aiAnalysis?.description || item?.aiAnalysis?.summary || '';
-  return <div data-testid="library-viewer" className="fixed inset-0 z-50 overflow-y-auto bg-black/95 p-3 backdrop-blur-xl" onClick={onClose}><div className="mx-auto grid min-h-full max-w-4xl place-items-center" onClick={event => event.stopPropagation()}><div className="w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0711]"><div className="relative grid min-h-[45vh] place-items-center bg-black"><Media item={item} className="max-h-[70vh] w-full" /><button data-testid="library-viewer-close" aria-label="Close memory" onClick={onClose} className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-black/65"><X className="h-5 w-5" /></button></div><div className="p-5"><h2 className="text-2xl font-black">{item.name || 'Memory'}</h2><p className="mt-1 text-sm text-white/45">{[dateLabel(item.createdAt), places[0], people.slice(0, 2).join(', ')].filter(Boolean).join(' · ')}</p><Link data-testid="library-add-to-story" href="/ai-studio" className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-gradient-to-r from-pink-500 via-purple-600 to-cyan-500 px-5 font-black">Add to a story</Link>{description && <div data-testid="library-snapnext-take" className="mt-4 rounded-2xl border border-pink-300/10 bg-gradient-to-br from-pink-500/10 to-purple-500/8 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-pink-200">SnapNext&apos;s take</p><p className="mt-2 text-sm leading-6 text-white/60">{description}</p></div>}<div className="mt-5 grid grid-cols-3 gap-2"><Action testId="library-viewer-favorite" icon={Heart} label="Love" onClick={onFavorite} /><Action testId="library-viewer-download" icon={Download} label="Save" onClick={onDownload} /><Action testId="library-viewer-trash" icon={Trash2} label="Trash" onClick={onTrash} /></div></div></div></div></div>;
+  const titleId = `library-viewer-title-${item.id}`;
+  const dialogRef = useAccessibleDialog(true, onClose);
+  return <div data-testid="library-viewer" className="fixed inset-0 z-50 overflow-y-auto bg-black/95 p-3 backdrop-blur-xl" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><div className="mx-auto grid min-h-full max-w-4xl place-items-center"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0711] outline-none"><div className="relative grid min-h-[45vh] place-items-center bg-black"><Media item={item} className="max-h-[70vh] w-full" /><button data-testid="library-viewer-close" aria-label="Close memory" onClick={onClose} className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-black/65 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><X className="h-5 w-5" /></button></div><div className="p-5"><h2 id={titleId} className="text-2xl font-black">{item.name || 'Memory'}</h2><p className="mt-1 text-sm text-white/45">{[dateLabel(item.createdAt), places[0], people.slice(0, 2).join(', ')].filter(Boolean).join(' · ')}</p><Link data-testid="library-add-to-story" href="/ai-studio" className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-gradient-to-r from-pink-500 via-purple-600 to-cyan-500 px-5 font-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Add to a story</Link>{description && <div data-testid="library-snapnext-take" className="mt-4 rounded-2xl border border-pink-300/10 bg-gradient-to-br from-pink-500/10 to-purple-500/8 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-pink-200">SnapNext&apos;s take</p><p className="mt-2 text-sm leading-6 text-white/60">{description}</p></div>}<div className="mt-5 grid grid-cols-3 gap-2"><Action testId="library-viewer-favorite" icon={Heart} label="Love" onClick={onFavorite} /><Action testId="library-viewer-download" icon={Download} label="Save" onClick={onDownload} /><Action testId="library-viewer-trash" icon={Trash2} label="Trash" onClick={onTrash} /></div></div></div></div></div>;
 }
 
 function Action({ testId, icon: Icon, label, onClick }) {
-  return <button data-testid={testId} onClick={onClick} className="min-h-16 rounded-2xl border border-white/10 bg-white/5 text-sm font-bold"><Icon className="mx-auto mb-1.5 h-5 w-5" />{label}</button>;
+  return <button data-testid={testId} onClick={onClick} className="min-h-16 rounded-2xl border border-white/10 bg-white/5 text-sm font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><Icon className="mx-auto mb-1.5 h-5 w-5" aria-hidden="true" />{label}</button>;
 }
 
 function Empty({ filtered, onClear }) {
-  return <div data-testid="library-empty" className="rounded-[2rem] border border-dashed border-white/12 bg-white/[0.025] p-10 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white/[0.05]"><Images className="h-6 w-6 text-white/35" /></div><h3 className="mt-4 text-xl font-black">Nothing here yet</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/45">{filtered ? 'Try a different search, or clear the filter to see all your moments.' : 'Back up photos and videos and they will appear here.'}</p>{filtered ? <button data-testid="library-empty-clear" onClick={onClear} className="mt-5 rounded-full bg-white px-5 py-2.5 text-sm font-black text-black">Clear filters</button> : <Link data-testid="library-empty-upload" href="/upload" className="mt-5 inline-flex rounded-full bg-white px-5 py-2.5 text-sm font-black text-black">Back up memories</Link>}</div>;
+  return <div data-testid="library-empty" className="rounded-[2rem] border border-dashed border-white/12 bg-white/[0.025] p-10 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white/[0.05]"><Images className="h-6 w-6 text-white/35" aria-hidden="true" /></div><h3 className="mt-4 text-xl font-black">Nothing here yet</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/45">{filtered ? 'Try a different search, or clear the filter to see all your moments.' : 'Back up photos and videos and they will appear here.'}</p>{filtered ? <button data-testid="library-empty-clear" onClick={onClear} className="mt-5 min-h-11 rounded-full bg-white px-5 py-2.5 text-sm font-black text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Clear filters</button> : <Link data-testid="library-empty-upload" href="/upload" className="mt-5 inline-flex min-h-11 items-center rounded-full bg-white px-5 py-2.5 text-sm font-black text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Back up memories</Link>}</div>;
 }

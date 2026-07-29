@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/trash-purge",
+      "schedule": "30 5 * * *"
+    },
+    {
       "path": "/api/cron/google-drive-sync",
       "schedule": "0 6 * * *"
     }

@@ -19,7 +19,10 @@ for local development. Names only — no values are documented here.
 | `DB_NAME` | OPTIONAL (default `snapnext`) | Mongo database name | Hosting env |
 | `NEXT_PUBLIC_BASE_URL` | REQUIRED FOR PRODUCTION | Public app URL (links, redirects, billing return URLs) | Hosting env |
 | `NEXT_PUBLIC_APP_URL` | OPTIONAL (falls back to BASE_URL) | Same as above, legacy alias | Hosting env |
-| `JWT_SECRET` | REQUIRED FOR PRODUCTION | Legacy session validation + admin seed-super bootstrap. MUST be a random string of 32+ chars. In production, a missing/weak value now DISABLES the legacy token path entirely (fail closed). | Hosting env |
+| `JWT_SECRET` | REQUIRED FOR PRODUCTION | Legacy session validation. MUST be a random string of 32+ chars. In production, a missing/weak value disables the legacy token path entirely. | Hosting env |
+| `CRON_SECRET` | REQUIRED FOR PRODUCTION | Authorizes Google Drive continuation and automatic Trash purge jobs. | Hosting env |
+| `TRASH_RETENTION_DAYS` | OPTIONAL (default `30`) | Days before trashed media is permanently removed. Bounded to 1–365 and shown in the Trash UI. | Hosting env |
+| `TRASH_PURGE_BATCH_SIZE` | OPTIONAL (default `100`) | Maximum expired Trash records processed per cron run. Bounded to 1–500. | Hosting env |
 
 ## Authentication (Supabase) — LAUNCH-BLOCKING
 
@@ -37,69 +40,76 @@ Accepted aliases: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (U
 
 | Variable | Classification | Purpose |
 |---|---|---|
-| `GEMINI_API_KEY` | REQUIRED FOR FEATURE (vision/upload analysis, transcription, memory assistant) | Direct Google Gemini API. Without it, upload analysis returns an honest "unavailable" state and transcription returns a structured error — never fabricated output. |
+| `GEMINI_API_KEY` | REQUIRED FOR FEATURE (vision/upload analysis, transcription, memory assistant) | Direct Google Gemini API. Without it, upload analysis returns an honest unavailable state and transcription returns a structured error. |
 | `OPENAI_API_KEY` | REQUIRED FOR FEATURE (captions, chat, stories, journal narrative) | Direct OpenAI API in production. |
-| `OPENAI_BASE_URL` | DEVELOPMENT ONLY | Points the OpenAI SDK at an OpenAI-compatible gateway (Emergent Universal LLM gateway in this workspace). REMOVE in production. |
-| `GEMINI_GATEWAY_MODEL` | DEVELOPMENT ONLY | Gemini model name when routed via gateway (default `gemini/gemini-3.5-flash`). |
-| `OPENAI_TEXT_MODEL` | OPTIONAL (default `gpt-4o-mini`) | Text model override. |
-| `AI_PROVIDER_PRIMARY` / `AI_PROVIDER_VISION` / `AI_PROVIDER_FALLBACK` | OPTIONAL | Provider routing (defaults: openai / gemini / gemini). |
+| `OPENAI_BASE_URL` | DEVELOPMENT ONLY | Points the OpenAI SDK at an OpenAI-compatible gateway. REMOVE in production. |
+| `GEMINI_GATEWAY_MODEL` | DEVELOPMENT ONLY | Gemini model name when routed via gateway. |
+| `OPENAI_TEXT_MODEL` | OPTIONAL | Text model override. |
+| `AI_PROVIDER_PRIMARY` / `AI_PROVIDER_VISION` / `AI_PROVIDER_FALLBACK` | OPTIONAL | Provider routing. |
 
 ## Circles social connections
 
-Circles supports manual `@profile` organization without any social credentials. Automatic following/subscription import is only enabled for connectors with legitimate API access. YouTube is the first active OAuth connector; other platforms remain link/manual until separately approved and implemented.
+Circles supports manual `@profile` organization without any social credentials. Automatic following/subscription import is only enabled for connectors with legitimate API access.
 
 | Variable | Classification | Purpose |
 |---|---|---|
-| `YOUTUBE_CLIENT_ID` | REQUIRED FOR FEATURE (YouTube Circles connection) | Google OAuth client ID used to authorize read-only YouTube subscription access. |
-| `YOUTUBE_CLIENT_SECRET` | REQUIRED FOR FEATURE (YouTube Circles connection) | Google OAuth client secret. Server-side only. |
-| `CIRCLES_TOKEN_ENCRYPTION_KEY` | REQUIRED FOR FEATURE (connected social accounts) | Server-side secret used to encrypt OAuth access/refresh tokens at rest before storing them in MongoDB. Use a long random value and never expose it to the browser. |
+| `YOUTUBE_CLIENT_ID` | REQUIRED FOR FEATURE | Google OAuth client ID for read-only YouTube subscription access. |
+| `YOUTUBE_CLIENT_SECRET` | REQUIRED FOR FEATURE | Google OAuth client secret. Server-side only. |
+| `CIRCLES_TOKEN_ENCRYPTION_KEY` | REQUIRED FOR FEATURE | Encrypts OAuth access/refresh tokens at rest. |
 
-For the Google OAuth client, authorize the production callback URL:
-`https://<your-domain>/api/circles/connections/youtube/callback`
+Authorize: `https://<your-domain>/api/circles/connections/youtube/callback`
 
-The requested YouTube scope is read-only. SnapNext does not follow, unfollow, like, comment, or publish through this connector.
-
-## Storage (AWS S3)
-
-Local disk fallback (`STORAGE_PROVIDER=local`, files under `UPLOAD_DIR` or `/app/uploads`) works for
-development, but is NOT durable for production hosting (serverless filesystems are ephemeral).
+## Smart Sync providers
 
 | Variable | Classification | Purpose |
 |---|---|---|
-| `STORAGE_PROVIDER` | REQUIRED FOR PRODUCTION (`s3`) | `local` or `s3`. Production should use `s3`. |
-| `AWS_ACCESS_KEY_ID` | REQUIRED FOR PRODUCTION | S3 credentials |
-| `AWS_SECRET_ACCESS_KEY` | REQUIRED FOR PRODUCTION | S3 credentials |
-| `AWS_REGION` | REQUIRED FOR PRODUCTION | S3 bucket region |
-| `AWS_S3_BUCKET` | REQUIRED FOR PRODUCTION | Bucket name |
-| `S3_SIGNED_URL_TTL` | OPTIONAL | Signed URL expiry (seconds) |
+| `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` | REQUIRED FOR FEATURE | Google Drive read-only Smart Sync. |
+| `GOOGLE_PHOTOS_CLIENT_ID` / `GOOGLE_PHOTOS_CLIENT_SECRET` | REQUIRED FOR FEATURE | Google Photos Picker imports. |
+| `DROPBOX_CLIENT_ID` / `DROPBOX_CLIENT_SECRET` | REQUIRED FOR FEATURE | Dropbox read-only Smart Sync. |
+| `ONEDRIVE_CLIENT_ID` / `ONEDRIVE_CLIENT_SECRET` | REQUIRED FOR FEATURE | OneDrive read-only Smart Sync. |
+| `ONEDRIVE_TENANT_ID` | OPTIONAL (default `common`) | Microsoft tenant for OneDrive OAuth. |
+| `SMART_SYNC_TOKEN_ENCRYPTION_KEY` | REQUIRED FOR FEATURE | Encrypts cloud refresh tokens at rest. |
+
+## Storage (AWS S3 and persistent local volumes)
+
+Vercel production storage operations fail closed unless `STORAGE_PROVIDER=s3`, preventing its ephemeral filesystem from being treated as durable memory storage. The documented Docker production setup may continue using `STORAGE_PROVIDER=local` because `/app/uploads` is mounted to a persistent volume. Other ephemeral hosts should set `REQUIRE_DURABLE_S3=true`.
+
+| Variable | Classification | Purpose |
+|---|---|---|
+| `STORAGE_PROVIDER` | REQUIRED ON VERCEL (`s3`) | `s3` on Vercel; `local` is allowed for development or a persistent Docker volume. |
+| `REQUIRE_DURABLE_S3` | OPTIONAL SAFETY FLAG | Set `true` on non-Vercel ephemeral production hosts to reject local storage. |
+| `AWS_ACCESS_KEY_ID` | REQUIRED WHEN USING S3 | S3 credentials |
+| `AWS_SECRET_ACCESS_KEY` | REQUIRED WHEN USING S3 | S3 credentials |
+| `AWS_REGION` | REQUIRED WHEN USING S3 | S3 bucket region |
+| `AWS_S3_BUCKET` | REQUIRED WHEN USING S3 | Bucket name |
+| `S3_SIGNED_URL_TTL` | OPTIONAL | Signed URL expiry in seconds |
 | `MAX_UPLOAD_SIZE_MB` | OPTIONAL | Per-file upload cap |
-| `UPLOAD_DIR` | DEVELOPMENT ONLY | Local storage directory |
+| `UPLOAD_DIR` | OPTIONAL FOR LOCAL STORAGE | Local/persistent-volume storage directory |
 
-## Billing (Stripe)
+## Billing (Stripe web + native boundary)
 
-Mock billing REFUSES to run in production (checkout AND portal now throw unless
-`BILLING_PROVIDER=stripe` is configured). Webhooks refuse to process without a secret.
+Mock billing refuses production. Stripe checkout is available on the web only. Capacitor iOS/Android builds intentionally hide checkout, portal links and paid-plan purchase controls until StoreKit/Google Play Billing is implemented.
 
 | Variable | Classification | Purpose |
 |---|---|---|
-| `BILLING_PROVIDER` | REQUIRED FOR PRODUCTION (`stripe`) | `mock` (dev only) or `stripe` |
-| `STRIPE_SECRET_KEY` | REQUIRED FOR PRODUCTION | Stripe API key |
-| `STRIPE_WEBHOOK_SECRET` | REQUIRED FOR PRODUCTION | Webhook signature verification (webhooks return 503 without it) |
-| `STRIPE_PRICE_PLUS_MONTHLY` / `STRIPE_PRICE_PLUS_YEARLY` | REQUIRED FOR PRODUCTION | Plus plan price IDs |
-| `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_YEARLY` | REQUIRED FOR PRODUCTION | Pro plan price IDs |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | OPTIONAL | Client-side Stripe.js (if used) |
+| `BILLING_PROVIDER` | REQUIRED FOR WEB PRODUCTION (`stripe`) | `mock` is development-only. |
+| `STRIPE_SECRET_KEY` | REQUIRED FOR WEB PRODUCTION | Stripe API key |
+| `STRIPE_WEBHOOK_SECRET` | REQUIRED FOR WEB PRODUCTION | Webhook signature verification |
+| `STRIPE_PRICE_STARTER_MONTHLY` / `STRIPE_PRICE_STARTER_YEARLY` | REQUIRED FOR PAID STARTER | Starter price IDs ($0.99 monthly / $9.99 yearly product configuration) |
+| `STRIPE_PRICE_PLUS_MONTHLY` / `STRIPE_PRICE_PLUS_YEARLY` | REQUIRED FOR PAID PLUS | Plus price IDs |
+| `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_YEARLY` | REQUIRED FOR PAID PRO | Pro price IDs |
+| `STRIPE_PRICE_FAMILY_MONTHLY` / `STRIPE_PRICE_FAMILY_YEARLY` | REQUIRED FOR PAID FAMILY | Family price IDs |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | OPTIONAL | Client-side Stripe.js if used |
+
+The source-of-truth launch ladder is Free, Starter $0.99, Plus $3.99, Pro $8.99 and Family $14.99 per month. Stripe products must be configured to match before enabling checkout.
 
 ## Email (Resend)
 
-Without these, transactional email (invites, verification-adjacent flows) is
-unavailable; the app logs the missing-provider state and continues without
-exposing provider errors to users.
-
 | Variable | Classification | Purpose |
 |---|---|---|
-| `RESEND_API_KEY` | REQUIRED FOR FEATURE (email) | Resend API key |
-| `RESEND_WEBHOOK_SECRET` | REQUIRED FOR FEATURE (email events) | Webhook verification |
-| `EMAIL_FROM` / `EMAIL_FROM_NAME` / `EMAIL_PROVIDER` / `SUPPORT_EMAIL` | OPTIONAL | Sender identity / support routing |
+| `RESEND_API_KEY` | REQUIRED FOR FEATURE | Transactional email API key |
+| `RESEND_WEBHOOK_SECRET` | REQUIRED FOR FEATURE | Webhook verification |
+| `EMAIL_FROM` / `EMAIL_FROM_NAME` / `EMAIL_PROVIDER` / `SUPPORT_EMAIL` | OPTIONAL | Sender identity and support routing |
 
 ## Development-only flags (must NOT be set in production)
 
@@ -107,15 +117,17 @@ exposing provider errors to users.
 |---|---|
 | `OPENAI_BASE_URL` | Gateway routing — remove in production |
 | `GEMINI_GATEWAY_MODEL` | Gateway routing — remove in production |
-| Preview demo auth | Not an env var: the `preview-demo-token` and `/demo-login` page are hard-disabled whenever `NODE_ENV=production` or `VERCEL_ENV=production`. |
+| Preview demo auth | The preview token and `/demo-login` are disabled whenever `NODE_ENV=production` or `VERCEL_ENV=production`. |
 
-## Launch-blocking summary (production)
+## Launch-blocking summary
 
-1. `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — no login without them.
-2. `MONGO_URL` — no data without it.
-3. `NEXT_PUBLIC_BASE_URL` — broken links/billing redirects without it.
-4. `JWT_SECRET` (32+ chars) — legacy sessions disabled without it (safe, but set it).
-5. `BILLING_PROVIDER=stripe` + Stripe keys + price IDs — paid plans unavailable without them (mock is refused in production).
-6. `STORAGE_PROVIDER=s3` + AWS keys — uploads not durable without them.
-7. `GEMINI_API_KEY` and/or `OPENAI_API_KEY` — AI features return honest 503s without them.
-8. Circles automatic YouTube import additionally requires `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `CIRCLES_TOKEN_ENCRYPTION_KEY`; manual Circles continue to work without them.
+1. Supabase URL, anon key and service-role key.
+2. MongoDB connection.
+3. Public base URL.
+4. Strong JWT secret for the legacy migration path.
+5. On Vercel: `STORAGE_PROVIDER=s3` plus all AWS values. Persistent Docker local storage remains supported.
+6. `CRON_SECRET`; automatic Trash deletion and Smart Sync continuation depend on it.
+7. `BILLING_PROVIDER=stripe`, Stripe keys, webhook secret and matching price IDs for web subscriptions.
+8. Gemini and/or OpenAI keys for the AI features being launched.
+9. Provider credentials and token-encryption keys for each enabled Smart Sync/Circles connection.
+10. Native apps must continue hiding Stripe purchase controls until platform-native billing is integrated.

@@ -4,11 +4,13 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Loader2, Sparkles, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
+import { useAccessibleDialog } from '@/hooks/use-escape-close';
 import { toast } from 'sonner';
 
 export default function LockedPersonPrompt({ person, onClose, onActivated }) {
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
+  const dialogRef = useAccessibleDialog(!!person, onClose);
 
   useEffect(() => {
     if (!person) return;
@@ -25,6 +27,7 @@ export default function LockedPersonPrompt({ person, onClose, onActivated }) {
   const limit = Number(state?.limit || 4);
   const slotsLeft = Math.max(0, limit - active.length);
   const canActivate = slotsLeft > 0;
+  const titleId = `locked-person-title-${String(person.name || 'person').replace(/[^a-z0-9_-]/gi, '-')}`;
 
   async function activate() {
     setBusy(true);
@@ -47,22 +50,22 @@ export default function LockedPersonPrompt({ person, onClose, onActivated }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4 backdrop-blur" onClick={onClose}>
-      <div className="relative w-full max-w-md rounded-3xl border border-white/10 bg-[#0b0414] p-6" onClick={(event) => event.stopPropagation()}>
-        <button onClick={onClose} className="absolute right-4 top-4 text-white/50"><X className="h-5 w-5" /></button>
-        <Sparkles className="h-8 w-8 text-pink-300" />
-        <h2 className="mt-4 text-2xl font-black text-white">Activate this person first</h2>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4 backdrop-blur" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose?.(); }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="relative w-full max-w-md rounded-3xl border border-white/10 bg-[#0b0414] p-6 outline-none">
+        <button aria-label="Close person activation" onClick={onClose} className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full text-white/50 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><X className="h-5 w-5" /></button>
+        <Sparkles className="h-8 w-8 text-pink-300" aria-hidden="true" />
+        <h2 id={titleId} className="mt-4 text-2xl font-black text-white">Activate this person first</h2>
         <p className="mt-3 text-sm leading-6 text-white/55">SnapNext linked approximately {person.count || person.photos || 0} memories to this person. Activation unlocks the complete person view.</p>
 
         {canActivate ? (
           <>
             <p className="mt-3 text-sm leading-6 text-white/55">You have {slotsLeft} active {slotsLeft === 1 ? 'person slot' : 'people slots'} left. After activation, these memories will open automatically.</p>
-            <button onClick={activate} disabled={busy || !state} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 py-3 text-sm font-black text-white disabled:opacity-45">{busy && <Loader2 className="h-4 w-4 animate-spin" />}{busy ? 'Activating…' : `Activate and open ${person.count || 0} memories`}</button>
+            <button onClick={activate} disabled={busy || !state} aria-busy={busy} className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 py-3 text-sm font-black text-white disabled:opacity-45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">{busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}{busy ? 'Activating…' : `Activate and open ${person.count || 0} memories`}</button>
           </>
         ) : (
           <>
             <p className="mt-3 text-sm leading-6 text-white/55">Your plan already has {active.length} of {limit} active people. All discovered faces stay visible, but the complete person view needs an active slot.</p>
-            <Link href="/billing" className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 py-3 text-sm font-black text-white">Unlock More Active People</Link>
+            <Link href="/billing" className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 py-3 text-sm font-black text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Unlock More Active People</Link>
           </>
         )}
       </div>
