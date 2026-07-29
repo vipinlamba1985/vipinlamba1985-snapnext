@@ -2,9 +2,14 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { isSuperUser } from '@/lib/entitlements';
+import { PLANS } from '@/lib/plans';
 import { getAiProfitGuardSnapshot } from '@/lib/ai-profit-guard';
 
 export const runtime = 'nodejs';
+
+const BILLABLE_PLAN_IDS = Object.values(PLANS)
+  .filter((plan) => Number(plan.prices?.monthly?.amount || 0) > 0 || Number(plan.prices?.yearly?.amount || 0) > 0)
+  .map((plan) => plan.id);
 
 function json(data, status = 200) {
   return NextResponse.json(data, { status });
@@ -49,7 +54,7 @@ export async function GET(request) {
       profitGuard,
     ] = await Promise.all([
       db.collection('users').countDocuments({ deleted: { $ne: true } }),
-      db.collection('users').countDocuments({ plan: { $in: ['plus', 'pro', 'family', 'super_user'] }, deleted: { $ne: true } }),
+      db.collection('users').countDocuments({ plan: { $in: BILLABLE_PLAN_IDS }, deleted: { $ne: true } }),
       db.collection('media').countDocuments({ trashed: { $ne: true } }),
       db.collection('media').countDocuments({ trashed: true }),
       db.collection('media').aggregate([
