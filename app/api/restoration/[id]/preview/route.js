@@ -18,10 +18,11 @@ export async function GET(request, context) {
   const job = await db.collection('photo_restoration_jobs').findOne({
     id: jobId,
     userId: user.id,
-    status: { $in: ['completed', 'saved'] },
+    status: { $in: ['completed', 'saving', 'saved'] },
   });
   if (!job?.outputUrl) return NextResponse.json({ error: 'Restoration preview is unavailable.' }, { status: 404 });
-  if (job.outputExpiresAt && new Date(job.outputExpiresAt).getTime() <= Date.now()) {
+  const expiresAt = new Date(job.outputExpiresAt || 0).getTime();
+  if (Number.isFinite(expiresAt) && expiresAt > 0 && expiresAt <= Date.now()) {
     return NextResponse.json({ error: 'This temporary preview has expired.' }, { status: 410 });
   }
 
