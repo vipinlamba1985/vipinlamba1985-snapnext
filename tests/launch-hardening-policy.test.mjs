@@ -10,12 +10,14 @@ test('public prototype routes are absent', () => {
   assert.equal(fs.existsSync('app/review-app/page.js'), false);
 });
 
-test('native billing hides web checkout and portal controls', () => {
+test('native billing hides web checkout and uses neutral status guidance', () => {
   const billing = read('app/(app)/billing/page.js');
   assert.match(billing, /Capacitor\.isNativePlatform\(\)/);
   assert.match(billing, /Web checkout and external payment links are not shown/);
   assert.match(billing, /if \(Capacitor\.isNativePlatform\(\)\)/);
   assert.match(billing, /nativePlatform \?/);
+  assert.match(billing, /toast\.message\('Plan changes are not available inside the mobile app yet\. Your current plan stays active\.'\)/);
+  assert.doesNotMatch(billing, /toast\.error\('Plan purchases are not available in this native build\.'\)/);
 });
 
 test('core media dialogs use the shared accessibility contract', () => {
