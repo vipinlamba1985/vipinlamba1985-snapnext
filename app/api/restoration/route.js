@@ -37,13 +37,34 @@ function monthKey(date = new Date()) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+function boundedOutputExpiry(value, completedAt) {
+  const fallback = new Date(completedAt.getTime() + OUTPUT_LIFETIME_MS);
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= completedAt.getTime()) return fallback;
+  return new Date(Math.min(parsed.getTime(), fallback.getTime()));
+}
+
 function publicJob(job) {
   if (!job) return null;
   const { _id, userId, providerUsage, ...safe } = job;
   return safe;
 }
 
-async function recordUsage({ db, user, requestId, provider, model, actualCostUsd, costBasis, providerUsage, status, errorCode = null, durationMs = 0 }) {
+async function recordUsage({
+  db,
+  user,
+  requestId,
+  provider,
+  model,
+  actualCostUsd,
+  costBasis,
+  providerUsage,
+  restorationUnits = 0,
+  status,
+  errorCode = null,
+  durationMs = 0,
+}) {
   const now = new Date();
   await db.collection('ai_usage').insertOne({
     id: randomUUID(),
@@ -54,7 +75,7 @@ async function recordUsage({ db, user, requestId, provider, model, actualCostUsd
     provider: provider || 'photo_restoration',
     model: model || null,
     credits: 0,
-    restorationCredits: status === 'success' ? 1 : 0,
+    restorationCredits: status === 'success' ? Math.max(0, Number(restorationUnits) || 0) : 0,
     estimatedCost: actualCostUsd || 0,
     actualCostUsd: actualCostUsd || 0,
     costBasis: costBasis || (status === 'success' ? 'ceiling_fallback' : 'failed_not_charged'),
@@ -285,6 +306,7 @@ export async function POST(request) {
         actualCostUsd,
         costBasis: execution.costBasis,
         providerUsage: execution.providerUsage,
+        restorationUnits: recipe.units,
         status: 'success',
         durationMs,
       });
@@ -299,6 +321,7 @@ export async function POST(request) {
         model: execution?.model || null,
         actualCostUsd: 0,
         costBasis: 'failed_not_charged',
+        restorationUnits: 0,
         status: 'failed',
         errorCode: execution?.error?.code || error?.code || 'restoration_failed',
         durationMs,
@@ -319,9 +342,7 @@ export async function POST(request) {
   }
 
   const completedAt = new Date();
-  const outputExpiresAt = result.result.outputExpiresAt
-    ? new Date(result.result.outputExpiresAt)
-    : new Date(completedAt.getTime() + OUTPUT_LIFETIME_MS);
+  const outputExpiresAt = boundedOutputExpiry(result.result.outputExpiresAt, completedAt);
   await db.collection('photo_restoration_jobs').updateOne(
     { userId: user.id, id: jobId },
     {
