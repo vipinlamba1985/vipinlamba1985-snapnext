@@ -13,7 +13,11 @@ import {
   settleRestorationUnits,
   releaseRestorationUnits,
 } from '@/lib/restoration/wallet';
-import { executeRestorationProvider, downloadRestorationOutput } from '@/lib/restoration/provider';
+import {
+  executeRestorationProvider,
+  downloadRestorationOutput,
+  isRestorationProviderReady,
+} from '@/lib/restoration/provider';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,7 +51,23 @@ function boundedOutputExpiry(value, completedAt) {
 
 function publicJob(job) {
   if (!job) return null;
-  const { _id, userId, providerUsage, ...safe } = job;
+  const safe = {
+    id: job.id,
+    mediaId: job.mediaId,
+    recipeId: job.recipeId,
+    recipeName: job.recipeName,
+    unitsReserved: job.unitsReserved,
+    status: job.status,
+    originalPreserved: job.originalPreserved === true,
+    outputExpiresAt: job.outputExpiresAt || null,
+    completedAt: job.completedAt || null,
+    savedMediaId: job.savedMediaId || null,
+    savedAt: job.savedAt || null,
+    createdAt: job.createdAt || null,
+  };
+  if (job.id && ['completed', 'saved'].includes(job.status)) {
+    safe.previewUrl = `/api/restoration/${encodeURIComponent(job.id)}/preview`;
+  }
   return safe;
 }
 
@@ -167,7 +187,7 @@ export async function GET(request) {
     ...publicRestorationCatalog(),
     wallet,
     jobs: jobs.map(publicJob),
-    providerReady: Boolean(process.env.ENHANCE_PHOTO_PROVIDER_URL),
+    providerReady: isRestorationProviderReady(),
     maximumProviderCostUsd: aiTaskCostCeiling('photo_restore'),
     approvalRequired: true,
     originalPolicy: 'The original photo is never changed or overwritten. Saving creates a separate restored copy.',
@@ -209,14 +229,14 @@ export async function POST(request) {
 
   const mediaId = clean(body.mediaId, 100);
   if (!mediaId) return json({ error: 'Choose a photo first.' }, 400);
-  const providerUrl = process.env.ENHANCE_PHOTO_PROVIDER_URL;
-  if (!providerUrl) {
+  if (!isRestorationProviderReady()) {
     return json({
       error: 'Photo Restoration is being activated. No Restoration Credits were used.',
       code: 'provider_not_configured',
       coreAvailable: true,
     }, 503);
   }
+  const providerUrl = process.env.ENHANCE_PHOTO_PROVIDER_URL;
 
   const media = await db.collection('media').findOne({ userId: user.id, id: mediaId, kind: 'photo', trashed: { $ne: true } });
   if (!media) return json({ error: 'Selected photo was not found.' }, 404);
@@ -343,36 +363,36 @@ export async function POST(request) {
 
   const completedAt = new Date();
   const outputExpiresAt = boundedOutputExpiry(result.result.outputExpiresAt, completedAt);
+  const completedJob = {
+    id: jobId,
+    mediaId,
+    recipeId: recipe.id,
+    recipeName: recipe.name,
+    unitsReserved: recipe.units,
+    status: 'completed',
+    outputExpiresAt,
+    originalPreserved: true,
+    completedAt,
+    createdAt: now,
+  };
   await db.collection('photo_restoration_jobs').updateOne(
     { userId: user.id, id: jobId },
     {
       $set: {
-        status: 'completed',
+        ...completedJob,
         outputUrl: result.result.outputUrl,
-        outputExpiresAt,
         providerJobId: result.result.providerJobId,
         provider: result.meta.provider,
         model: result.meta.model,
         actualCostUsd: result.meta.actualCostUsd,
         costBasis: result.meta.costBasis,
-        completedAt,
         updatedAt: completedAt,
       },
     },
   );
 
   return json({
-    job: publicJob({
-      id: jobId,
-      mediaId,
-      recipeId: recipe.id,
-      recipeName: recipe.name,
-      status: 'completed',
-      outputUrl: result.result.outputUrl,
-      outputExpiresAt,
-      originalPreserved: true,
-      completedAt,
-    }),
+    job: publicJob(completedJob),
     restorationCreditsUsed: recipe.units,
     aiCreditsUsed: 0,
     wallet: await getRestorationWallet(db, user.id),
