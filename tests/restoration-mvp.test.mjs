@@ -74,12 +74,16 @@ test('legacy enhancement API cannot bypass paid old-photo restoration', () => {
   assert.doesNotMatch(route, /restore: \{ name: 'Restore Old Photo'/);
 });
 
-test('Stripe webhook fulfills and adjusts restoration purchases separately from subscriptions', () => {
+test('Stripe webhook recognizes pack revenue and adjusts restoration purchases separately from subscriptions', () => {
   const route = read('app/api/webhooks/stripe/route.js');
   const webhook = read('lib/restoration/webhook.js');
   assert.match(route, /handleRestorationStripeEvent/);
   assert.match(route, /skippedSubscriptionBilling/);
   assert.match(webhook, /checkout\.session\.completed/);
+  assert.match(webhook, /subtype: 'restoration_pack'/);
+  assert.match(webhook, /netAmountUsd/);
+  assert.match(webhook, /STRIPE_CARD_FIXED_FEE_CENTS/);
+  assert.match(webhook, /refund\.created/);
   assert.match(webhook, /charge\.refunded/);
   assert.match(webhook, /charge\.dispute\.created/);
   assert.match(webhook, /revokeRestorationPurchase/);
