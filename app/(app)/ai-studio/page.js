@@ -6,10 +6,11 @@ import { apiFetch, mediaSrc } from '@/lib/api-client';
 import { toast } from 'sonner';
 import {
   ArrowLeft, BookOpen, Copy, Download, Film, Gauge, Hash, ImageIcon, Layers3,
-  Loader2, PenLine, Share2, Smile, Sparkles, ThumbsDown, ThumbsUp, Wand2,
+  Loader2, PenLine, Share2, Smile, Sparkles, ThumbsDown, ThumbsUp, Wand2, WandSparkles,
 } from 'lucide-react';
 
 const GOALS = [
+  { id: 'restore', title: 'Restore a photo', detail: 'Repair an old family photo while keeping the original untouched.', icon: WandSparkles, href: '/ai-studio/restoration' },
   { id: 'caption', title: 'Caption', detail: 'Turn one memory into words that sound like you.', icon: PenLine, mode: 'caption' },
   { id: 'reel', title: 'Reel', detail: 'Build a short video from the moments you choose.', icon: Film, href: '/ai-video' },
   { id: 'story', title: 'Story', detail: 'Start from memories SnapNext has already brought together.', icon: BookOpen, href: '/memories' },

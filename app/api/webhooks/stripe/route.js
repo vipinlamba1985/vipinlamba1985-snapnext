@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 import { billing } from '@/lib/billing';
 import { getDb } from '@/lib/db';
 import { recordStripeRevenueEvent, verifyStripeRevenueEvent } from '@/lib/stripe-revenue-ledger';
+import { handleRestorationStripeEvent } from '@/lib/restoration/webhook';
 
 export async function POST(request) {
   const rawBody = await request.text();
@@ -15,10 +16,13 @@ export async function POST(request) {
 
   try {
     const event = await verifyStripeRevenueEvent({ rawBody, signature });
-    const billingResult = await billing.handleStripeWebhook({ rawBody, signature });
     const db = await getDb();
+    const restoration = await handleRestorationStripeEvent({ db, event });
+    const billingResult = restoration.handled
+      ? { skippedSubscriptionBilling: restoration.skipSubscriptionBilling === true, restoration }
+      : await billing.handleStripeWebhook({ rawBody, signature });
     const revenueLedger = await recordStripeRevenueEvent({ db, event });
-    return Response.json({ received: true, billing: billingResult, revenueLedger });
+    return Response.json({ received: true, billing: billingResult, restoration, revenueLedger });
   } catch (error) {
     console.error('[stripe-webhook]', error?.message);
     return Response.json({ error: 'Webhook processing failed' }, { status: 400 });
