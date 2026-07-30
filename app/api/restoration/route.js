@@ -18,12 +18,18 @@ import {
   downloadRestorationOutput,
   isRestorationProviderReady,
 } from '@/lib/restoration/provider';
+import {
+  findActiveRestorationJob,
+  releaseStaleRestorationReservations,
+} from '@/lib/restoration/reconcile';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 180;
 
 const MAX_SOURCE_BYTES = Math.max(1, Number(process.env.RESTORATION_MAX_SOURCE_MB || 25)) * 1024 * 1024;
 const OUTPUT_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+const SAVE_LEASE_MS = 5 * 60 * 1000;
 
 function json(data, status = 200) {
   return NextResponse.json(data, { status });
@@ -65,7 +71,7 @@ function publicJob(job) {
     savedAt: job.savedAt || null,
     createdAt: job.createdAt || null,
   };
-  if (job.id && ['completed', 'saved'].includes(job.status)) {
+  if (job.id && ['completed', 'saved', 'saving'].includes(job.status)) {
     safe.previewUrl = `/api/restoration/${encodeURIComponent(job.id)}/preview`;
   }
   return safe;
@@ -117,68 +123,124 @@ async function storageUsage(db, userId) {
   return Number(rows[0]?.bytes || 0);
 }
 
-async function saveRestoredCopy({ db, user, job }) {
-  if (job.savedMediaId) {
-    return { mediaId: job.savedMediaId, alreadySaved: true };
-  }
-  const source = await db.collection('media').findOne({ userId: user.id, id: job.mediaId, kind: 'photo', trashed: { $ne: true } });
-  if (!source) throw Object.assign(new Error('The original photo could not be found.'), { code: 'source_photo_missing', status: 404 });
-
-  const { buffer, mimeType } = await downloadRestorationOutput(job.outputUrl);
-  const entitlement = entitlementForUser(user);
-  const usedBytes = await storageUsage(db, user.id);
-  if (!entitlement.realIsSuper && entitlement.plan.storageBytes && usedBytes + buffer.length > entitlement.plan.storageBytes) {
-    throw Object.assign(new Error('There is not enough storage space for this restored copy.'), { code: 'storage_full', status: 400 });
-  }
-
-  const mediaId = randomUUID();
-  const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
-  const baseName = clean(String(source.name || 'memory').replace(/\.[^.]+$/, ''), 80).replace(/[^a-zA-Z0-9 _.-]/g, '') || 'memory';
-  const name = `${baseName}-restored-${job.recipeId}.${extension}`;
-  const saved = await storage.save({ userId: user.id, fileId: mediaId, buffer, name, mime: mimeType });
-  const now = new Date();
-
-  await db.collection('media').insertOne({
-    id: mediaId,
-    userId: user.id,
-    name,
-    size: buffer.length,
-    hash: createHash('sha256').update(buffer).digest('hex'),
-    mime: mimeType,
-    kind: 'photo',
-    storageKey: saved.storageKey,
-    provider: saved.provider,
-    favorite: false,
-    trashed: false,
-    derivedFrom: source.id,
-    restoration: {
-      jobId: job.id,
-      recipeId: job.recipeId,
-      recipeName: job.recipeName,
-      preserveOriginal: true,
-      provider: job.provider || null,
-      model: job.model || null,
-      createdAt: now,
-    },
-    aiAnalysis: {
-      tags: Array.isArray(source.aiAnalysis?.tags) ? source.aiAnalysis.tags : [],
-      faces: [],
-      autoAlbum: 'Restored Photos',
-    },
-    createdAt: now,
+async function existingRestoredMedia(db, userId, jobId) {
+  return db.collection('media').findOne({
+    userId,
+    'restoration.jobId': jobId,
+    trashed: { $ne: true },
   });
+}
 
-  await db.collection('photo_restoration_jobs').updateOne(
-    { userId: user.id, id: job.id, savedMediaId: { $exists: false } },
-    { $set: { status: 'saved', savedMediaId: mediaId, savedAt: now, updatedAt: now } },
+async function saveRestoredCopy({ db, user, job }) {
+  const existing = await existingRestoredMedia(db, user.id, job.id);
+  if (existing) {
+    const now = new Date();
+    await db.collection('photo_restoration_jobs').updateOne(
+      { userId: user.id, id: job.id },
+      { $set: { status: 'saved', savedMediaId: existing.id, savedAt: existing.createdAt || now, updatedAt: now }, $unset: { saveLeaseAt: '' } },
+    );
+    return { mediaId: existing.id, alreadySaved: true };
+  }
+  if (job.savedMediaId) return { mediaId: job.savedMediaId, alreadySaved: true };
+
+  const now = new Date();
+  const saveLeaseCutoff = new Date(now.getTime() - SAVE_LEASE_MS);
+  const claimed = await db.collection('photo_restoration_jobs').findOneAndUpdate(
+    {
+      userId: user.id,
+      id: job.id,
+      savedMediaId: { $exists: false },
+      $or: [
+        { status: 'completed' },
+        { status: 'saving', saveLeaseAt: { $lte: saveLeaseCutoff } },
+      ],
+    },
+    { $set: { status: 'saving', saveLeaseAt: now, updatedAt: now } },
+    { returnDocument: 'after' },
   );
-  return { mediaId, alreadySaved: false };
+
+  if (!claimed) {
+    const latest = await db.collection('photo_restoration_jobs').findOne({ userId: user.id, id: job.id });
+    if (latest?.savedMediaId) return { mediaId: latest.savedMediaId, alreadySaved: true };
+    const recovered = await existingRestoredMedia(db, user.id, job.id);
+    if (recovered) return { mediaId: recovered.id, alreadySaved: true };
+    throw Object.assign(new Error('This restored copy is already being saved.'), { code: 'restoration_save_in_progress', status: 409 });
+  }
+
+  let savedObject = null;
+  try {
+    const source = await db.collection('media').findOne({ userId: user.id, id: claimed.mediaId, kind: 'photo', trashed: { $ne: true } });
+    if (!source) throw Object.assign(new Error('The original photo could not be found.'), { code: 'source_photo_missing', status: 404 });
+
+    const { buffer, mimeType } = await downloadRestorationOutput(claimed.outputUrl);
+    const entitlement = entitlementForUser(user);
+    const usedBytes = await storageUsage(db, user.id);
+    if (!entitlement.realIsSuper && entitlement.plan.storageBytes && usedBytes + buffer.length > entitlement.plan.storageBytes) {
+      throw Object.assign(new Error('There is not enough storage space for this restored copy.'), { code: 'storage_full', status: 400 });
+    }
+
+    const mediaId = randomUUID();
+    const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+    const baseName = clean(String(source.name || 'memory').replace(/\.[^.]+$/, ''), 80).replace(/[^a-zA-Z0-9 _.-]/g, '') || 'memory';
+    const name = `${baseName}-restored-${claimed.recipeId}.${extension}`;
+    savedObject = await storage.save({ userId: user.id, fileId: mediaId, buffer, name, mime: mimeType });
+    const savedAt = new Date();
+
+    try {
+      await db.collection('media').insertOne({
+        id: mediaId,
+        userId: user.id,
+        name,
+        size: buffer.length,
+        hash: createHash('sha256').update(buffer).digest('hex'),
+        mime: mimeType,
+        kind: 'photo',
+        storageKey: savedObject.storageKey,
+        provider: savedObject.provider,
+        favorite: false,
+        trashed: false,
+        derivedFrom: source.id,
+        restoration: {
+          jobId: claimed.id,
+          recipeId: claimed.recipeId,
+          recipeName: claimed.recipeName,
+          preserveOriginal: true,
+          provider: claimed.provider || null,
+          model: claimed.model || null,
+          createdAt: savedAt,
+        },
+        aiAnalysis: {
+          tags: Array.isArray(source.aiAnalysis?.tags) ? source.aiAnalysis.tags : [],
+          faces: [],
+          autoAlbum: 'Restored Photos',
+        },
+        createdAt: savedAt,
+      });
+    } catch (error) {
+      await storage.remove({ provider: savedObject.provider, storageKey: savedObject.storageKey }).catch(() => null);
+      savedObject = null;
+      throw error;
+    }
+
+    await db.collection('photo_restoration_jobs').updateOne(
+      { userId: user.id, id: claimed.id, status: 'saving' },
+      { $set: { status: 'saved', savedMediaId: mediaId, savedAt, updatedAt: savedAt }, $unset: { saveLeaseAt: '' } },
+    );
+    return { mediaId, alreadySaved: false };
+  } catch (error) {
+    await db.collection('photo_restoration_jobs').updateOne(
+      { userId: user.id, id: claimed.id, status: 'saving' },
+      { $set: { status: 'completed', saveFailureCode: error?.code || 'restoration_save_failed', updatedAt: new Date() }, $unset: { saveLeaseAt: '' } },
+    ).catch(() => null);
+    throw error;
+  }
 }
 
 export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) return json({ error: 'Unauthorized' }, 401);
   const db = await getDb();
+  await releaseStaleRestorationReservations({ db, userId: user.id }).catch(() => null);
   const [wallet, jobs] = await Promise.all([
     getRestorationWallet(db, user.id),
     db.collection('photo_restoration_jobs').find({ userId: user.id }).sort({ createdAt: -1 }).limit(12).toArray(),
@@ -202,10 +264,11 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const operation = body.operation === 'save' ? 'save' : 'create';
   const db = await getDb();
+  await releaseStaleRestorationReservations({ db, userId: user.id }).catch(() => null);
 
   if (operation === 'save') {
     const jobId = clean(body.jobId, 100);
-    const job = await db.collection('photo_restoration_jobs').findOne({ userId: user.id, id: jobId, status: { $in: ['completed', 'saved'] } });
+    const job = await db.collection('photo_restoration_jobs').findOne({ userId: user.id, id: jobId, status: { $in: ['completed', 'saving', 'saved'] } });
     if (!job) return json({ error: 'The completed restoration could not be found.' }, 404);
     try {
       const saved = await saveRestoredCopy({ db, user, job });
@@ -213,6 +276,15 @@ export async function POST(request) {
     } catch (error) {
       return json({ error: error?.message || 'The restored copy could not be saved.', code: error?.code || 'restoration_save_failed' }, error?.status || 502);
     }
+  }
+
+  const active = await findActiveRestorationJob({ db, userId: user.id });
+  if (active) {
+    return json({
+      error: 'A restoration is already processing. Please let it finish before starting another.',
+      code: 'restoration_in_progress',
+      job: publicJob(active),
+    }, 409);
   }
 
   const recipe = getRestorationRecipe(body.recipeId);
@@ -255,7 +327,12 @@ export async function POST(request) {
     }, 402);
   }
 
-  const sourceBuffer = await storage.read({ provider: media.provider || 'local', storageKey: media.storageKey });
+  let sourceBuffer;
+  try {
+    sourceBuffer = await storage.read({ provider: media.provider || 'local', storageKey: media.storageKey });
+  } catch {
+    return json({ error: 'The selected photo is temporarily unavailable.', code: 'source_photo_unavailable' }, 502);
+  }
   if (!sourceBuffer.length || sourceBuffer.length > MAX_SOURCE_BYTES) return json({ error: 'This photo is too large or unavailable.' }, 413);
 
   const jobId = randomUUID();
