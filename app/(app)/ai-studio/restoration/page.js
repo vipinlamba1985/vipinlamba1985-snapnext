@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Coins, ImageIcon, Loader2, Save, ShieldCheck, Sparkles, WandSparkles } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { ArrowLeft, Check, Coins, ImageIcon, Loader2, Save, ShieldCheck, Smartphone, Sparkles, WandSparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
 
@@ -21,6 +22,7 @@ export default function PhotoRestorationPage() {
   const [recipeId, setRecipeId] = useState('repair');
   const [job, setJob] = useState(null);
   const [busy, setBusy] = useState('');
+  const [nativePlatform, setNativePlatform] = useState('');
 
   const selectedPhoto = useMemo(() => photos.find((photo) => photo.id === selectedId) || null, [photos, selectedId]);
   const recipe = useMemo(() => catalog?.recipes?.find((item) => item.id === recipeId) || null, [catalog, recipeId]);
@@ -40,6 +42,7 @@ export default function PhotoRestorationPage() {
   }
 
   useEffect(() => {
+    if (Capacitor.isNativePlatform()) setNativePlatform(Capacitor.getPlatform() || 'native');
     load().catch((error) => toast.error(error.message || 'Photo Restoration could not load.'));
     const params = new URLSearchParams(window.location.search);
     if (params.get('purchase') === 'success') toast.success('Payment received. Restoration Credits appear after Stripe verification.');
@@ -47,6 +50,10 @@ export default function PhotoRestorationPage() {
   }, []);
 
   async function buyPack(packId) {
+    if (Capacitor.isNativePlatform()) {
+      toast.error('Restoration Credit purchases are not available in this native build yet.');
+      return;
+    }
     if (!catalog?.checkoutReady) {
       toast.error('Photo Restoration purchases are still being activated.');
       return;
@@ -147,6 +154,12 @@ export default function PhotoRestorationPage() {
         </section>
       )}
 
+      {nativePlatform && (
+        <section className="rounded-3xl border border-sky-300/15 bg-sky-500/[0.07] p-5" role="status">
+          <div className="flex items-start gap-3"><Smartphone className="mt-0.5 h-5 w-5 text-sky-200" /><div><h2 className="font-black">Native purchase activation is pending</h2><p className="mt-2 text-sm leading-6 text-white/50">Web payment links are not shown inside the {nativePlatform === 'ios' ? 'iOS' : nativePlatform === 'android' ? 'Android' : 'native'} app. Existing Restoration Credits can still be used here; purchases will appear after native in-app consumables are implemented.</p></div></div>
+        </section>
+      )}
+
       <section className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]">
         <div className="rounded-[2rem] border border-white/8 bg-white/[0.03] p-5 md:p-6">
           <div className="flex items-center gap-2"><ImageIcon className="h-5 w-5 text-amber-200" /><h2 className="text-xl font-black">1. Choose a photo</h2></div>
@@ -198,18 +211,22 @@ export default function PhotoRestorationPage() {
       <section className="rounded-[2rem] border border-white/8 bg-white/[0.025] p-5 md:p-6">
         <div className="flex items-center gap-2"><Coins className="h-5 w-5 text-amber-200" /><h2 className="text-xl font-black">Restoration Credit packs</h2></div>
         <p className="mt-2 text-sm text-white/45">One basic restoration uses one Credit. Premium repair and print preparation uses two. Packs do not expire in this MVP.</p>
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
-          {(catalog?.packs || []).map((pack) => (
-            <div key={pack.id} className={`rounded-3xl border p-5 ${pack.recommended ? 'border-amber-300/25 bg-amber-500/[0.06]' : 'border-white/8 bg-black/15'}`}>
-              {pack.recommended && <div className="mb-3 text-xs font-black uppercase tracking-wider text-amber-200">Best first bundle</div>}
-              <h3 className="text-lg font-black">{pack.name}</h3>
-              <p className="mt-1 min-h-10 text-sm leading-5 text-white/45">{pack.description}</p>
-              <div className="mt-4 text-2xl font-black">{money(pack.amount, pack.currency)}</div>
-              <div className="mt-1 text-xs text-white/40">{pack.units} Restoration Credit{pack.units === 1 ? '' : 's'}</div>
-              <button onClick={() => buyPack(pack.id)} disabled={busy === `pack:${pack.id}` || !catalog?.checkoutReady} className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-black disabled:opacity-40">{busy === `pack:${pack.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}Buy pack</button>
-            </div>
-          ))}
-        </div>
+        {nativePlatform ? (
+          <div className="mt-5 rounded-2xl border border-white/8 bg-black/15 p-4 text-sm text-white/50">Pack purchases are hidden in this native build until Apple and Google Play consumables are connected.</div>
+        ) : (
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {(catalog?.packs || []).map((pack) => (
+              <div key={pack.id} className={`rounded-3xl border p-5 ${pack.recommended ? 'border-amber-300/25 bg-amber-500/[0.06]' : 'border-white/8 bg-black/15'}`}>
+                {pack.recommended && <div className="mb-3 text-xs font-black uppercase tracking-wider text-amber-200">Best first bundle</div>}
+                <h3 className="text-lg font-black">{pack.name}</h3>
+                <p className="mt-1 min-h-10 text-sm leading-5 text-white/45">{pack.description}</p>
+                <div className="mt-4 text-2xl font-black">{money(pack.amount, pack.currency)}</div>
+                <div className="mt-1 text-xs text-white/40">{pack.units} Restoration Credit{pack.units === 1 ? '' : 's'}</div>
+                <button onClick={() => buyPack(pack.id)} disabled={busy === `pack:${pack.id}` || !catalog?.checkoutReady} className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-black disabled:opacity-40">{busy === `pack:${pack.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}Buy pack</button>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
