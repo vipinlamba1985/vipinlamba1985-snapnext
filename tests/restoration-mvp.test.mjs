@@ -37,7 +37,11 @@ test('restoration wallet grants, reserves, settles, releases, and revokes units 
   assert.match(wallet, /status: 'reserved'/);
   assert.match(wallet, /status: 'settled'/);
   assert.match(wallet, /status: 'released'/);
-  assert.match(wallet, /revokeRestorationPurchase/);
+  assert.match(wallet, /status: 'revoked'/);
+  assert.match(wallet, /revokedReservedUnits/);
+  assert.match(wallet, /refundedUsedUnits/);
+  assert.match(wallet, /returnDocument: 'before'/);
+  assert.doesNotMatch(wallet, /status: applied\.modifiedCount \? 'granted' : 'already_granted'/);
 });
 
 test('prepaid restoration bypasses only the subscription wallet and still uses Profit Guard', () => {
