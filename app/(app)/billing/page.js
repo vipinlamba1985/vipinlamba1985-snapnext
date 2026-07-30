@@ -58,7 +58,7 @@ function BillingInner() {
 
   async function checkout(planId) {
     if (Capacitor.isNativePlatform()) {
-      toast.error('Plan purchases are not available in this native build.');
+      toast.message('Plan changes are not available inside the mobile app yet. Your current plan stays active.');
       return;
     }
     setBusy(planId);
@@ -93,7 +93,7 @@ function BillingInner() {
 
   async function openPortal() {
     if (Capacitor.isNativePlatform()) {
-      toast.error('Billing management is not available in this native build.');
+      toast.message('Billing management is not available inside the mobile app yet. Your current plan stays active.');
       return;
     }
     setBusy('portal');
