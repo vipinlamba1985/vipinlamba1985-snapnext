@@ -42,13 +42,13 @@ export default function PhotoRestorationPage() {
   useEffect(() => {
     load().catch((error) => toast.error(error.message || 'Photo Restoration could not load.'));
     const params = new URLSearchParams(window.location.search);
-    if (params.get('purchase') === 'success') toast.success('Restoration Credits added.');
+    if (params.get('purchase') === 'success') toast.success('Payment received. Restoration Credits appear after Stripe verification.');
     if (params.get('purchase') === 'cancelled') toast.message('Purchase cancelled.');
   }, []);
 
   async function buyPack(packId) {
-    if (!catalog?.providerReady) {
-      toast.error('Photo Restoration is still being activated, so purchases are paused.');
+    if (!catalog?.checkoutReady) {
+      toast.error('Photo Restoration purchases are still being activated.');
       return;
     }
     setBusy(`pack:${packId}`);
@@ -122,7 +122,7 @@ export default function PhotoRestorationPage() {
   }
 
   const walletUnits = catalog?.wallet?.availableUnits || 0;
-  const resultSrc = job?.savedMediaId ? mediaSrc(job.savedMediaId) : job?.outputUrl;
+  const resultSrc = job?.savedMediaId ? mediaSrc(job.savedMediaId) : job?.previewUrl;
   const originalSrc = job?.mediaId ? mediaSrc(job.mediaId) : selectedId ? mediaSrc(selectedId) : null;
 
   return (
@@ -143,7 +143,7 @@ export default function PhotoRestorationPage() {
       {!catalog?.providerReady && (
         <section className="rounded-3xl border border-amber-300/15 bg-amber-500/[0.07] p-5">
           <h2 className="font-black">Provider activation in progress</h2>
-          <p className="mt-2 text-sm leading-6 text-white/50">Restoration purchases and processing are paused until the production restoration provider is connected. Your existing photos and editing tools remain available.</p>
+          <p className="mt-2 text-sm leading-6 text-white/50">Restoration purchases and processing are paused until the production restoration provider and approved result hosts are connected. Your existing photos and editing tools remain available.</p>
         </section>
       )}
 
@@ -206,7 +206,7 @@ export default function PhotoRestorationPage() {
               <p className="mt-1 min-h-10 text-sm leading-5 text-white/45">{pack.description}</p>
               <div className="mt-4 text-2xl font-black">{money(pack.amount, pack.currency)}</div>
               <div className="mt-1 text-xs text-white/40">{pack.units} Restoration Credit{pack.units === 1 ? '' : 's'}</div>
-              <button onClick={() => buyPack(pack.id)} disabled={busy === `pack:${pack.id}` || !catalog?.checkoutReady || !catalog?.providerReady} className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-black disabled:opacity-40">{busy === `pack:${pack.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}Buy pack</button>
+              <button onClick={() => buyPack(pack.id)} disabled={busy === `pack:${pack.id}` || !catalog?.checkoutReady} className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-black disabled:opacity-40">{busy === `pack:${pack.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Coins className="h-4 w-4" />}Buy pack</button>
             </div>
           ))}
         </div>
