@@ -6,8 +6,9 @@ function read(path) {
   return fs.readFileSync(path, 'utf8');
 }
 
-test('restoration catalog sells bounded packs and conservative recipes', () => {
+test('restoration catalog sells bounded USD packs and conservative recipes', () => {
   const catalog = read('lib/restoration/catalog.js');
+  assert.match(catalog, /RESTORATION_CURRENCY \|\| 'usd'/);
   assert.match(catalog, /single/);
   assert.match(catalog, /0\.99/);
   assert.match(catalog, /three/);
@@ -20,14 +21,19 @@ test('restoration catalog sells bounded packs and conservative recipes', () => {
   assert.doesNotMatch(catalog, /unlimited/i);
 });
 
-test('restoration checkout is a one-time Stripe payment and pauses before provider readiness', () => {
+test('restoration checkout is a verified one-time Stripe payment and pauses before provider readiness', () => {
   const checkout = read('lib/restoration/checkout.js');
+  const provider = read('lib/restoration/provider.js');
   assert.match(checkout, /mode: 'payment'/);
   assert.match(checkout, /purchaseType: 'restoration_pack'/);
   assert.match(checkout, /payment_intent_data/);
-  assert.match(checkout, /ENHANCE_PHOTO_PROVIDER_URL/);
+  assert.match(checkout, /isRestorationProviderReady/);
+  assert.match(checkout, /STRIPE_WEBHOOK_SECRET/);
+  assert.match(checkout, /currency !== 'usd'/);
   assert.match(checkout, /amount_total/);
   assert.match(checkout, /restoration_checkout_amount_mismatch/);
+  assert.doesNotMatch(checkout, /allow_promotion_codes/);
+  assert.match(provider, /RESTORATION_OUTPUT_HOSTS/);
 });
 
 test('restoration wallet grants, reserves, settles, releases, and revokes units atomically', () => {
@@ -50,12 +56,14 @@ test('prepaid restoration bypasses only the subscription wallet and still uses P
   assert.match(registry, /photo_restore/);
   assert.match(registry, /billingPolicy: 'prepaid'/);
   assert.match(registry, /approvalRequired: true/);
+  assert.match(registry, /maxCostUsd: 0\.06/);
+  assert.match(registry, /maxAttempts: 1/);
   assert.match(spendGate, /metadata\?\.billingPolicy === 'prepaid'/);
   assert.match(spendGate, /reserveAiSpend/);
   assert.match(spendGate, /prepaid_and_profit_guard_approved/);
 });
 
-test('restoration route preserves originals, charges Restoration Credits, and saves a derived copy', () => {
+test('restoration route preserves originals, charges Restoration Credits, and saves one derived copy', () => {
   const route = read('app/api/restoration/route.js');
   assert.match(route, /executeAiGatewayTask/);
   assert.match(route, /taskId: 'photo_restore'/);
@@ -65,9 +73,37 @@ test('restoration route preserves originals, charges Restoration Credits, and sa
   assert.match(route, /releaseRestorationUnits/);
   assert.match(route, /billingPolicy: 'prepaid'/);
   assert.match(route, /derivedFrom: source\.id/);
+  assert.match(route, /restoration\.jobId/);
+  assert.match(route, /status: 'saving'/);
+  assert.match(route, /storage\.remove/);
   assert.match(route, /preserveOriginal: true/);
   assert.match(route, /aiCreditsUsed: 0/);
   assert.match(route, /Restored Photos/);
+  assert.match(route, /maxDuration = 180/);
+});
+
+test('stale restoration reservations self-release and active jobs block overlap', () => {
+  const reconcile = read('lib/restoration/reconcile.js');
+  const route = read('app/api/restoration/route.js');
+  assert.match(reconcile, /RESTORATION_RESERVATION_TTL_MINUTES/);
+  assert.match(reconcile, /releaseRestorationUnits/);
+  assert.match(reconcile, /stale_restoration_recovered/);
+  assert.match(route, /releaseStaleRestorationReservations/);
+  assert.match(route, /findActiveRestorationJob/);
+  assert.match(route, /restoration_in_progress/);
+});
+
+test('restoration provider URLs stay server-side behind an authenticated preview proxy', () => {
+  const route = read('app/api/restoration/route.js');
+  const preview = read('app/api/restoration/[id]/preview/route.js');
+  const page = read('app/(app)/ai-studio/restoration/page.js');
+  assert.match(route, /safe\.previewUrl/);
+  assert.doesNotMatch(route, /safe\.outputUrl/);
+  assert.match(preview, /getUserFromRequest/);
+  assert.match(preview, /downloadRestorationOutput/);
+  assert.match(preview, /Cache-Control': 'private, no-store/);
+  assert.match(page, /job\?\.previewUrl/);
+  assert.doesNotMatch(page, /job\?\.outputUrl/);
 });
 
 test('legacy enhancement API cannot bypass paid old-photo restoration', () => {
@@ -93,7 +129,7 @@ test('Stripe webhook recognizes pack revenue and adjusts restoration purchases s
   assert.match(webhook, /revokeRestorationPurchase/);
 });
 
-test('restoration UI exposes purchase, confirmation, before-after, and save controls', () => {
+test('restoration UI exposes purchase, confirmation, before-after, save, and native billing guard', () => {
   const page = read('app/(app)/ai-studio/restoration/page.js');
   const studio = read('app/(app)/ai-studio/page.js');
   assert.match(page, /Restoration Credit packs/);
@@ -101,6 +137,8 @@ test('restoration UI exposes purchase, confirmation, before-after, and save cont
   assert.match(page, /Before and after/);
   assert.match(page, /Save restored copy/);
   assert.match(page, /original photo will stay untouched/i);
+  assert.match(page, /Capacitor\.isNativePlatform/);
+  assert.match(page, /Pack purchases are hidden in this native build/);
   assert.match(studio, /create-goal-\$\{id\}/);
   assert.match(studio, /href: '\/ai-studio\/restoration'/);
 });
