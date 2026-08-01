@@ -8,7 +8,7 @@ import { groupByDay } from '@/lib/media-day-groups';
 import LibraryTabs from '@/components/LibraryTabs';
 import { toast } from 'sonner';
 import {
-  Check, Download, FileText, Images, Play, Search,
+  Check, Download, FileText, HardDrive, Images, Play, Search,
   Star, Trash2, Upload, X,
 } from 'lucide-react';
 
@@ -115,6 +115,7 @@ export default function GalleryPage() {
           <div className="flex items-center justify-between gap-4">
             <div><h1 className="text-[28px] font-black tracking-tight">Library</h1><p className="mt-0.5 text-sm text-white/45">Everything you have backed up, newest first.</p></div>
             <div className="flex items-center gap-2">
+              <Link data-testid="library-cleanup-link" href="/gallery/cleanup" className="hidden min-h-11 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm font-black text-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 sm:inline-flex"><HardDrive className="h-4 w-4" aria-hidden="true" />Free up space</Link>
               <button data-testid="library-select-toggle" onClick={toggleSelectMode} aria-pressed={selectMode} className={`min-h-11 rounded-full px-4 text-sm font-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${selectMode ? 'bg-white text-black' : 'border border-white/10 bg-white/[0.04] text-white/70'}`}>{selectMode ? 'Cancel' : 'Select'}</button>
               <Link data-testid="library-upload-link" href="/upload" aria-label="Add photos and videos" className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-pink-500 to-purple-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><Upload className="h-4 w-4" /></Link>
             </div>
