@@ -47,7 +47,10 @@ const ROUTES = [
 const PRIMARY_HREFS = ['/dashboard', '/gallery', '/upload', '/ai-studio', '/settings'];
 const MORE_HREFS = [
   '/memories', '/smart-sync', '/event-director', '/circles', '/trusted-circle',
-  '/chat', '/journal', '/gallery/cleanup', '/imports', '/life-graph', '/ready-to-post', '/ai-video',
+  // Cloud Sync is not listed here: bringing photos in from a cloud is the same
+  // job as adding them from the device, so its entry point lives on /upload
+  // (Add) where people look for it, rather than buried in this menu.
+  '/chat', '/journal', '/gallery/cleanup', '/life-graph', '/ready-to-post', '/ai-video',
   '/community', '/downloads', '/trash', '/support',
 ];
 

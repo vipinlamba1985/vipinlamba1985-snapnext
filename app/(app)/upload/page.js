@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { AlertCircle, CheckCircle2, Cloud, FileImage, Image as ImageIcon, Loader2, ShieldCheck, Upload, XCircle, Zap } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Cloud, CloudDownload, FileImage, Image as ImageIcon, Loader2, ShieldCheck, Upload, XCircle, Zap } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import {
   UPLOAD_STATUS,
@@ -236,6 +236,23 @@ export default function UploadPage() {
     <section data-testid="upload-hero" className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-pink-500/15 via-purple-600/10 to-cyan-500/10 p-5 md:p-8">
       <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.22em] text-pink-100/70">Safe backup</p><h1 className="mt-2 text-3xl font-black tracking-tight text-white md:text-5xl">Back up photos and videos</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/58">Choose the memories you want protected. SnapNext saves as much as fits and clearly explains anything it cannot save.</p></div><NativeMediaPicker testId="upload-primary-cta" disabled={uploading} onSelect={onSelect} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-6 py-3 text-sm font-black text-white shadow-xl shadow-pink-950/30"><Upload className="h-4 w-4" />Choose photos & videos</NativeMediaPicker></div>
       <div data-testid="upload-picker-explainer" className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/50">On mobile web, your device opens its own photo picker. Select the photos and videos you want, then tap Add/Done. SnapNext never selects or deletes local files by itself.</div>
+    </section>
+
+    {/* Bringing memories in from a cloud is the same job as choosing them from
+        this device, so it lives here under Add rather than buried in More. */}
+    <section data-testid="upload-cloud-sync" className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-start gap-3">
+          <CloudDownload className="mt-0.5 h-5 w-5 shrink-0 text-cyan-200" />
+          <div>
+            <h2 className="text-lg font-black text-white">Already stored in a cloud?</h2>
+            <p className="mt-1 max-w-xl text-sm leading-6 text-white/50">Bring photos and videos across from Google Drive, Google Photos, Dropbox or OneDrive. SnapNext only ever reads them — your originals are never changed or deleted.</p>
+          </div>
+        </div>
+        <Link data-testid="upload-cloud-sync-link" href="/imports" className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-5 py-3 text-sm font-black text-white">
+          <Cloud className="h-4 w-4" /> Add from a cloud
+        </Link>
+      </div>
     </section>
 
     {smartMode && <section data-testid="upload-smart-mode" className="rounded-[2rem] border border-cyan-400/20 bg-cyan-400/10 p-5"><div className="flex items-start gap-3"><Zap className="mt-0.5 h-5 w-5 text-cyan-200" /><div><h2 className="font-black text-white">Smart Backup is handling this batch</h2><p className="mt-1 text-sm text-white/60">Large selections start automatically and keep only a few previews on screen so the app stays responsive.</p></div></div></section>}
