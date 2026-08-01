@@ -2,6 +2,12 @@
 
 SnapNext production changes should improve the existing product without weakening privacy, reliability, security or the memory-first user experience.
 
+**Start with [`SNAPNEXT_BLUEPRINT_V4.md`](SNAPNEXT_BLUEPRINT_V4.md)** — the product
+ideology and build doctrine. It holds the ten principles (P1–P10) this project is
+reviewed against, the Four Concepts that define the product's structure, and a
+step-by-step checklist for adding a feature. The rules below are the short form;
+the blueprint explains why each exists and which test enforces it.
+
 ## Development rule
 
 The main SnapNext repository is the production source of truth. Experimental repositories may inspire improvements, but their code, architecture and claims are not production-approved until deliberately ported and reviewed here.

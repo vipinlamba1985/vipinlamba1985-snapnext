@@ -2,6 +2,13 @@
 
 Guidance for Claude Code (and other AI assistants) working in this repository.
 
+> **Read `SNAPNEXT_BLUEPRINT_V4.md` before designing anything.** It is the
+> product ideology and build doctrine — ten numbered principles, the Four
+> Concepts, and a checklist for adding a feature. Every claim in it is marked
+> as enforced / built / direction / refused, so it can be trusted against code.
+> Reviewers cite its principles by number (P1–P10). This file is the day-to-day
+> working reference; the blueprint is the contract.
+
 ## What this is
 
 SnapNext (`snapnext-ai`) is a memory-first photo/video management product: import from
