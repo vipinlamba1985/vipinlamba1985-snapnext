@@ -289,7 +289,12 @@ Adding a parallel system beside one of these needs a written reason in the PR.
 ### Built, not yet locked 🟢
 - Magic Library people recognition, activation and plan limits.
 - Photo enhancement (metered, approval-gated) and restoration (prepaid credits).
-- Smart Sync connectors, chat E2EE, Circles, Family, Stripe billing.
+- **Cloud Sync (web)** — Google Drive, Google Photos, Dropbox and OneDrive are
+  fully implemented and read-only. A provider appears the moment its credentials
+  are configured; availability is derived from the environment, never from a
+  hand-maintained flag. Both surfaces render one registry
+  (`lib/smart-sync/providers.js`).
+- Chat E2EE, Circles, Family, Stripe billing.
 - Ready to Post composition (caption / hashtags / emojis, all free).
 
 ### Direction 🧭
@@ -302,6 +307,14 @@ Adding a parallel system beside one of these needs a written reason in the PR.
 - **Perceptual near-duplicate detection** — hash catches byte-identical copies;
   burst shots of the same moment need more. Must not become a per-photo model
   call (P3).
+- **Native camera-roll sync (iPhone / Android)** — the server protocol is done
+  (manifest validation, rule-filtered upload plans, checksum dedupe), but no
+  photo-library Capacitor plugin is installed, so the app cannot enumerate a
+  camera roll and no manifest can be produced. Needs a media plugin, on-device
+  hashing, background upload (`BGProcessingTask` / `WorkManager`), store
+  permission strings, and verification on real hardware. **Until then it is not
+  shipped, and no surface may say otherwise** (P5).
+  Full gap analysis: `docs/CLOUD_SYNC_STATUS.md`.
 - **Shared trip albums** — a trip approved by both sides becoming one album.
 - **Circle activity feed** — the descoped, buildable half of the refused external
   social feed (see ⛔ below). Same interface — a short list of what is new since
