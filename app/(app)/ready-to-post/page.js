@@ -11,6 +11,7 @@ export default function ReadyToPost() {
   const [hashtags, setHashtags] = useState('');
   const [emojis, setEmojis] = useState('');
   const [busy, setBusy] = useState(false);
+  const [billing, setBilling] = useState(null);
 
   useEffect(() => { apiFetch('/media?filter=photo').then(d=>setPhotos(d.items?.slice(0,24) || [])).catch(()=>{}); }, []);
 
@@ -20,9 +21,13 @@ export default function ReadyToPost() {
     try {
       const c = await apiFetch('/ai/caption', { method:'POST', body: JSON.stringify({ mediaId: selected, mood:'warm', platform:'instagram' })});
       setCaption(c.caption);
-      const h = await apiFetch('/ai/hashtags', { method:'POST', body: JSON.stringify({ text: c.caption })});
+      setBilling(c.billing || null);
+      // Hashtags and emojis are built from the caption, so they run in parallel.
+      const [h, e] = await Promise.all([
+        apiFetch('/ai/hashtags', { method:'POST', body: JSON.stringify({ text: c.caption, mediaId: selected })}),
+        apiFetch('/ai/emojis', { method:'POST', body: JSON.stringify({ text: c.caption })}),
+      ]);
       setHashtags(h.hashtags);
-      const e = await apiFetch('/ai/emojis', { method:'POST', body: JSON.stringify({ text: c.caption })});
       setEmojis(e.emojis);
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
@@ -57,9 +62,14 @@ export default function ReadyToPost() {
                 </button>
               ))}
             </div>
-            <button onClick={craft} disabled={busy} className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 font-medium disabled:opacity-60">
-              <Sparkles className="h-4 w-4"/>{busy ? 'Crafting…' : 'AI craft full post'}
+            <button data-testid="ready-to-post-craft" onClick={craft} disabled={busy} className="mt-4 inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 font-medium disabled:opacity-60">
+              <Sparkles className="h-4 w-4"/>{busy ? 'Crafting…' : 'Craft full post'}
             </button>
+            <p data-testid="ready-to-post-billing" className="mt-2 text-[11px] text-white/50">
+              {billing?.freeOnEveryPlan === false
+                ? `Uses about ${billing.credits} AI credits.`
+                : 'Free on every plan — built from your own photo details, using no AI credits.'}
+            </p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-3">
