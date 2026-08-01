@@ -30,7 +30,7 @@ const ROUTES = [
   { href: '/trusted-circle', label: 'Trusted circle', icon: Users, featureFlag: 'favorites' },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/journal', label: 'Life Journal', icon: BookOpen },
-  { href: '/health', label: 'Memory Health', icon: ShieldAlert },
+  { href: '/gallery/cleanup', label: 'Memory Health', icon: ShieldAlert },
   { href: '/imports', label: 'Cloud Sync', icon: RefreshCw },
   { href: '/life-graph', label: 'Life Graph', icon: Network },
   { href: '/ready-to-post', label: 'Ready to Post', icon: Send },
@@ -47,7 +47,7 @@ const ROUTES = [
 const PRIMARY_HREFS = ['/dashboard', '/gallery', '/upload', '/ai-studio', '/settings'];
 const MORE_HREFS = [
   '/memories', '/smart-sync', '/event-director', '/circles', '/trusted-circle',
-  '/chat', '/journal', '/health', '/imports', '/life-graph', '/ready-to-post', '/ai-video',
+  '/chat', '/journal', '/gallery/cleanup', '/imports', '/life-graph', '/ready-to-post', '/ai-video',
   '/community', '/downloads', '/trash', '/support',
 ];
 
