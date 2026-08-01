@@ -9,7 +9,7 @@ export default function MediaSection({ title, items, onOpen, emptyCopy }) {
     <section>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-xl font-black text-white">{title}</h2>
-        {!!items.length && <Link href="/magic-library/all" className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-bold text-white/65">See all</Link>}
+        {!!items.length && <Link href="/gallery" className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-bold text-white/65">See all</Link>}
       </div>
       {items.length === 0 ? <p className="mt-3 text-sm text-white/40">{emptyCopy || 'Nothing found here yet.'}</p> : (
         <div className="mt-4 flex gap-3.5 overflow-x-auto pb-3 pr-5">

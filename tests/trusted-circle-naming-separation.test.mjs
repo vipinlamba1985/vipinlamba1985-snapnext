@@ -64,6 +64,20 @@ test('the ambiguous lib/favorites module is gone and unreferenced', async () => 
   assert.deepEqual(offenders, [], 'lib/favorites.js was split into lib/trusted-circle/links.js and lib/notify.js');
 });
 
+test('no client code still calls the removed /favorites endpoints', async () => {
+  const files = (await Promise.all(SCANNED_DIRS.map(collectSourceFiles))).flat();
+  const redirectPage = path.join('app', '(app)', 'favorites', 'page.js');
+
+  const offenders = [];
+  for (const relative of files) {
+    if (relative === redirectPage) continue;
+    const source = await readFile(path.join(repoRoot, relative), 'utf8');
+    // Matches apiFetch('/favorites'), href="/favorites", `/favorites/ai`, etc.
+    if (/['"`]\/favorites(\/|['"`])/.test(source)) offenders.push(relative);
+  }
+  assert.deepEqual(offenders, [], 'these still point at /favorites, which now only exists as a redirect');
+});
+
 test('no page or API route is served from a /favorites path any more', async () => {
   const files = (await Promise.all(SCANNED_DIRS.map(collectSourceFiles))).flat();
   const apiRoutes = files.filter(file => file.startsWith(path.join('app', 'api', 'favorites')));

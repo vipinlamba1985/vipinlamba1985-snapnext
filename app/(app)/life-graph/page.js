@@ -26,7 +26,7 @@ export default function LifeGraphPage() {
     setError(null);
     try {
       const [favAi, mediaRes] = await Promise.all([
-        apiFetch('/favorites/ai').catch(() => null),
+        apiFetch('/trusted-circle/ai').catch(() => null),
         apiFetch('/media').catch(() => null),
       ]);
 

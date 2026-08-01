@@ -1,7 +1,7 @@
-import AllPhotosTimeline from '@/components/magic-library/AllPhotosTimeline';
+import { redirect } from 'next/navigation';
 
-export const metadata = { title: 'All Photos · SnapNext' };
-
-export default function AllPhotosPage() {
-  return <AllPhotosTimeline />;
+// "All photos" is the Library's All tab now, so there is a single place that
+// means "everything I own" instead of three overlapping ones.
+export default function MagicLibraryAllRedirectPage() {
+  redirect('/gallery');
 }

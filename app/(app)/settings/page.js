@@ -128,7 +128,7 @@ export default function Settings() {
   const hubs = [
     { id: 'billing', title: 'Plan & billing', detail: planLabel, href: '/billing', icon: WalletCards },
     { id: 'storage', title: 'Storage & backup', detail: storageLabel, href: '/smart-sync', icon: Cloud },
-    { id: 'favorites', title: 'Trusted people', detail: 'Private, permission-based sharing', href: '/favorites', icon: Heart },
+    { id: 'favorites', title: 'Trusted circle', detail: 'Private, permission-based sharing', href: '/trusted-circle', icon: Heart },
     { id: 'circles', title: 'Circles', detail: 'People and interests you follow', href: '/circles', icon: Network },
     { id: 'downloads', title: 'Downloads & export', detail: 'Take your memories with you', href: '/downloads', icon: Download },
     { id: 'support', title: 'Help & support', detail: 'Get help when you need it', href: '/support', icon: LifeBuoy },

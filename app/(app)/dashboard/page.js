@@ -166,7 +166,7 @@ export default function Dashboard() {
       <header data-testid="home-personal-header" className="flex items-center gap-3">
         <Link data-testid="home-avatar-link" href="/settings" className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-sm font-black ring-1 ring-white/15" style={{ background: user?.avatarColor || '#a855f7' }}>{user?.name?.[0]?.toUpperCase() || 'U'}</Link>
         <div className="min-w-0 flex-1"><p className="text-xs font-semibold text-white/45">{readableDate()}</p><h1 className="truncate text-[26px] font-black tracking-tight">{greeting()}{firstName ? `, ${firstName}` : ''}</h1><p className="mt-0.5 text-sm text-white/48">Your memories are safe. SnapNext found something for you.</p></div>
-        <Link data-testid="home-favorites-link" href="/favorites" aria-label="Open favorites" className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04]"><Heart className="h-5 w-5 text-pink-200" /></Link>
+        <Link data-testid="home-trusted-circle-link" href="/trusted-circle" aria-label="Open your trusted circle" className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[0.04]"><Heart className="h-5 w-5 text-pink-200" /></Link>
       </header>
 
       <section data-testid="home-primary-action" className="relative overflow-hidden rounded-[2rem] border border-pink-300/20 bg-gradient-to-br from-pink-500/16 via-purple-500/12 to-cyan-500/8 p-5 md:p-7">
