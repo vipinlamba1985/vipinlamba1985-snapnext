@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
 import { toast } from 'sonner';
 import {
-  Check, ChevronRight, FolderPlus, Heart, ImageIcon, Loader2, LockKeyhole, Mail,
+  Check, ChevronRight, FolderPlus, Heart, ImageIcon, Loader2, LockKeyhole, Mail, MapPin,
   Send, ShieldCheck, Sparkles, Trash2, UserPlus, Users, X,
 } from 'lucide-react';
 
@@ -31,24 +31,47 @@ export default function TrustedCirclePage() {
   const [selectedPhotos, setSelectedPhotos] = useState(new Set());
   const [newAlbumName, setNewAlbumName] = useState('');
   const [aiInsights, setAiInsights] = useState(null);
+  const [tripSuggestions, setTripSuggestions] = useState([]);
 
   async function load() {
     try {
-      const [favorites, albumData, photoData, memoryData, ai] = await Promise.all([
+      const [favorites, albumData, photoData, memoryData, ai, trips] = await Promise.all([
         apiFetch('/trusted-circle'),
         apiFetch('/shared/albums'),
         apiFetch('/shared/photos'),
         apiFetch('/shared/memories'),
         apiFetch('/trusted-circle/ai').catch(() => null),
+        apiFetch('/trip-sharing').catch(() => null),
       ]);
       setData(favorites || { accepted: [], incoming: [], outgoing: [], blocked: [] });
       setAlbums(albumData || { owned: [], shared: [] });
       setSharedPhotos(photoData?.items || []);
       setMemories(memoryData?.memories || []);
       setAiInsights(ai || null);
+      setTripSuggestions(trips?.suggestions || []);
     } catch (e) {
       toast.error(e.message || 'Trusted circle could not be opened.');
     }
+  }
+
+  async function approveTripShare(suggestion) {
+    setBusy(`trip-${suggestion.id}`);
+    try {
+      const result = await apiFetch('/trip-sharing', {
+        method: 'POST',
+        body: JSON.stringify({ recipientUserId: suggestion.recipient.id, mediaIds: suggestion.mediaIds }),
+      });
+      toast.success(`Shared ${result.shared} photo${result.shared === 1 ? '' : 's'} with ${suggestion.recipient.name}.`);
+      await load();
+    } catch (e) {
+      toast.error(e.message || 'Nothing was shared.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  function dismissTripShare(suggestionId) {
+    setTripSuggestions(current => current.filter(item => item.id !== suggestionId));
   }
 
   useEffect(() => { load(); }, []);
@@ -188,6 +211,39 @@ export default function TrustedCirclePage() {
         <SectionHeader title="Your trusted circle" subtitle={accepted.length ? `${accepted.length} connected` : 'People you approve will appear here'} />
         {accepted.length ? <div className="grid gap-3 md:grid-cols-2">{accepted.map(favorite => <div key={favorite.id} className="rounded-3xl border border-white/8 bg-white/[0.03] p-4"><div className="flex items-center gap-3"><Avatar user={favorite.other} large /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate font-black">{favorite.other?.name || 'Trusted person'}</h3><span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-black text-emerald-100">Trusted</span></div><p className="mt-1 truncate text-xs text-white/40">{favorite.other?.email}</p></div></div><div className="mt-4 grid grid-cols-2 gap-2"><button data-testid={`trusted-share-${favorite.id}`} onClick={() => openShare(favorite)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 text-xs font-black"><Send className="h-3.5 w-3.5" />Share photos</button><button data-testid={`trusted-permissions-${favorite.id}`} onClick={() => openPerms(favorite)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-white/8 bg-white/5 text-xs font-black text-white/65"><ShieldCheck className="h-3.5 w-3.5" />Permissions</button></div><button data-testid={`trusted-remove-${favorite.id}`} onClick={() => favAction(favorite.id, 'remove')} disabled={busy === `${favorite.id}-remove`} className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-rose-200/65"><Trash2 className="h-3.5 w-3.5" />Remove trusted access</button></div>)}</div> : <EmptyState icon={Users} title="Nobody in your circle yet" detail="Invite someone when you are ready. Nothing in your library changes until you choose to share." />}
       </section>
+
+      {tripSuggestions.length > 0 && <section data-testid="trusted-trip-suggestions">
+        <SectionHeader title="Trips you could share" subtitle="Suggestions only — nothing is shared until you approve it" />
+        <div className="space-y-2">
+          {tripSuggestions.map(suggestion => (
+            <div key={suggestion.id} data-testid={`trusted-trip-${suggestion.id}`} className="rounded-3xl border border-white/8 bg-white/[0.03] p-4">
+              <div className="flex flex-wrap items-start gap-3">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-cyan-400/10"><MapPin className="h-4.5 w-4.5 text-cyan-100" /></div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-black">{suggestion.tripTitle}</h3>
+                  <p className="mt-1 text-sm text-white/45">
+                    {suggestion.count} photo{suggestion.count === 1 ? '' : 's'} · for {suggestion.recipient.name}
+                  </p>
+                  <p className="mt-1 text-xs text-white/35">{suggestion.reason}</p>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  data-testid={`trusted-trip-approve-${suggestion.id}`}
+                  onClick={() => approveTripShare(suggestion)}
+                  disabled={busy === `trip-${suggestion.id}`}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 text-xs font-black disabled:opacity-50"
+                >
+                  {busy === `trip-${suggestion.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  Share these {suggestion.count}
+                </button>
+                <button data-testid={`trusted-trip-dismiss-${suggestion.id}`} onClick={() => dismissTripShare(suggestion.id)} className="min-h-10 rounded-full border border-white/8 bg-white/5 px-4 text-xs font-black text-white/55">Not now</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs leading-5 text-white/35">SnapNext prepares these from trips it can see in your own photos. It never shares automatically, and turning off photo sharing for someone stops their suggestions entirely.</p>
+      </section>}
 
       {relationshipObservation && <section data-testid="trusted-observation" className="flex gap-4 rounded-3xl border border-white/8 bg-white/[0.025] p-4"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-500/20 to-purple-500/15"><Sparkles className="h-4.5 w-4.5 text-pink-100" /></div><div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/35">SnapNext noticed</p><p className="mt-1 text-sm leading-6 text-white/58">{relationshipObservation}</p></div></section>}
 
