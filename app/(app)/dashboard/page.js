@@ -127,7 +127,7 @@ export default function Dashboard() {
     if (duplicateCount > 0) return {
       title: 'Make a little room',
       reason: `${duplicateCount} duplicate cop${duplicateCount === 1 ? 'y' : 'ies'} can be reviewed safely.`,
-      href: '/health',
+      href: '/gallery/cleanup',
       cta: 'Review duplicates',
     };
     if (recent.length > 0) return {
