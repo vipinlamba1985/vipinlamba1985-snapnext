@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { PEOPLE_INTELLIGENCE_VERSION } from '@/lib/people-intelligence';
-import { rebuildPeopleIntelligence } from '@/lib/people-intelligence.server';
+import { PEOPLE_TERMINAL_SUCCESS_STATUSES, rebuildPeopleIntelligence } from '@/lib/people-intelligence.server';
 import { PEOPLE_COST_POLICY, estimatePhotoRunCost } from '@/lib/people-rekognition-capabilities';
 
 export const runtime = 'nodejs';
@@ -12,21 +12,22 @@ export const maxDuration = 60;
 const baseQuery = (userId) => ({ userId, trashed: { $ne: true }, kind: 'photo' });
 const pendingQuery = (userId) => ({ ...baseQuery(userId), $or: [
   { 'peopleIntelligence.version': { $ne: PEOPLE_INTELLIGENCE_VERSION } },
-  { 'peopleIntelligence.status': { $nin: ['completed', 'skipped', 'no_faces', 'failed'] } },
+  { 'peopleIntelligence.status': { $nin: [...PEOPLE_TERMINAL_SUCCESS_STATUSES, 'failed'] } },
   { 'peopleIntelligence.status': 'completed', 'peopleIntelligence.faceIds.0': { $exists: false } },
 ] });
 
 async function getStatus(db, userId) {
   const base = baseQuery(userId);
-  const [total, remaining, failed, withFaces, noFaces, skipped] = await Promise.all([
+  const [total, remaining, failed, withFaces, noFaces, skipped, groupPhotos] = await Promise.all([
     db.collection('media').countDocuments(base),
     db.collection('media').countDocuments(pendingQuery(userId)),
     db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'failed' }),
     db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'completed', 'peopleIntelligence.faceIds.0': { $exists: true } }),
     db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'no_faces' }),
     db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'skipped' }),
+    db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'group_photo' }),
   ]);
-  const checked = withFaces + noFaces + skipped;
+  const checked = withFaces + noFaces + skipped + groupPhotos;
   return {
     version: PEOPLE_INTELLIGENCE_VERSION,
     total,
@@ -35,6 +36,7 @@ async function getStatus(db, userId) {
     withFaces,
     noFaces,
     skipped,
+    groupPhotos,
     remaining,
     failed,
     needsMigration: remaining > 0 || failed > 0,

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, RotateCcw, UserCheck, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
+import { publishLibraryRefresh } from '@/lib/library-refresh';
 import PeopleFaceThumbnail from '@/components/magic-library/PeopleFaceThumbnail';
 import { toast } from 'sonner';
 
@@ -29,7 +30,8 @@ export default function RecoverPeopleDialog({ onClose }) {
         body: JSON.stringify({ clusterId: person.name, action }),
       });
       toast.success(action === 'self' ? 'Your face was restored and pinned first' : 'Person restored');
-      window.location.reload();
+      publishLibraryRefresh({ source: 'people-recovery' });
+      onClose?.();
     } catch (error) {
       toast.error(error?.message || 'Could not recover this face');
       setBusy('');

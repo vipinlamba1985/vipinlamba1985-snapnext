@@ -6,6 +6,7 @@ import { Check, Heart, HelpCircle, LockKeyhole, Loader2, Move, Pencil, RotateCcw
 import { apiFetch } from '@/lib/api-client';
 import PeopleFaceThumbnail from '@/components/magic-library/PeopleFaceThumbnail';
 import RecoverPeopleDialog from '@/components/magic-library/RecoverPeopleDialog';
+import { publishLibraryRefresh } from '@/lib/library-refresh';
 import { isUnknownPerson, sortPeopleForDisplay } from '@/lib/people-identity';
 import { sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
 import { toast } from 'sonner';
@@ -124,7 +125,8 @@ function PersonDialog({ person, enabled, limit, activeCount, profile, label, onS
       await apiFetch('/magic-library/people', { method: 'PATCH', body: JSON.stringify(payload) });
       onSaveCrop(resetCrop ? null : crop);
       toast.success('Person and thumbnail saved');
-      window.location.reload();
+      publishLibraryRefresh({ source: 'person-saved' });
+      onClose();
     } catch (error) { toast.error(error?.message || 'Could not save this person'); }
     finally { setBusy(''); }
   }
@@ -134,7 +136,8 @@ function PersonDialog({ person, enabled, limit, activeCount, profile, label, onS
     try {
       await apiFetch('/magic-library/people/recover', { method: 'POST', body: JSON.stringify({ clusterId: person.name, action }) });
       toast.success(action === 'self' ? 'This face is now pinned as You' : 'Face restored as a person');
-      window.location.reload();
+      publishLibraryRefresh({ source: 'person-recovered' });
+      onClose();
     } catch (error) { toast.error(error?.message || 'Could not recover this face'); }
     finally { setBusy(''); }
   }
@@ -145,7 +148,8 @@ function PersonDialog({ person, enabled, limit, activeCount, profile, label, onS
     try {
       await apiFetch('/magic-library/people', { method: 'PATCH', body: JSON.stringify({ clusterId: person.name, identityState }) });
       toast.success(identityState === 'unknown' ? 'Face marked Unknown' : 'Face restored as a person');
-      window.location.reload();
+      publishLibraryRefresh({ source: 'person-identity-state' });
+      onClose();
     } catch (error) { toast.error(error?.message || 'Could not update this face'); }
     finally { setBusy(''); }
   }
@@ -155,7 +159,8 @@ function PersonDialog({ person, enabled, limit, activeCount, profile, label, onS
     try {
       await apiFetch('/magic-library/people/review', { method: 'POST', body: JSON.stringify({ clusterId: person.name, action }) });
       toast.success(action === 'confirm' ? 'Person confirmed' : action === 'reject' ? 'Match rejected' : 'Person hidden');
-      window.location.reload();
+      publishLibraryRefresh({ source: 'person-reviewed' });
+      onClose();
     } catch (error) { toast.error(error?.message || 'Could not update this person'); }
     finally { setBusy(''); }
   }
@@ -166,7 +171,8 @@ function PersonDialog({ person, enabled, limit, activeCount, profile, label, onS
       const state = await apiFetch('/magic-library/activation');
       await apiFetch('/magic-library/activation', { method: 'POST', body: JSON.stringify({ people: [...new Set([...(state.active || []), person.name])] }) });
       toast.success('Person activated');
-      window.location.reload();
+      publishLibraryRefresh({ source: 'person-activated' });
+      onClose();
     } catch (error) { toast.error(error?.message || 'Could not activate this person'); }
     finally { setBusy(''); }
   }

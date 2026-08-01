@@ -6,6 +6,14 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import { AlertCircle, CheckCircle2, Cloud, FileImage, Image as ImageIcon, Loader2, ShieldCheck, Upload, XCircle, Zap } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
+import {
+  UPLOAD_STATUS,
+  batchHeadline,
+  isRetryableReason,
+  selectAutomaticUploadItems,
+  selectManualRetryItems,
+  summarizeBatch,
+} from '@/lib/upload-queue-rules';
 import { formatBytes } from '@/lib/utils';
 
 const SMART_THRESHOLD = 21;
@@ -16,7 +24,7 @@ const STATUS = {
   uploading: { label: 'Saving', icon: Loader2, cls: 'text-cyan-200 bg-cyan-400/10' },
   done: { label: 'Saved', icon: CheckCircle2, cls: 'text-emerald-200 bg-emerald-400/10' },
   skipped: { label: 'Skipped', icon: AlertCircle, cls: 'text-amber-200 bg-amber-400/10' },
-  error: { label: 'Failed', icon: XCircle, cls: 'text-rose-200 bg-rose-400/10' },
+  needs_attention: { label: 'Needs attention', icon: XCircle, cls: 'text-rose-200 bg-rose-400/10' },
 };
 const REASON_COPY = {
   duplicate: 'Already backed up', storage_full: 'Storage full', too_large: 'File too large', unsupported_type: 'Unsupported type',
@@ -38,7 +46,9 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [autoStartPending, setAutoStartPending] = useState(false);
+  const [firstProtected, setFirstProtected] = useState(false);
   const previewsRef = useRef({});
+  const uploadingRef = useRef(false);
 
   useEffect(() => { apiFetch('/storage/usage').then(setUsage).catch(() => {}); }, []);
   useEffect(() => { previewsRef.current = previews; }, [previews]);
@@ -51,20 +61,17 @@ export default function UploadPage() {
   }, [uploading]);
   useEffect(() => {
     if (!autoStartPending || uploading) return;
-    if (!queue.some((item) => item.checked && item.status === 'queued')) return;
+    // Automatic start only ever considers queued work; previously-failed items
+    // stay untouched until the user retries them explicitly.
+    if (!selectAutomaticUploadItems(queue).length) return;
     setAutoStartPending(false);
     startBackup();
   }, [autoStartPending, uploading, queue]);
 
   const stats = useMemo(() => {
-    const total = queue.length;
-    const saved = queue.filter((item) => item.status === 'done').length;
-    const skipped = queue.filter((item) => item.status === 'skipped').length;
-    const failed = queue.filter((item) => item.status === 'error').length;
-    const waiting = queue.filter((item) => item.status === 'queued' && item.checked).length;
-    const uploadableBytes = queue.filter((item) => item.checked && ['queued', 'error'].includes(item.status)).reduce((sum, item) => sum + item.size, 0);
-    const finished = saved + skipped + failed;
-    return { total, saved, skipped, failed, waiting, uploadableBytes, percent: total ? Math.round((finished / total) * 100) : 0 };
+    const summary = summarizeBatch(queue);
+    const uploadableBytes = selectAutomaticUploadItems(queue).reduce((sum, item) => sum + item.size, 0);
+    return { ...summary, uploadableBytes };
   }, [queue]);
 
   const smartMode = queue.length >= SMART_THRESHOLD;
@@ -133,42 +140,89 @@ export default function UploadPage() {
       const data = response.data || {};
       const saved = new Set((data.saved || []).map((media) => media.name));
       const skipped = (data.skipped || []).find((media) => media.name === item.name);
-      if (saved.has(item.name)) { updateItem(item.id, { status: 'done', progress: 100 }); releaseCompletedItem(item.id); return 'saved'; }
+      if (saved.has(item.name)) { updateItem(item.id, { status: UPLOAD_STATUS.done, progress: 100 }); releaseCompletedItem(item.id); return 'saved'; }
       if (skipped) {
         const reason = skipped.reason || 'storage_unavailable';
-        updateItem(item.id, { status: reason === 'duplicate' ? 'skipped' : 'error', progress: 100, reason, message: skipped.message, retryable: skipped.retryable !== false });
-        if (reason === 'duplicate' || skipped.retryable === false) releaseCompletedItem(item.id);
+        const retryable = skipped.retryable !== false && isRetryableReason(reason);
+        updateItem(item.id, { status: reason === 'duplicate' ? UPLOAD_STATUS.skipped : UPLOAD_STATUS.needsAttention, progress: 100, reason, message: skipped.message, retryable });
+        if (!retryable) releaseCompletedItem(item.id);
         return reason === 'duplicate' ? 'skipped' : 'failed';
       }
-      updateItem(item.id, { status: 'error', progress: 0, reason: 'unrecognized_status', retryable: true });
+      updateItem(item.id, { status: UPLOAD_STATUS.needsAttention, progress: 0, reason: 'unrecognized_status', retryable: true });
       return 'failed';
     } catch (error) {
       const reason = error.response?.status === 401 ? 'authentication_expired' : error.response?.data?.reason || 'storage_unavailable';
       const message = error.response?.data?.error || error.message || 'Upload failed';
-      updateItem(item.id, { status: 'error', progress: 0, reason, message, retryable: error.response?.status !== 401 });
+      const retryable = error.response?.status !== 401 && isRetryableReason(reason);
+      updateItem(item.id, { status: UPLOAD_STATUS.needsAttention, progress: 0, reason, message, retryable });
+      if (!retryable) releaseCompletedItem(item.id);
       return 'failed';
     }
   }
 
-  async function startBackup() {
-    if (uploading) return;
-    const items = queue.filter((item) => item.checked && ['queued', 'error'].includes(item.status) && item.file);
-    if (!items.length) return toast.error('Choose files to back up first.');
-    setUploading(true); setSummary(null);
+  /**
+   * Runs the queue. `items` is resolved by the caller so an automatic run can
+   * never widen its own scope — automatic runs get queued work only, and failed
+   * items move only when the user explicitly retries them.
+   */
+  async function runQueue(items) {
+    // Ref guard: `uploading` state is stale inside concurrent callers, so a
+    // double-click or auto-start racing a manual Start could start two runs.
+    if (uploadingRef.current) return;
+    if (!items.length) { toast.error('Choose files to back up first.'); return; }
+
+    uploadingRef.current = true;
+    setUploading(true);
+    setSummary(null);
+    setFirstProtected(false);
     const counts = { saved: 0, skipped: 0, failed: 0, total: items.length };
     let cursor = 0;
     const laneCount = items.length >= SMART_THRESHOLD ? SMART_LANES : 1;
+
     async function lane() {
       while (cursor < items.length) {
         const item = items[cursor++];
         const outcome = await uploadOne(item);
-        if (outcome === 'saved') counts.saved += 1; else if (outcome === 'skipped') counts.skipped += 1; else counts.failed += 1;
+        if (outcome === 'saved') {
+          counts.saved += 1;
+          // Each saved original is authoritative on its own — surface the first
+          // one immediately instead of waiting for the batch.
+          if (counts.saved === 1) setFirstProtected(true);
+        } else if (outcome === 'skipped') counts.skipped += 1;
+        else counts.failed += 1;
       }
     }
-    await Promise.all(Array.from({ length: laneCount }, () => lane()));
-    setUploading(false); setSummary(counts);
-    apiFetch('/storage/usage').then(setUsage).catch(() => {});
-    toast.success(`Uploading complete: ${counts.saved} saved · ${counts.skipped + counts.failed} skipped/failed`);
+
+    try {
+      await Promise.all(Array.from({ length: laneCount }, () => lane()));
+    } finally {
+      uploadingRef.current = false;
+      setUploading(false);
+      setSummary(counts);
+      apiFetch('/storage/usage').then(setUsage).catch(() => {});
+    }
+
+    if (counts.failed > 0) {
+      toast.warning(`Backup finished · ${counts.saved} protected · ${counts.failed} need attention`);
+    } else {
+      toast.success(`Backup finished · ${counts.saved} protected${counts.skipped ? ` · ${counts.skipped} skipped` : ''}`);
+    }
+  }
+
+  function startBackup() { return runQueue(selectAutomaticUploadItems(queue)); }
+
+  function retryNeedsAttention(ids = null) {
+    const targets = selectManualRetryItems(queue, ids);
+    if (!targets.length) { toast.error('Nothing to retry.'); return; }
+    const targetIds = new Set(targets.map((item) => item.id));
+    setQueue((previous) => previous.map((item) => targetIds.has(item.id)
+      ? { ...item, status: UPLOAD_STATUS.queued, progress: 0, reason: null, message: null }
+      : item));
+    return runQueue(targets.map((item) => ({ ...item, status: UPLOAD_STATUS.queued })));
+  }
+
+  function dismissNeedsAttention() {
+    setQueue((previous) => previous.filter((item) => item.status !== UPLOAD_STATUS.needsAttention));
   }
 
   const planName = usage?.plan?.name || usage?.planName || 'Current plan';
@@ -186,7 +240,13 @@ export default function UploadPage() {
 
     {smartMode && <section data-testid="upload-smart-mode" className="rounded-[2rem] border border-cyan-400/20 bg-cyan-400/10 p-5"><div className="flex items-start gap-3"><Zap className="mt-0.5 h-5 w-5 text-cyan-200" /><div><h2 className="font-black text-white">Smart Backup is handling this batch</h2><p className="mt-1 text-sm text-white/60">Large selections start automatically and keep only a few previews on screen so the app stays responsive.</p></div></div></section>}
 
-    <section data-testid="upload-progress" className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><h2 className="text-xl font-black text-white">{uploading ? 'Backing up now' : stats.total ? 'Ready to back up' : 'All caught up'}</h2><p className="mt-1 text-sm text-white/50">{stats.saved} saved · {stats.skipped} skipped · {stats.failed} failed · {stats.waiting} waiting</p></div>{!smartMode && <button data-testid="upload-start-backup" onClick={startBackup} disabled={uploading || !stats.waiting} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-40">{uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />} {uploading ? 'Saving…' : 'Start backup'}</button>}</div><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-pink-500 to-purple-600 transition-all" style={{ width: `${stats.percent}%` }} /></div>{summary && <div data-testid="upload-batch-summary" className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100"><CheckCircle2 className="mr-2 inline h-4 w-4" />Batch complete: {summary.saved} saved, {summary.skipped + summary.failed} not saved.</div>}</section>
+    <section data-testid="upload-progress" className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><h2 className="text-xl font-black text-white">{uploading ? 'Backing up now' : stats.total ? batchHeadline(stats) : 'All caught up'}</h2><p className="mt-1 text-sm text-white/50" role="status">{stats.saved} protected · {stats.skipped} skipped · {stats.needsAttention} need attention · {stats.waiting} waiting</p></div>{!smartMode && <button data-testid="upload-start-backup" onClick={startBackup} disabled={uploading || !stats.waiting} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-40">{uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cloud className="h-4 w-4" />} {uploading ? 'Saving…' : 'Start backup'}</button>}</div><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-pink-500 to-purple-600 transition-all" style={{ width: `${stats.percent}%` }} /></div>
+      {firstProtected && !summary && <div data-testid="upload-first-protected" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100"><span><CheckCircle2 className="mr-2 inline h-4 w-4" />First memory protected — the rest keep uploading.</span><Link href="/gallery" className="rounded-full bg-white px-4 py-2 text-xs font-black text-black">View in Library</Link></div>}
+      {summary && <div data-testid="upload-batch-summary" className={`mt-4 rounded-2xl border p-4 text-sm ${stats.tone === 'success' ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100' : stats.tone === 'attention' ? 'border-amber-400/25 bg-amber-400/10 text-amber-100' : 'border-rose-400/25 bg-rose-400/10 text-rose-100'}`}>
+        <div className="flex items-center gap-2 font-black">{stats.tone === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}{batchHeadline(stats)}</div>
+        <p className="mt-1">{summary.saved} protected{summary.skipped ? ` · ${summary.skipped} safely skipped` : ''}{stats.needsAttention ? ` · ${stats.needsAttention} need attention` : ''}</p>
+        {stats.needsAttention > 0 && <><p className="mt-2 text-xs opacity-80">Your original files on this device were not changed. Only the items below need a decision.</p><div className="mt-3 flex flex-wrap gap-2"><button data-testid="upload-retry-attention" onClick={() => retryNeedsAttention()} disabled={uploading} className="rounded-full bg-white px-4 py-2 text-xs font-black text-black disabled:opacity-40">Retry {stats.needsAttention}</button><button data-testid="upload-dismiss-attention" onClick={dismissNeedsAttention} disabled={uploading} className="rounded-full border border-white/20 bg-white/[0.06] px-4 py-2 text-xs font-black text-white disabled:opacity-40">Skip for now</button></div></>}
+      </div>}</section>
 
     {!!Object.keys(reasonCounts).length && <section data-testid="upload-skip-reasons" className="rounded-[2rem] border border-amber-400/20 bg-amber-400/10 p-5"><h2 className="text-lg font-black text-white">Why some files were not saved</h2><div className="mt-3 grid gap-2 sm:grid-cols-2">{Object.entries(reasonCounts).map(([reason, count]) => <div key={reason} className="rounded-2xl bg-black/20 p-3 text-sm text-white/70"><AlertCircle className="mr-2 inline h-4 w-4 text-amber-200" />{REASON_COPY[reason] || reason}: <b>{count}</b></div>)}</div><p className="mt-3 text-xs text-white/45">Your original local files are never deleted by SnapNext.</p></section>}
 
@@ -194,6 +254,6 @@ export default function UploadPage() {
 
     <section data-testid="upload-web-safety" className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5"><div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-emerald-200" /><div><h2 className="text-lg font-black text-white">You stay in control</h2><p className="mt-1 text-sm text-white/50">Silent background backup and Wi-Fi-only automation are native-app features. On the web, SnapNext backs up only the files you choose.</p></div></div></section>
 
-    <section data-testid="upload-queue" className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-white">Current queue</h2><p className="mt-1 text-sm text-white/45">{stats.total} files · {formatBytes(stats.uploadableBytes)} selected for upload{smartMode && stats.total > SMART_PREVIEW_LIMIT ? ` · showing first ${SMART_PREVIEW_LIMIT}` : ''}</p></div><div className="flex gap-2"><button data-testid="upload-select-queue" onClick={() => setQueue((previous) => previous.map((item) => ['queued', 'error'].includes(item.status) ? { ...item, checked: true } : item))} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Select all in queue</button><button data-testid="upload-clear-saved" onClick={clearDone} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Clear saved</button></div></div><div className="mt-4 grid gap-3">{queue.length === 0 ? <NativeMediaPicker testId="upload-empty-picker" disabled={uploading} onSelect={onSelect} className="grid min-h-48 place-items-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center"><div><FileImage className="mx-auto h-8 w-8 text-pink-200" /><p className="mt-3 font-bold text-white">Choose photos and videos</p><p className="mt-1 text-sm text-white/45">Tap here, select your memories, then tap Add/Done.</p></div></NativeMediaPicker> : visibleQueue.map((item) => { const status = itemStatus(item); const Icon = status.icon; return <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/15 p-3"><input aria-label={`Select ${item.name}`} type="checkbox" checked={item.checked} disabled={uploading || !['queued', 'error'].includes(item.status)} onChange={(event) => updateItem(item.id, { checked: event.target.checked })} className="h-5 w-5 rounded" />{previews[item.id] ? <img src={previews[item.id]} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="grid h-14 w-14 place-items-center rounded-xl bg-white/[0.05]"><ImageIcon className="h-5 w-5 text-white/35" /></div>}<div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-white">{item.name}</p><p className="mt-1 text-xs text-white/42">{formatBytes(item.size)} · {REASON_COPY[item.reason] || item.message || ''}</p>{item.status === 'uploading' && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-cyan-300" style={{ width: `${item.progress}%` }} /></div>}</div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${status.cls}`}><Icon className={`h-3.5 w-3.5 ${item.status === 'uploading' ? 'animate-spin' : ''}`} />{status.label}</span><button aria-label={`Remove ${item.name}`} onClick={() => removeItem(item.id)} disabled={uploading} className="rounded-full p-2 text-white/40 hover:bg-white/5"><XCircle className="h-4 w-4" /></button></div>; })}</div></section>
+    <section data-testid="upload-queue" className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-white">Current queue</h2><p className="mt-1 text-sm text-white/45">{stats.total} files · {formatBytes(stats.uploadableBytes)} selected for upload{smartMode && stats.total > SMART_PREVIEW_LIMIT ? ` · showing first ${SMART_PREVIEW_LIMIT}` : ''}</p></div><div className="flex gap-2"><button data-testid="upload-select-queue" onClick={() => setQueue((previous) => previous.map((item) => item.status === UPLOAD_STATUS.queued ? { ...item, checked: true } : item))} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Select all in queue</button><button data-testid="upload-clear-saved" onClick={clearDone} disabled={uploading} className="rounded-full bg-white/[0.05] px-3 py-2 text-xs font-bold text-white/70">Clear saved</button></div></div><div className="mt-4 grid gap-3">{queue.length === 0 ? <NativeMediaPicker testId="upload-empty-picker" disabled={uploading} onSelect={onSelect} className="grid min-h-48 place-items-center rounded-3xl border border-dashed border-white/15 bg-white/[0.02] p-8 text-center"><div><FileImage className="mx-auto h-8 w-8 text-pink-200" /><p className="mt-3 font-bold text-white">Choose photos and videos</p><p className="mt-1 text-sm text-white/45">Tap here, select your memories, then tap Add/Done.</p></div></NativeMediaPicker> : visibleQueue.map((item) => { const status = itemStatus(item); const Icon = status.icon; return <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/15 p-3"><input aria-label={`Select ${item.name}`} type="checkbox" checked={item.checked} disabled={uploading || item.status !== UPLOAD_STATUS.queued} onChange={(event) => updateItem(item.id, { checked: event.target.checked })} className="h-5 w-5 rounded" />{previews[item.id] ? <img src={previews[item.id]} alt="" className="h-14 w-14 rounded-xl object-cover" /> : <div className="grid h-14 w-14 place-items-center rounded-xl bg-white/[0.05]"><ImageIcon className="h-5 w-5 text-white/35" /></div>}<div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-white">{item.name}</p><p className="mt-1 text-xs text-white/42">{formatBytes(item.size)} · {REASON_COPY[item.reason] || item.message || ''}</p>{item.status === 'uploading' && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-cyan-300" style={{ width: `${item.progress}%` }} /></div>}</div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${status.cls}`}><Icon className={`h-3.5 w-3.5 ${item.status === 'uploading' ? 'animate-spin' : ''}`} />{status.label}</span><button aria-label={`Remove ${item.name}`} onClick={() => removeItem(item.id)} disabled={uploading} className="rounded-full p-2 text-white/40 hover:bg-white/5"><XCircle className="h-4 w-4" /></button></div>; })}</div></section>
   </div>;
 }

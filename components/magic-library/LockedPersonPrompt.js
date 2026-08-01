@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Loader2, Sparkles, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
+import { publishLibraryRefresh } from '@/lib/library-refresh';
 import { useAccessibleDialog } from '@/hooks/use-escape-close';
 import { toast } from 'sonner';
 
@@ -39,8 +40,8 @@ export default function LockedPersonPrompt({ person, onClose, onActivated }) {
       toast.success('Person activated');
       if (onActivated) await onActivated(person);
       else {
+        publishLibraryRefresh({ source: 'person-activated' });
         onClose?.();
-        window.location.reload();
       }
     } catch (error) {
       toast.error(error?.message || 'Could not activate this person');

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
+import { subscribeLibraryRefresh } from '@/lib/library-refresh';
 import { bestMagicItems, buildMagicSuggestions, filterMagicItems } from '@/lib/magic-library-view';
 
 const ALL_MEMORY_COMMANDS = new Set([
@@ -54,6 +55,10 @@ export default function useMagicLibrary() {
   }
 
   useEffect(() => { load(); }, []);
+
+  // Re-read in place when background organizing reports progress, so the
+  // gallery updates without a full-page reload.
+  useEffect(() => subscribeLibraryRefresh(() => { load(); }), []);
 
   useEffect(() => {
     let cancelled = false;
