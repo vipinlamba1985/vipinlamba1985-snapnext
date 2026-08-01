@@ -3,6 +3,7 @@ export const runtime = 'nodejs';
 
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
+import { billingDisclosure } from '@/lib/creative-credits';
 
 function buildText(media) {
   const desc = String(media?.aiAnalysis?.description || '').trim();
@@ -23,5 +24,9 @@ export async function POST(request) {
   const db = await getDb();
   const media = await db.collection('media').findOne({ id: body.mediaId, userId: user.id, trashed: { $ne: true } });
   if (!media) return Response.json({ error: { code: 'not_found', message: 'Media not found.' } }, { status: 404 });
-  return Response.json({ caption: buildText(media), meta: { fallback: true, cost: 'no_ai_inference', groundedIn: 'user_media_metadata' } });
+  return Response.json({
+    caption: buildText(media),
+    billing: billingDisclosure('post_caption'),
+    meta: { fallback: true, cost: 'no_ai_inference', groundedIn: 'user_media_metadata' },
+  });
 }

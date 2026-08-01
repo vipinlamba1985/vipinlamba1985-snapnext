@@ -37,7 +37,7 @@ function Results({ flow }) {
       <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/55">SnapNext protected what fit your approved plan and kept everything else untouched.</p>
       <div className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-4"><Stat label="Protected" value={summary.completed} /><Stat label="Duplicates skipped" value={summary.duplicate} /><Stat label="Outside plan" value={summary.skipped} /><Stat label="Failed" value={summary.failed} /></div>
       <p className="mt-5 text-sm text-white/45">{formatBytes(protectedBytes)} newly protected</p>
-      <a href="/magic-library" className="mt-7 inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-4 text-base font-black text-white"><Sparkles className="h-5 w-5" /> See My Magic Library</a>
+      <a href="/gallery/magic" className="mt-7 inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-4 text-base font-black text-white"><Sparkles className="h-5 w-5" /> See My Magic Library</a>
     </section></div>
   );
 }

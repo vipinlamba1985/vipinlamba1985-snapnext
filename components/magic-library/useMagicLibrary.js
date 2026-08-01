@@ -26,7 +26,7 @@ export default function useMagicLibrary() {
   const [people, setPeople] = useState([]);
   const [peopleEngineReady, setPeopleEngineReady] = useState(false);
   const [activation, setActivation] = useState({ planId: 'free', limit: 4, active: [], enabled: [] });
-  const [favoriteNames, setFavoriteNames] = useState([]);
+  const [trustedCircleNames, setTrustedCircleNames] = useState([]);
   const [draftNames, setDraftNames] = useState([]);
   const [query, setQueryState] = useState('');
   const [searchItems, setSearchItems] = useState([]);
@@ -43,14 +43,14 @@ export default function useMagicLibrary() {
       apiFetch('/media').catch(() => ({ items: [] })),
       apiFetch('/magic-library/people').catch(() => ({ people: [], engineReady: false })),
       apiFetch('/magic-library/activation').catch(() => ({ planId: 'free', limit: 4, active: [], enabled: [] })),
-      apiFetch('/favorites').catch(() => ({ accepted: [] })),
+      apiFetch('/trusted-circle').catch(() => ({ accepted: [] })),
     ]);
     setItems(media.items || []);
     setPeople(peopleState.people || []);
     setPeopleEngineReady(Boolean(peopleState.engineReady));
     setActivation(state);
     setDraftNames(state.active || []);
-    setFavoriteNames((favorites.accepted || []).map((row) => row.other?.name).filter(Boolean));
+    setTrustedCircleNames((favorites.accepted || []).map((row) => row.other?.name).filter(Boolean));
     setBusy(false);
   }
 
@@ -225,7 +225,7 @@ export default function useMagicLibrary() {
     peopleEngineReady,
     suggestions,
     activation: activationForView,
-    favoriteNames,
+    trustedCircleNames,
     draftNames,
     query,
     activePerson,

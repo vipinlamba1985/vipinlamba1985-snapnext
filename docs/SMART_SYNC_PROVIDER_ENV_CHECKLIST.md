@@ -36,3 +36,13 @@ Add the matching preview callback only while testing a protected preview deploym
 - OneDrive: `Files.Read`, `offline_access`
 
 SnapNext does not require provider write or delete access.
+
+## Native camera roll (iPhone / Android)
+
+These providers need **no server credentials** — they are gated on the mobile
+app, not on environment variables. The server protocol is complete; the client
+that produces a photo manifest is not built yet, and no photo-library Capacitor
+plugin is installed. See `docs/CLOUD_SYNC_STATUS.md` for exactly what remains.
+
+Do not describe iPhone or Android camera-roll sync as available until that work
+ships and is verified on real hardware.

@@ -1,0 +1,33 @@
+{
+  "//": [
+    "Type-check config for CI. Deliberately NOT named tsconfig.json: Next.js",
+    "treats a root tsconfig.json as 'this is a TypeScript project', which would",
+    "take path resolution away from jsconfig.json and generate next-env.d.ts.",
+    "This project is JavaScript (see CLAUDE.md); only capacitor.config.ts is TS.",
+    "Run with: npm run typecheck"
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "allowJs": false,
+    "checkJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/lib/ai-router": ["./lib/ai-router-budgeted.js"],
+      "@/*": ["./*"],
+      "@/components/*": ["./components/*"],
+      "@/lib/*": ["./lib/*"],
+      "@/app/*": ["./app/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", ".next", "out", "build", "native", "native-web"]
+}

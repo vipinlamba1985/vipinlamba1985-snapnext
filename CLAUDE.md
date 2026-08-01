@@ -2,6 +2,13 @@
 
 Guidance for Claude Code (and other AI assistants) working in this repository.
 
+> **Read `SNAPNEXT_BLUEPRINT_V4.md` before designing anything.** It is the
+> product ideology and build doctrine — ten numbered principles, the Four
+> Concepts, and a checklist for adding a feature. Every claim in it is marked
+> as enforced / built / direction / refused, so it can be trusted against code.
+> Reviewers cite its principles by number (P1–P10). This file is the day-to-day
+> working reference; the blueprint is the contract.
+
 ## What this is
 
 SnapNext (`snapnext-ai`) is a memory-first photo/video management product: import from
@@ -20,7 +27,8 @@ prefer this file and `CONTRIBUTING.md` for accurate setup/behavior info.
 - **Language**: JavaScript, not TypeScript (`jsconfig.json`, `components.json` sets
   `tsx: false`). TypeScript is only incidentally present (`capacitor.config.ts`,
   `next.config.js` sets `typescript.ignoreBuildErrors: true` and
-  `eslint.ignoreDuringBuilds: true` — build-blocking type/lint errors are currently off).
+  `eslint.ignoreDuringBuilds: true`, so `next build` itself skips both — CI enforces
+  them separately via `npm run lint` and `npm run typecheck`).
 - **UI**: shadcn/ui (`components/ui/*.jsx`, style "new-york") + Radix primitives +
   Tailwind CSS + `lucide-react` icons + `framer-motion`.
 - **Data/state**: `@tanstack/react-query`, `swr`, `react-hook-form` + `zod`.
@@ -42,9 +50,13 @@ prefer this file and `CONTRIBUTING.md` for accurate setup/behavior info.
 ```
 app/
   (app)/          # authenticated product shell — route group, ~30 pages
-                   #   (dashboard, gallery, upload, magic-library, memories,
+                   #   (dashboard, gallery, upload, memories, trusted-circle,
                    #    billing, admin, settings, family, circles, chat, ...)
                    #   wrapped by app/(app)/layout.js -> AppShell
+                   #   gallery/ is the Library shell: /gallery is the All view,
+                   #   /gallery/magic is the Magic (by-person) view, and
+                   #   /gallery/cleanup is triage. /magic-library and
+                   #   /favorites are redirects kept for old links.
   api/             # Next.js Route Handlers = the backend, ~50 route folders
                    #   (auth, media, billing, ai-*, smart-sync, chat-e2ee, cron,
                    #    webhooks/stripe, family*, memory-*, restoration*, ...)
@@ -66,8 +78,12 @@ lib/                # the bulk of business logic — 116 files
   protection-*.js   # backup/protection pipeline
   chat-e2ee-*.js    # encrypted chat
   distributed-rate-limit.js
-  auth/, ai/, billing/, constants/, email/, favorites/, restoration/,
-  sharing/, smart-sync/   # feature subfolders
+  triage.js         # zero-AI cleanup buckets (duplicates, large videos, ...)
+  trip-sharing.js   # zero-AI trip detection + approval-gated share drafts
+  post-composer.js  # deterministic caption/hashtag/emoji building
+  creative-credits.js # how each creative feature is billed (see below)
+  auth/, ai/, billing/, constants/, email/, restoration/,
+  sharing/, smart-sync/, trusted-circle/   # feature subfolders
 hooks/              # shared React hooks (use-mobile, use-toast, ...)
 native/, native-web/  # Capacitor native config + web shell
 scripts/            # native bootstrap/preflight, policy checks, smoke test
@@ -97,14 +113,19 @@ Key npm scripts:
 - `npm start` — `node server.js` (custom server; not `next start`).
 - `npm test` — `node --test tests/*.test.mjs` (Node's built-in test runner — no Jest/
   Vitest/Playwright config exists).
-- `npm run lint` — `next lint` (`.eslintrc.json` extends `next/core-web-vitals` only,
-  no Prettier config).
+- `npm run lint` — `eslint .` using flat config (`eslint.config.mjs`, extends
+  `eslint-config-next/core-web-vitals`; no Prettier config). Clean error baseline —
+  remaining React Compiler advisories are reported as warnings.
+- `npm run typecheck` — `tsc -p tsconfig.check.json`. Deliberately not named
+  `tsconfig.json`: Next.js would treat that as "this is a TypeScript project" and
+  take path resolution away from `jsconfig.json`. Only `capacitor.config.ts` is TS.
 - `npm run test:smoke` — `scripts/smoke-test.mjs`.
 - `npm run policy:android` / `policy:ios` — store-policy compliance checks.
 - `npm run native:*` — Capacitor bootstrap/sync/add/open for iOS/Android.
 
 CI (`.github/workflows/`): `quality.yml` runs `npm run build` on PRs (test+build gate);
-`quality-visibility.yml` additionally runs non-blocking TS/lint/`npm audit` checks;
+`quality-visibility.yml` runs tests plus blocking typecheck/lint gates and a
+non-blocking `npm audit`;
 `docker.yml` builds and health-checks the Docker image; `native-preflight.yml` gates
 changes under native paths.
 
@@ -123,9 +144,21 @@ Never commit real values for any of these.
 ## Conventions and rules (see `CONTRIBUTING.md` for the full, authoritative list)
 
 Product:
-- Primary navigation is exactly **Home, Vault, Stories, Create, People** — home stays
+- Primary navigation is exactly five items: **Home, Library, Add, Create, You**
+  (`PRIMARY_HREFS` in `components/AppShell.js`, enforced by
+  `tests/primary-navigation.test.mjs`). This is a settled decision — see
+  "Navigation" in `SNAPNEXT_BLUEPRINT_V4.md` before proposing a change. Home stays
   memory-first, not a storage dashboard. Don't add nav items or duplicate features
   across pages without a clear user need.
+- The Library has exactly two views and they must stay distinct: **All** (`/gallery`)
+  is everything the user owns, newest first, never plan-gated; **Magic**
+  (`/gallery/magic`) is the same photos organised by person, gated on active people
+  (`MAGIC_PEOPLE_LIMITS`). Magic is a lens over the library, not a folder inside it
+  and not a second library — that overlap is what made the two feel like one place.
+  Organising by person belongs to Magic only; don't reintroduce it into All.
+- "Trusted circle" means people you share with. "Starred" means a photo you marked
+  (`media.favorite`). These are different concepts and must not be merged back into
+  a single word — `tests/trusted-circle-naming-separation.test.mjs` enforces it.
 - Use plain, human language in user-facing copy; AI must assist without requiring
   prompt-engineering knowledge from the user.
 - Originals imported from external providers must never be modified in place.
@@ -147,6 +180,15 @@ Architecture:
   before hand-writing similar UI.
 - Prefer incremental extraction over large rewrites; don't introduce a separately
   deployed worker/service without a measured scaling/durability need.
+- Every creative feature declares its billing in `lib/creative-credits.js`. A feature
+  that calls an external model is `ai_credits` and **must** reserve through
+  `lib/ai-spend-gate.js` (normally via `lib/ai/gateway.js`) before running, then
+  settle or release. A feature that produces deterministic output from data the user
+  already owns is `included_free` and must not claim to charge — charging for a
+  template is as dishonest as spending silently.
+- Features that can run on metadata alone should. `lib/triage.js`, `lib/trip-sharing.js`
+  and `lib/post-composer.js` deliberately have no imports, so they cannot reach a
+  provider and cost nothing to run on a large library. Keep them that way.
 
 Testing:
 - Bug fixes should include a regression test where practical.

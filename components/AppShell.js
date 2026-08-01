@@ -27,7 +27,7 @@ const ROUTES = [
   { href: '/smart-sync', label: 'Smart Backup', icon: Cloud, featureFlag: 'premiumBackup' },
   { href: '/event-director', label: 'Moments', icon: Sparkles },
   { href: '/circles', label: 'Circles', icon: Users },
-  { href: '/favorites', label: 'Trusted people', icon: Users, featureFlag: 'favorites' },
+  { href: '/trusted-circle', label: 'Trusted circle', icon: Users, featureFlag: 'favorites' },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/journal', label: 'Life Journal', icon: BookOpen },
   { href: '/health', label: 'Memory Health', icon: ShieldAlert },
@@ -46,7 +46,7 @@ const ROUTES = [
 
 const PRIMARY_HREFS = ['/dashboard', '/gallery', '/upload', '/ai-studio', '/settings'];
 const MORE_HREFS = [
-  '/memories', '/smart-sync', '/event-director', '/circles', '/favorites',
+  '/memories', '/smart-sync', '/event-director', '/circles', '/trusted-circle',
   '/chat', '/journal', '/health', '/imports', '/life-graph', '/ready-to-post', '/ai-video',
   '/community', '/downloads', '/trash', '/support',
 ];

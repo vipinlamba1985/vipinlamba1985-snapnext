@@ -7,12 +7,17 @@ import { apiFetch } from '@/lib/api-client';
 import CloudImportBatchGuide from '@/components/CloudImportBatchGuide';
 import { toast } from 'sonner';
 
-const CLOUD_OPTIONS = [
-  { id: 'google-drive', name: 'Google Drive', icon: '💾', description: 'Choose photos and videos already saved in Google Drive.', available: true },
-  { id: 'dropbox', name: 'Dropbox', icon: '📦', description: 'Bring in photos and videos from Dropbox.', available: false },
-  { id: 'onedrive', name: 'Microsoft OneDrive', icon: '📂', description: 'Bring in memories saved with Microsoft.', available: false },
-  { id: 'apple-photos', name: 'Apple Photos', icon: '☁️', description: 'Choose memories from your iPhone or iPad in the SnapNext mobile app.', available: false },
-];
+// Providers come from the live registry (/smart-sync), never a hardcoded list.
+// The old hardcoded copy claimed Dropbox and OneDrive were "coming soon" long
+// after both were fully implemented, and omitted Google Photos entirely.
+const PROVIDER_ICONS = {
+  google_drive: '💾',
+  google_photos: '🖼️',
+  dropbox: '📦',
+  onedrive: '📂',
+  ios_photos: '📱',
+  android_media: '🤖',
+};
 
 const IMPORT_BATCH_SIZE = 10;
 const MAX_SELECTED_FILES = 500;
@@ -39,6 +44,7 @@ export default function ImportsPage() {
   const [nextPageToken, setNextPageToken] = useState(null);
   const [showChoices, setShowChoices] = useState(false);
   const [progress, setProgress] = useState(null);
+  const [providers, setProviders] = useState([]);
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const allLoadedSelected = items.length > 0 && items.every(item => selectedSet.has(item.id));
@@ -59,7 +65,13 @@ export default function ImportsPage() {
   async function loadStatus() {
     setLoading(true);
     try {
-      const next = await apiFetch('/cloud/google-drive/status');
+      // Provider readiness is a deployment fact, so it is read from the same
+      // registry Smart Backup uses rather than assumed here.
+      const [next, sync] = await Promise.all([
+        apiFetch('/cloud/google-drive/status'),
+        apiFetch('/smart-sync/providers').catch(() => ({ providers: [] })),
+      ]);
+      setProviders(sync.providers || []);
       setStatus(next);
       if (next.connected) await loadFiles('', false);
       else {
@@ -93,13 +105,34 @@ export default function ImportsPage() {
     }
   }
 
-  function chooseProvider(provider) {
-    if (!provider.available) {
-      toast.message(`${provider.name} is coming soon. You can still upload directly today.`);
+  async function chooseProvider(provider) {
+    if (provider.surface === 'native') {
+      toast.message(`${provider.name} syncs from the SnapNext mobile app, where photo access can be granted.`);
       return;
     }
+    if (!provider.available) {
+      toast.message(`${provider.name} is not connected in this deployment yet. You can still upload directly today.`);
+      return;
+    }
+
     setShowChoices(false);
-    connectGoogleDrive();
+    // Google Drive keeps its own connect route and browsing UI on this page;
+    // every other cloud connects through the shared Smart Sync OAuth adapter
+    // and is then managed from Smart Backup.
+    if (provider.id === 'google_drive') {
+      connectGoogleDrive();
+      return;
+    }
+
+    setBusy(`connect:${provider.id}`);
+    try {
+      const result = await apiFetch(`/smart-sync/oauth/${provider.id}/start`);
+      if (!result.authorizationUrl) throw new Error('That cloud did not return a connection page.');
+      window.location.href = result.authorizationUrl;
+    } catch (error) {
+      toast.error(error.message || `Could not connect ${provider.name}.`);
+      setBusy('');
+    }
   }
 
   async function disconnect() {
@@ -303,15 +336,36 @@ export default function ImportsPage() {
               <div><h2 className="text-xl font-black">Where are your memories?</h2><p className="mt-1 text-sm text-white/50">Choose a cloud service. You will sign in securely on that service’s own page.</p></div>
               <button onClick={() => setShowChoices(false)} className="grid h-9 w-9 place-items-center rounded-full bg-white/5"><X className="h-4 w-4"/></button>
             </div>
-            <div className="mt-5 space-y-2">
-              {CLOUD_OPTIONS.map(provider => (
-                <button key={provider.id} onClick={() => chooseProvider(provider)} className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-left hover:bg-white/[0.06]">
-                  <span className="text-2xl">{provider.icon}</span>
-                  <span className="min-w-0 flex-1"><span className="block font-black">{provider.name}</span><span className="mt-0.5 block text-xs leading-5 text-white/45">{provider.description}</span></span>
-                  <span className="flex items-center gap-2 text-xs font-bold text-white/50">{provider.available ? 'Connect' : 'Soon'}<ChevronRight className="h-4 w-4"/></span>
-                </button>
-              ))}
+            <div className="mt-5 space-y-2" data-testid="cloud-provider-list">
+              {!providers.length && <p className="rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-white/45">Checking which clouds are available…</p>}
+              {providers.map(provider => {
+                const label = provider.connected
+                  ? 'Connected'
+                  : provider.surface === 'native'
+                    ? 'Mobile app'
+                    : provider.available
+                      ? 'Connect'
+                      : 'Not set up';
+                const dimmed = !provider.connected && !provider.available;
+                return (
+                  <button
+                    key={provider.id}
+                    data-testid={`cloud-provider-${provider.id}`}
+                    onClick={() => chooseProvider(provider)}
+                    disabled={busy.startsWith('connect:')}
+                    className={`flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-left hover:bg-white/[0.06] disabled:opacity-50 ${dimmed ? 'opacity-60' : ''}`}
+                  >
+                    <span className="text-2xl">{PROVIDER_ICONS[provider.id] || '☁️'}</span>
+                    <span className="min-w-0 flex-1"><span className="block font-black">{provider.name}</span><span className="mt-0.5 block text-xs leading-5 text-white/45">{provider.description}</span></span>
+                    <span className="flex items-center gap-2 text-xs font-bold text-white/50">
+                      {busy === `connect:${provider.id}` ? <Loader2 className="h-4 w-4 animate-spin"/> : label}
+                      <ChevronRight className="h-4 w-4"/>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+            <p className="mt-4 text-xs leading-5 text-white/35">Connected clouds are read-only. SnapNext never changes or deletes anything in the original account. Ongoing automatic backup is set up in <Link href="/smart-sync" className="text-pink-200 underline">Smart Backup</Link>.</p>
           </div>
         </div>
       )}

@@ -1,11 +1,7 @@
-import MagicLibraryGalleryMagic from '@/components/magic-library/MagicLibraryGalleryMagic';
-import PeopleMagicBootstrap from '@/components/magic-library/PeopleMagicBootstrap';
+import { redirect } from 'next/navigation';
 
-export default function MagicLibraryPage() {
-  return (
-    <>
-      <PeopleMagicBootstrap />
-      <MagicLibraryGalleryMagic />
-    </>
-  );
+// Magic Library is now the "Magic" tab of the Library rather than a separate
+// destination. Old links and bookmarks keep working.
+export default function MagicLibraryRedirectPage() {
+  redirect('/gallery/magic');
 }

@@ -16,7 +16,7 @@ const PROFILE_KEY = 'snapnext.magicPersonProfiles.v2';
 function loadProfiles() { try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}'); } catch { return {}; } }
 function photoWord(count) { return Number(count) === 1 ? 'photo' : 'photos'; }
 
-export default function PeopleRow({ people, enabledNames, activeCount, favoriteNames, activePerson, displayName, onOpen, onLocked }) {
+export default function PeopleRow({ people, enabledNames, activeCount, trustedCircleNames, activePerson, displayName, onOpen, onLocked }) {
   const activeTotal = Number.isFinite(Number(activeCount)) ? Number(activeCount) : Number(enabledNames.length || 0);
   const [limit, setLimit] = useState(Math.max(4, activeTotal));
   const [selected, setSelected] = useState(null);
@@ -71,7 +71,7 @@ export default function PeopleRow({ people, enabledNames, activeCount, favoriteN
             <span className={`relative mx-auto block h-32 w-24 overflow-hidden rounded-[1.6rem] border-[3px] bg-white/5 shadow-lg shadow-black/30 transition group-active:scale-[0.98] ${unknown ? 'border-white/10 grayscale' : person.isSelf ? 'border-emerald-300 ring-4 ring-emerald-400/15' : activePerson === person.name ? 'border-pink-400 ring-4 ring-pink-500/20' : lowFrequency ? 'border-sky-300/45' : person.verificationStatus === 'suggested' ? 'border-amber-300/70' : enabled ? 'border-white/25' : 'border-white/10'}`}>
               <PeopleFaceThumbnail mediaId={person.representativeMediaId} faceBox={person.representativeFaceBox} manual={profile} className={`h-full w-full ${enabled || person.isSelf ? '' : 'opacity-80'}`} />
               <span className="absolute left-1.5 top-1.5 inline-flex h-7 items-center gap-1 rounded-full bg-black/80 px-2 text-[10px] font-black text-white"><Pencil className="h-3 w-3" />Edit</span>
-              {favoriteNames.includes(person.name) && !unknown && <span className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-pink-500"><Heart className="h-3 w-3 fill-current" /></span>}
+              {trustedCircleNames.includes(person.name) && !unknown && <span className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-pink-500"><Heart className="h-3 w-3 fill-current" /></span>}
               {person.isSelf ? <span className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-emerald-400 text-black"><UserCheck className="h-4 w-4" /></span> : unknown ? <span className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/80 text-white/65"><UserX className="h-4 w-4" /></span> : lowFrequency ? <span className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-sky-300 text-black"><Search className="h-3.5 w-3.5" /></span> : person.verificationStatus === 'suggested' ? <span className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-amber-400 text-black"><HelpCircle className="h-4 w-4" /></span> : !enabled && <span className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/80"><LockKeyhole className="h-3.5 w-3.5" /></span>}
             </span>
           </button>
