@@ -144,12 +144,12 @@ Never commit real values for any of these.
 ## Conventions and rules (see `CONTRIBUTING.md` for the full, authoritative list)
 
 Product:
-- Primary navigation is exactly five items and is currently **Home, Library, Add,
-  Create, You** (`PRIMARY_HREFS` in `components/AppShell.js`). Note that
-  `CONTRIBUTING.md` still describes an earlier naming (Home, Vault, Stories, Create,
-  People); the shipped names above are the accurate ones. Home stays memory-first,
-  not a storage dashboard. Don't add nav items or duplicate features across pages
-  without a clear user need.
+- Primary navigation is exactly five items: **Home, Library, Add, Create, You**
+  (`PRIMARY_HREFS` in `components/AppShell.js`, enforced by
+  `tests/primary-navigation.test.mjs`). This is a settled decision — see
+  "Navigation" in `SNAPNEXT_BLUEPRINT_V4.md` before proposing a change. Home stays
+  memory-first, not a storage dashboard. Don't add nav items or duplicate features
+  across pages without a clear user need.
 - The Library has exactly two views and they must stay distinct: **All** (`/gallery`)
   is everything the user owns, newest first, never plan-gated; **Magic**
   (`/gallery/magic`) is the same photos organised by person, gated on active people

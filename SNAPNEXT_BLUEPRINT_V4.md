@@ -214,6 +214,27 @@ them together before.
 Full detail, including the redirects kept for old links and the collection names
 deliberately left alone: **`docs/LIBRARY_STRUCTURE.md`**.
 
+### Navigation — settled ✅
+*Enforced by `tests/primary-navigation.test.mjs`.*
+
+Primary navigation is exactly five items:
+
+**Home · Library · Add · Create · You**
+
+This was contradictory three ways — `CONTRIBUTING.md` mandated *Home, Vault,
+Stories, Create, People*, the app shipped the names above, and a third shape was
+under discussion. The shipped names won, because they are what users are actually
+looking at and because renaming navigation is a migration with no user benefit.
+`CLAUDE.md` and `CONTRIBUTING.md` were corrected to match.
+
+The rule and the code are now tested against each other, so this is settled
+rather than merely written down. **Do not re-open it in a feature PR.** Changing
+navigation is its own change, with its own reasoning, and it updates the test in
+the same commit.
+
+Everything else reachable from the app lives under "More" (`MORE_HREFS`). A new
+destination goes there, never into the primary five — the count is the point (P1).
+
 ---
 
 ## 4. Build doctrine — adding a feature
@@ -282,15 +303,32 @@ Adding a parallel system beside one of these needs a written reason in the PR.
   burst shots of the same moment need more. Must not become a per-photo model
   call (P3).
 - **Shared trip albums** — a trip approved by both sides becoming one album.
+- **Circle activity feed** — the descoped, buildable half of the refused external
+  social feed (see ⛔ below). Same interface — a short list of what is new since
+  you last looked — but fed only by sources SnapNext controls and can honour:
+  photos a trusted person shared with you, trip suggestions awaiting your
+  approval, occasion reminders drawn from your own capture dates, and people
+  newly recognised in your library. No third-party grant is required, so it can
+  actually ship. It must stay metadata-only (P3) and must not become a place
+  where anything shares itself (P4).
 
 ### Refused ⛔
-- **Social activity feed** (friends' Instagram / LinkedIn / YouTube posts inside
-  SnapNext). This needs read access to other people's feeds. Instagram Basic
-  Display is deprecated and neither Meta nor LinkedIn grants generic friend
-  content access — a *permissions* limit, not a difficulty one. Building toward
-  it would mean promising a feature that cannot ship.
-  *The salvageable half:* the same interface fed by SnapNext's own occasion
-  reminders and trusted-circle activity, which we control and can honour.
+- **External social activity feed** — friends' Instagram / LinkedIn / YouTube
+  posts shown inside SnapNext ("4 pictures by @friend, 3 LinkedIn posts, 1
+  YouTube video").
+
+  This requires read access to *other people's* feeds. Instagram Basic Display
+  is deprecated, and neither Meta nor LinkedIn grants generic friend-content
+  access to third parties. **This is a permissions limit, not a difficulty
+  one** — no amount of engineering earns the grant, so building toward it means
+  promising users a feature that cannot ship.
+
+  Do not accept a partial version either: OAuth that reads *the signed-in user's
+  own* posts is available, but it does not produce a friends' feed, and shipping
+  it under that name would misrepresent what the user is looking at (P5).
+
+  **The half worth building is in 🧭 Direction above as "Circle activity feed"** —
+  the same interface, fed by sources we control and can honour.
 - **Public sharing, likes, follower counts, algorithmic ranking.** SnapNext is
   introspective by design. There is no metric to perform for.
 - **Training general models on user photos.** Not now, not opt-out, not
