@@ -38,7 +38,6 @@ jobs:
     name: Code quality visibility
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,16 +51,17 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      # Blocking: both pass cleanly as of the flat-config migration, so a new
+      # type error or lint error is a real regression rather than noise.
       - name: TypeScript check
         id: typescript
-        continue-on-error: true
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: ESLint check
         id: eslint
-        continue-on-error: true
-        run: npx eslint .
+        run: npm run lint
 
+      # Informational: the existing dependency backlog is tracked separately.
       - name: Dependency audit
         id: audit
         continue-on-error: true
@@ -77,7 +77,7 @@ jobs:
             echo '|---|---|'
             echo '| TypeScript | `${{ steps.typescript.outcome }}` |'
             echo '| ESLint | `${{ steps.eslint.outcome }}` |'
-            echo '| Dependency audit | `${{ steps.audit.outcome }}` |'
+            echo '| Dependency audit (informational) | `${{ steps.audit.outcome }}` |'
             echo ''
-            echo 'These checks are initially informational so existing findings can be fixed incrementally before they become required release gates.'
+            echo 'TypeScript and ESLint are required gates. ESLint reports remaining advisory findings as warnings, which do not fail the build; new errors do.'
           } >> "$GITHUB_STEP_SUMMARY"

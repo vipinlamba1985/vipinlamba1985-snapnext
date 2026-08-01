@@ -5,11 +5,11 @@ export default function Support() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Support</h1>
-        <p className="text-white/60 mt-1">We're here to help.</p>
+        <p className="text-white/60 mt-1">We&apos;re here to help.</p>
       </div>
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <div className="flex items-center gap-3 mb-3"><LifeBuoy className="h-5 w-5 text-pink-300"/><div className="text-lg font-semibold">Contact us</div></div>
-        <p className="text-white/70 text-sm">Email <a className="text-pink-300 hover:underline" href="mailto:support@snapnext.ai">support@snapnext.ai</a> and we'll respond within one business day.</p>
+        <p className="text-white/70 text-sm">Email <a className="text-pink-300 hover:underline" href="mailto:support@snapnext.ai">support@snapnext.ai</a> and we&apos;ll respond within one business day.</p>
       </div>
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <div className="font-semibold mb-3">FAQ</div>

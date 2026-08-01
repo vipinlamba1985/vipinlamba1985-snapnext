@@ -4,6 +4,7 @@ import { getUserFromRequest } from '@/lib/auth';
 import { PEOPLE_INTELLIGENCE_VERSION } from '@/lib/people-intelligence';
 import { PEOPLE_TERMINAL_SUCCESS_STATUSES, rebuildPeopleIntelligence } from '@/lib/people-intelligence.server';
 import { PEOPLE_COST_POLICY, estimatePhotoRunCost } from '@/lib/people-rekognition-capabilities';
+import { countPendingGroupPhotoCleanup } from '@/lib/people-group-photo-reconciliation.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +19,7 @@ const pendingQuery = (userId) => ({ ...baseQuery(userId), $or: [
 
 async function getStatus(db, userId) {
   const base = baseQuery(userId);
-  const [total, remaining, failed, withFaces, noFaces, skipped, groupPhotos] = await Promise.all([
+  const [total, remaining, failed, withFaces, noFaces, skipped, groupPhotos, groupPhotoCleanupPending] = await Promise.all([
     db.collection('media').countDocuments(base),
     db.collection('media').countDocuments(pendingQuery(userId)),
     db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'failed' }),
@@ -26,6 +27,7 @@ async function getStatus(db, userId) {
     db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'no_faces' }),
     db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'skipped' }),
     db.collection('media').countDocuments({ ...base, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'group_photo' }),
+    countPendingGroupPhotoCleanup({ db, userId }),
   ]);
   const checked = withFaces + noFaces + skipped + groupPhotos;
   return {
@@ -37,6 +39,7 @@ async function getStatus(db, userId) {
     noFaces,
     skipped,
     groupPhotos,
+    groupPhotoCleanupPending,
     remaining,
     failed,
     needsMigration: remaining > 0 || failed > 0,

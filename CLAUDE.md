@@ -20,7 +20,8 @@ prefer this file and `CONTRIBUTING.md` for accurate setup/behavior info.
 - **Language**: JavaScript, not TypeScript (`jsconfig.json`, `components.json` sets
   `tsx: false`). TypeScript is only incidentally present (`capacitor.config.ts`,
   `next.config.js` sets `typescript.ignoreBuildErrors: true` and
-  `eslint.ignoreDuringBuilds: true` — build-blocking type/lint errors are currently off).
+  `eslint.ignoreDuringBuilds: true`, so `next build` itself skips both — CI enforces
+  them separately via `npm run lint` and `npm run typecheck`).
 - **UI**: shadcn/ui (`components/ui/*.jsx`, style "new-york") + Radix primitives +
   Tailwind CSS + `lucide-react` icons + `framer-motion`.
 - **Data/state**: `@tanstack/react-query`, `swr`, `react-hook-form` + `zod`.
@@ -97,14 +98,19 @@ Key npm scripts:
 - `npm start` — `node server.js` (custom server; not `next start`).
 - `npm test` — `node --test tests/*.test.mjs` (Node's built-in test runner — no Jest/
   Vitest/Playwright config exists).
-- `npm run lint` — `next lint` (`.eslintrc.json` extends `next/core-web-vitals` only,
-  no Prettier config).
+- `npm run lint` — `eslint .` using flat config (`eslint.config.mjs`, extends
+  `eslint-config-next/core-web-vitals`; no Prettier config). Clean error baseline —
+  remaining React Compiler advisories are reported as warnings.
+- `npm run typecheck` — `tsc -p tsconfig.check.json`. Deliberately not named
+  `tsconfig.json`: Next.js would treat that as "this is a TypeScript project" and
+  take path resolution away from `jsconfig.json`. Only `capacitor.config.ts` is TS.
 - `npm run test:smoke` — `scripts/smoke-test.mjs`.
 - `npm run policy:android` / `policy:ios` — store-policy compliance checks.
 - `npm run native:*` — Capacitor bootstrap/sync/add/open for iOS/Android.
 
 CI (`.github/workflows/`): `quality.yml` runs `npm run build` on PRs (test+build gate);
-`quality-visibility.yml` additionally runs non-blocking TS/lint/`npm audit` checks;
+`quality-visibility.yml` runs tests plus blocking typecheck/lint gates and a
+non-blocking `npm audit`;
 `docker.yml` builds and health-checks the Docker image; `native-preflight.yml` gates
 changes under native paths.
 

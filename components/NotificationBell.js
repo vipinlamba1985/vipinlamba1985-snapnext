@@ -89,7 +89,7 @@ export default function NotificationBell() {
           </div>
           <div className="max-h-[420px] overflow-y-auto divide-y divide-white/5">
             {items.length === 0 ? (
-              <div className="p-8 text-center text-sm text-white/50">You're all caught up.</div>
+              <div className="p-8 text-center text-sm text-white/50">You&apos;re all caught up.</div>
             ) : items.map((n) => {
               const meta = TYPE_META[n.type] || { icon: Bell, color: 'text-white/70' };
               const Icon = meta.icon;

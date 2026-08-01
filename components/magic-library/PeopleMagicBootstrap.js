@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw, ScanFace, Sparkles } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, ScanFace, Sparkles, Users } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { publishLibraryRefresh } from '@/lib/library-refresh';
 import {
@@ -28,6 +28,7 @@ export default function PeopleMagicBootstrap() {
   const [building, setBuilding] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [autoPaused, setAutoPaused] = useState(false);
+  const [tidying, setTidying] = useState(false);
   const [progress, setProgress] = useState(null);
   // Once automatic mode stops making progress it stays off until the user acts.
   // Held in a ref so a re-render can never silently re-arm unattended work.
@@ -148,6 +149,34 @@ export default function PeopleMagicBootstrap() {
     }
   }, [state.engineReady, state.migration, refreshState]);
 
+  /**
+   * One bounded, user-initiated pass of the group-photo cleanup. Explicit by
+   * design: it repairs historical data, so it must not run unattended in a
+   * loop. Costs nothing — pure database work, no Rekognition call.
+   */
+  const runGroupPhotoCleanup = useCallback(async () => {
+    if (runningRef.current) return;
+    runningRef.current = true;
+    setTidying(true);
+    try {
+      const result = await apiFetch('/magic-library/people/reconcile-group-photos', {
+        method: 'POST',
+        body: JSON.stringify({ limit: 50 }),
+      });
+      await refreshState();
+      publishLibraryRefresh({ source: 'group-photo-reconciliation' });
+      const remaining = Number(result?.remaining || 0);
+      toast.success(remaining > 0
+        ? `Tidied ${result.mediaReconciled} group photos · ${remaining} still to check`
+        : `Group photos tidied. Your People counts are up to date.`);
+    } catch (error) {
+      toast.error(error?.message || 'Could not tidy group photos. Your photos are unchanged.');
+    } finally {
+      runningRef.current = false;
+      if (mountedRef.current) setTidying(false);
+    }
+  }, [refreshState]);
+
   // Identity self-repair: single attempt, no reload, no automatic re-entry.
   useEffect(() => {
     if (state.loading || building || repairing || autoPaused) return;
@@ -205,10 +234,11 @@ export default function PeopleMagicBootstrap() {
   if (state.loading) return null;
 
   const view = describeMigration(progress || state.migration);
-  const migrationNeeded = Boolean(state.migration?.needsMigration || state.selfRepairRequired);
+  const cleanupPending = Number(state.migration?.groupPhotoCleanupPending || 0);
+  const migrationNeeded = Boolean(state.migration?.needsMigration || state.selfRepairRequired || cleanupPending > 0);
   if (!migrationNeeded) return null;
 
-  const working = building || repairing;
+  const working = building || repairing || tidying;
   const finishedWithAttention = view.complete && view.needsAttention;
 
   return (
@@ -242,6 +272,23 @@ export default function PeopleMagicBootstrap() {
           {!state.engineReady && <p className="mt-2 text-xs text-amber-200/75">The face engine is not available in this environment yet.</p>}
           {autoPaused && <p className="mt-2 text-xs text-amber-200/75">Automatic organizing paused after an error. Your progress is saved.</p>}
           {finishedWithAttention && <p className="mt-2 text-xs text-amber-200/75">Your original photos are safe. Only People organization needs attention.</p>}
+
+          {cleanupPending > 0 && (
+            <div className="mt-3 rounded-2xl border border-sky-300/20 bg-sky-300/[0.07] p-3">
+              <p className="text-xs leading-5 text-sky-100/80">
+                <b>{cleanupPending}</b> group {cleanupPending === 1 ? 'photo was' : 'photos were'} organized before SnapNext learned to skip large groups, so some People counts may look high. Tidying them up only updates People — your photos stay exactly where they are.
+              </p>
+              <button
+                onClick={runGroupPhotoCleanup}
+                disabled={working}
+                data-testid="people-group-photo-cleanup"
+                className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full bg-sky-300 px-5 py-2.5 text-sm font-black text-black disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {tidying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
+                {tidying ? 'Tidying group photos…' : 'Tidy up group photos'}
+              </button>
+            </div>
+          )}
 
           <div className="mt-4 flex flex-wrap gap-2">
             {!view.complete && (
