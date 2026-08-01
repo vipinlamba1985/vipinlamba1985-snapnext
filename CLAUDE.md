@@ -43,9 +43,13 @@ prefer this file and `CONTRIBUTING.md` for accurate setup/behavior info.
 ```
 app/
   (app)/          # authenticated product shell — route group, ~30 pages
-                   #   (dashboard, gallery, upload, magic-library, memories,
+                   #   (dashboard, gallery, upload, memories, trusted-circle,
                    #    billing, admin, settings, family, circles, chat, ...)
                    #   wrapped by app/(app)/layout.js -> AppShell
+                   #   gallery/ is the Library shell: /gallery is the All view,
+                   #   /gallery/magic is the Magic (by-person) view, and
+                   #   /gallery/cleanup is triage. /magic-library and
+                   #   /favorites are redirects kept for old links.
   api/             # Next.js Route Handlers = the backend, ~50 route folders
                    #   (auth, media, billing, ai-*, smart-sync, chat-e2ee, cron,
                    #    webhooks/stripe, family*, memory-*, restoration*, ...)
@@ -67,8 +71,12 @@ lib/                # the bulk of business logic — 116 files
   protection-*.js   # backup/protection pipeline
   chat-e2ee-*.js    # encrypted chat
   distributed-rate-limit.js
-  auth/, ai/, billing/, constants/, email/, favorites/, restoration/,
-  sharing/, smart-sync/   # feature subfolders
+  triage.js         # zero-AI cleanup buckets (duplicates, large videos, ...)
+  trip-sharing.js   # zero-AI trip detection + approval-gated share drafts
+  post-composer.js  # deterministic caption/hashtag/emoji building
+  creative-credits.js # how each creative feature is billed (see below)
+  auth/, ai/, billing/, constants/, email/, restoration/,
+  sharing/, smart-sync/, trusted-circle/   # feature subfolders
 hooks/              # shared React hooks (use-mobile, use-toast, ...)
 native/, native-web/  # Capacitor native config + web shell
 scripts/            # native bootstrap/preflight, policy checks, smoke test
@@ -129,9 +137,21 @@ Never commit real values for any of these.
 ## Conventions and rules (see `CONTRIBUTING.md` for the full, authoritative list)
 
 Product:
-- Primary navigation is exactly **Home, Vault, Stories, Create, People** — home stays
-  memory-first, not a storage dashboard. Don't add nav items or duplicate features
-  across pages without a clear user need.
+- Primary navigation is exactly five items and is currently **Home, Library, Add,
+  Create, You** (`PRIMARY_HREFS` in `components/AppShell.js`). Note that
+  `CONTRIBUTING.md` still describes an earlier naming (Home, Vault, Stories, Create,
+  People); the shipped names above are the accurate ones. Home stays memory-first,
+  not a storage dashboard. Don't add nav items or duplicate features across pages
+  without a clear user need.
+- The Library has exactly two views and they must stay distinct: **All** (`/gallery`)
+  is everything the user owns, newest first, never plan-gated; **Magic**
+  (`/gallery/magic`) is the same photos organised by person, gated on active people
+  (`MAGIC_PEOPLE_LIMITS`). Magic is a lens over the library, not a folder inside it
+  and not a second library — that overlap is what made the two feel like one place.
+  Organising by person belongs to Magic only; don't reintroduce it into All.
+- "Trusted circle" means people you share with. "Starred" means a photo you marked
+  (`media.favorite`). These are different concepts and must not be merged back into
+  a single word — `tests/trusted-circle-naming-separation.test.mjs` enforces it.
 - Use plain, human language in user-facing copy; AI must assist without requiring
   prompt-engineering knowledge from the user.
 - Originals imported from external providers must never be modified in place.
@@ -153,6 +173,15 @@ Architecture:
   before hand-writing similar UI.
 - Prefer incremental extraction over large rewrites; don't introduce a separately
   deployed worker/service without a measured scaling/durability need.
+- Every creative feature declares its billing in `lib/creative-credits.js`. A feature
+  that calls an external model is `ai_credits` and **must** reserve through
+  `lib/ai-spend-gate.js` (normally via `lib/ai/gateway.js`) before running, then
+  settle or release. A feature that produces deterministic output from data the user
+  already owns is `included_free` and must not claim to charge — charging for a
+  template is as dishonest as spending silently.
+- Features that can run on metadata alone should. `lib/triage.js`, `lib/trip-sharing.js`
+  and `lib/post-composer.js` deliberately have no imports, so they cannot reach a
+  provider and cost nothing to run on a large library. Keep them that way.
 
 Testing:
 - Bug fixes should include a regression test where practical.
