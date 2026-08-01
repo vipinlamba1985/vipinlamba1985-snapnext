@@ -11,7 +11,8 @@ import { runAiTask, getAiEntitlement, getAiUsageSummary, preflightAiRequest } fr
 import { sendEmail, recordWebhookEvent, hasRealProvider, isProduction } from '@/lib/email';
 import { verifyUnsubToken } from '@/lib/email/tokens';
 import { billing } from '@/lib/billing';
-import { getFavoriteLink, setPerms, canViewOwnersResource, listAcceptedFavoriteUserIds, notify, FAVORITE_PERM_KEYS } from '@/lib/favorites';
+import { getTrustedLink, setPerms, canViewOwnersResource, listTrustedCircleUserIds, TRUSTED_PERM_KEYS } from '@/lib/trusted-circle/links';
+import { notify } from '@/lib/notify';
 import { runExportJob, cleanupExpiredExports, createJob, EXPORT_DIR } from '@/lib/exports';
 import { computeInsights } from '@/lib/insights';
 import fs from 'fs';
@@ -867,8 +868,8 @@ async function handle(request, ctx) {
       });
     }
 
-    // ---------- FAVORITES AI ----------
-    if (route === '/favorites/ai' && method === 'GET') {
+    // ---------- TRUSTED CIRCLE AI ----------
+    if (route === '/trusted-circle/ai' && method === 'GET') {
       const user = await requireUser(request);
       if (!user) return json({ error: 'Unauthorized' }, 401);
 
@@ -1245,132 +1246,14 @@ async function handle(request, ctx) {
       }
     }
 
-    // ========== FAVORITES ==========
-    if (route === '/favorites' && method === 'GET') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const all = await db.collection('favorites').find({
-        $or: [{ requesterUserId: user.id }, { targetUserId: user.id }],
-      }).sort({ createdAt: -1 }).toArray();
-      const otherIds = [...new Set(all.map(f => f.requesterUserId === user.id ? f.targetUserId : f.requesterUserId))];
-      const others = await db.collection('users').find({ id: { $in: otherIds } }).project({ id: 1, name: 1, email: 1, avatarColor: 1 }).toArray();
-      const map = Object.fromEntries(others.map(u => [u.id, u]));
-      const enrich = (f) => {
-        const otherId = f.requesterUserId === user.id ? f.targetUserId : f.requesterUserId;
-        return { ...clean(f), other: map[otherId] || { id: otherId, name: 'Unknown' }, role: f.requesterUserId === user.id ? 'requester' : 'target' };
-      };
-      return json({
-        accepted: all.filter(f => f.status === 'accepted').map(enrich),
-        incoming: all.filter(f => f.status === 'pending' && f.targetUserId === user.id).map(enrich),
-        outgoing: all.filter(f => f.status === 'pending' && f.requesterUserId === user.id).map(enrich),
-        blocked: all.filter(f => f.status === 'blocked').map(enrich),
-      });
-    }
-
-    if (route === '/favorites/invite' && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const { email, query } = await request.json().catch(() => ({}));
-      const needle = (email || query || '').toLowerCase().trim();
-      if (!needle) return json({ error: 'Email required' }, 400);
-      const target = await db.collection('users').findOne({ email: needle });
-      if (!target) return json({ error: 'No SnapNext user found with that email. Ask them to sign up first.' }, 404);
-      if (target.id === user.id) return json({ error: "You can't favorite yourself" }, 400);
-      const existing = await db.collection('favorites').findOne({
-        $or: [
-          { requesterUserId: user.id, targetUserId: target.id },
-          { requesterUserId: target.id, targetUserId: user.id },
-        ],
-      });
-      if (existing) {
-        if (existing.status === 'blocked') return json({ error: 'Blocked' }, 403);
-        if (existing.status === 'accepted') return json({ ok: true, alreadyFavorites: true });
-        if (existing.status === 'pending') return json({ ok: true, alreadyPending: true });
-        await db.collection('favorites').updateOne({ id: existing.id }, { $set: { status: 'pending', requesterUserId: user.id, targetUserId: target.id, updatedAt: new Date() } });
-      } else {
-        await db.collection('favorites').insertOne({
-          id: uuidv4(), requesterUserId: user.id, targetUserId: target.id,
-          status: 'pending', createdAt: new Date(), updatedAt: new Date(),
-        });
-      }
-      try {
-        const acceptUrl = `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || ''}/favorites`;
-        await sendEmail({
-          template: 'favorites_invite', to: target.email, userId: target.id,
-          data: { name: target.name, fromName: user.name, acceptUrl },
-          prefs: target.emailPrefs, meta: { event: 'favorite_invite' },
-        });
-      } catch (e) { console.error('[favorites/invite] email failed', e?.message); }
-      await notify(db, { userId: target.id, type: 'favorite_request', title: `${user.name} wants to be your favorite`, payload: { fromUserId: user.id, fromName: user.name } });
-      return json({ ok: true });
-    }
-
-    const favActMatch = route.match(/^\/favorites\/([^/]+)\/(accept|decline|cancel|remove|block)$/);
-    if (favActMatch && method === 'POST') {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const id = favActMatch[1]; const action = favActMatch[2];
-      const fav = await db.collection('favorites').findOne({ id });
-      if (!fav) return json({ error: 'Not found' }, 404);
-      const isParticipant = fav.requesterUserId === user.id || fav.targetUserId === user.id;
-      if (!isParticipant) return json({ error: 'Forbidden' }, 403);
-      const otherId = fav.requesterUserId === user.id ? fav.targetUserId : fav.requesterUserId;
-
-      if (action === 'accept') {
-        if (fav.targetUserId !== user.id || fav.status !== 'pending') return json({ error: 'Not allowed' }, 403);
-        await db.collection('favorites').updateOne({ id }, { $set: { status: 'accepted', acceptedAt: new Date(), updatedAt: new Date() } });
-        await notify(db, { userId: fav.requesterUserId, type: 'favorite_accepted', title: `${user.name} accepted your favorite request`, payload: { fromUserId: user.id, fromName: user.name } });
-        return json({ ok: true });
-      }
-      if (action === 'decline') {
-        if (fav.targetUserId !== user.id) return json({ error: 'Only the recipient can decline' }, 403);
-        await db.collection('favorites').updateOne({ id }, { $set: { status: 'declined', updatedAt: new Date() } });
-        return json({ ok: true });
-      }
-      if (action === 'cancel') {
-        if (fav.requesterUserId !== user.id || fav.status !== 'pending') return json({ error: 'Only sender can cancel pending' }, 403);
-        await db.collection('favorites').deleteOne({ id });
-        return json({ ok: true });
-      }
-      if (action === 'remove') {
-        await db.collection('favorites').deleteOne({ id });
-        await db.collection('favorite_permissions').deleteMany({ favoriteId: id });
-        await db.collection('shared_photos').deleteMany({
-          $or: [{ ownerUserId: user.id, recipientUserId: otherId }, { ownerUserId: otherId, recipientUserId: user.id }],
-        });
-        await db.collection('shared_album_members').deleteMany({ favoriteUserId: { $in: [user.id, otherId] } });
-        await db.collection('shared_memories').deleteMany({
-          $or: [{ ownerUserId: user.id, recipientUserId: otherId }, { ownerUserId: otherId, recipientUserId: user.id }],
-        });
-        return json({ ok: true });
-      }
-      if (action === 'block') {
-        await db.collection('favorites').updateOne({ id }, { $set: { status: 'blocked', blockedBy: user.id, updatedAt: new Date() } });
-        return json({ ok: true });
-      }
-    }
-
-    const permMatch = route.match(/^\/favorites\/([^/]+)\/permissions$/);
-    if (permMatch && (method === 'GET' || method === 'PUT')) {
-      const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
-      const id = permMatch[1];
-      const fav = await db.collection('favorites').findOne({ id });
-      if (!fav) return json({ error: 'Not found' }, 404);
-      if (fav.requesterUserId !== user.id && fav.targetUserId !== user.id) return json({ error: 'Forbidden' }, 403);
-      if (method === 'GET') {
-        const rec = await db.collection('favorite_permissions').findOne({ favoriteId: id, ownerUserId: user.id });
-        const defaults = Object.fromEntries(FAVORITE_PERM_KEYS.map(k => [k, k === 'shareFuturePhotos' ? false : true]));
-        return json({ perms: { ...defaults, ...(rec?.perms || {}) } });
-      }
-      const body = await request.json().catch(() => ({}));
-      const perms = await setPerms(db, id, user.id, body);
-      return json({ perms });
-    }
 
     // ========== SHARED PHOTOS ==========
     if (route === '/shared/photos' && method === 'POST') {
       const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
       const { mediaIds = [], recipientUserId } = await request.json().catch(() => ({}));
       if (!recipientUserId || !mediaIds.length) return json({ error: 'recipientUserId and mediaIds required' }, 400);
-      const link = await getFavoriteLink(db, user.id, recipientUserId);
-      if (!link) return json({ error: 'Not connected as favorites' }, 403);
+      const link = await getTrustedLink(db, user.id, recipientUserId);
+      if (!link) return json({ error: 'Not in your trusted circle' }, 403);
       const mediaDocs = await db.collection('media').find({ id: { $in: mediaIds }, userId: user.id, trashed: { $ne: true } }).project({ id: 1 }).toArray();
       const allowed = mediaDocs.map(m => m.id);
       const now = new Date();
@@ -1455,8 +1338,8 @@ async function handle(request, ctx) {
       if (action === 'invite') {
         const { favoriteUserId } = body;
         if (!favoriteUserId) return json({ error: 'favoriteUserId required' }, 400);
-        const link = await getFavoriteLink(db, user.id, favoriteUserId);
-        if (!link) return json({ error: 'Not connected as favorites' }, 403);
+        const link = await getTrustedLink(db, user.id, favoriteUserId);
+        if (!link) return json({ error: 'Not in your trusted circle' }, 403);
         await db.collection('shared_album_members').updateOne(
           { albumId: id, favoriteUserId },
           { $setOnInsert: { id: uuidv4(), albumId: id, favoriteUserId, addedAt: new Date() } },
@@ -1490,8 +1373,8 @@ async function handle(request, ctx) {
       const user = await requireUser(request); if (!user) return json({ error: 'Unauthorized' }, 401);
       const { title, mediaIds = [], recipientUserId } = await request.json().catch(() => ({}));
       if (!recipientUserId || !mediaIds.length || !title) return json({ error: 'title, recipientUserId, mediaIds required' }, 400);
-      const link = await getFavoriteLink(db, user.id, recipientUserId);
-      if (!link) return json({ error: 'Not connected as favorites' }, 403);
+      const link = await getTrustedLink(db, user.id, recipientUserId);
+      if (!link) return json({ error: 'Not in your trusted circle' }, 403);
       const owned = await db.collection('media').find({ id: { $in: mediaIds }, userId: user.id, trashed: { $ne: true } }).project({ id: 1 }).toArray();
       const doc = { id: uuidv4(), ownerUserId: user.id, recipientUserId, title, mediaIds: owned.map(m => m.id), sharedAt: new Date() };
       await db.collection('shared_memories').insertOne(doc);

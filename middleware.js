@@ -3,7 +3,7 @@ import { distributedRateLimit } from './lib/distributed-rate-limit';
 
 const PROTECTED_PREFIXES = [
   '/dashboard','/upload','/gallery','/memories','/memory-brain','/memory-stories','/life-graph','/journal','/health','/imports','/circles',
-  '/smart-sync','/event-director','/ai-studio','/ai-video','/ai-command','/ready-to-post','/favorites','/community','/chat',
+  '/smart-sync','/event-director','/ai-studio','/ai-video','/ai-command','/ready-to-post','/favorites','/trusted-circle','/community','/chat',
   '/downloads','/trash','/billing','/settings','/admin','/support',
 ];
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -147,7 +147,7 @@ export async function middleware(request) {
 export const config = { matcher: [
   '/api/:path*','/dashboard/:path*','/upload/:path*','/gallery/:path*','/memories/:path*','/memory-brain/:path*','/memory-stories/:path*',
   '/life-graph/:path*','/journal/:path*','/health/:path*','/imports/:path*','/circles/:path*','/smart-sync/:path*','/event-director/:path*','/ai-studio/:path*',
-  '/ai-video/:path*','/ai-command/:path*','/ready-to-post/:path*','/favorites/:path*',
+  '/ai-video/:path*','/ai-command/:path*','/ready-to-post/:path*','/favorites/:path*','/trusted-circle/:path*',
   '/community/:path*','/chat/:path*','/downloads/:path*','/trash/:path*','/billing/:path*',
   '/settings/:path*','/admin/:path*','/support/:path*',
 ] };
