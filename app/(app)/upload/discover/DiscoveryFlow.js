@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Images, LockKeyhole, Sparkles, ArrowRight, Image as ImageIcon, Film, MonitorSmartphone, FileText, User, Heart, Users, Stars, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
+import { Images, LockKeyhole, Sparkles, ArrowRight, CloudDownload, Image as ImageIcon, Film, MonitorSmartphone, FileText, User, Heart, Users, Stars, ShieldCheck } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { formatBytes } from '@/lib/utils';
 import { classifyLocalFile } from '@/lib/discovery-classify';
@@ -60,6 +61,15 @@ export default function DiscoveryFlow() {
       <input ref={inputRef} type="file" multiple accept="image/*,video/*" onChange={(event) => { chooseFiles(Array.from(event.target.files || [])); event.target.value = ''; }} className="hidden" />
       <p className="mt-4 text-sm text-white/45">For the most complete discovery, choose all your photos and videos when your library opens.</p>
       <div className="mx-auto mt-6 flex max-w-xl items-center justify-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100"><LockKeyhole className="h-4 w-4 shrink-0" /> Nothing is uploaded until you review and approve what to protect.</div>
+
+      {/* Bringing memories across from a cloud is the same job as choosing them
+          from this device, so it belongs on the screen where that choice is
+          made rather than buried in the More menu. */}
+      <div data-testid="upload-cloud-sync" className="mx-auto mt-6 flex max-w-xl flex-col items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 sm:flex-row sm:text-left">
+        <CloudDownload className="h-5 w-5 shrink-0 text-cyan-200" />
+        <p className="flex-1 text-sm leading-6 text-white/55">Already stored in a cloud? Bring photos across from Google Drive, Google Photos, Dropbox or OneDrive. SnapNext only reads them — your originals are never changed.</p>
+        <Link data-testid="upload-cloud-sync-link" href="/imports" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-5 py-2.5 text-sm font-black text-white">Add from a cloud</Link>
+      </div>
     </section></div>
   );
 

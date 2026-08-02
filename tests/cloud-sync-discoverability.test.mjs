@@ -11,14 +11,46 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => readFile(path.join(repoRoot, file), 'utf8');
 
-test('Add links to Cloud Sync', async () => {
-  const page = await read(path.join('app', '(app)', 'upload', 'page.js'));
+/**
+ * Where Add actually lands.
+ *
+ * /upload immediately redirects to /upload/discover, so a card added to
+ * upload/page.js is never seen. An earlier version of this test asserted the
+ * card existed in upload/page.js — it passed while the card was invisible in
+ * the running app, because it checked that the code existed rather than that
+ * anyone could reach it.
+ */
+async function addLandingPage() {
+  const layout = await read(path.join('app', '(app)', 'upload', 'layout.js'));
+  const redirect = layout.match(/router\.replace\('([^']+)'\)/);
+  return redirect ? redirect[1] : '/upload';
+}
+
+test('Add lands on the discovery screen, not /upload', async () => {
+  assert.equal(await addLandingPage(), '/upload/discover');
+});
+
+test('the screen Add actually lands on links to Cloud Sync', async () => {
+  const landing = await addLandingPage();
+  assert.equal(landing, '/upload/discover', 'update this test if the landing page moves');
+
+  const page = await read(path.join('app', '(app)', 'upload', 'discover', 'DiscoveryFlow.js'));
   assert.match(page, /data-testid="upload-cloud-sync"/);
   assert.match(page, /href="\/imports"/);
-  // Naming the clouds is the point — the old page hid them behind "More".
+  // Naming the clouds is the point — they used to be hidden behind "More".
   assert.match(page, /Google Drive/);
   assert.match(page, /Dropbox/);
   assert.match(page, /OneDrive/);
+});
+
+test('the card sits on the first screen, not behind a later step', async () => {
+  const page = await read(path.join('app', '(app)', 'upload', 'discover', 'DiscoveryFlow.js'));
+  const welcome = page.indexOf("flow.stage === 'welcome'");
+  const report = page.indexOf("flow.stage === 'report'");
+  const card = page.indexOf('data-testid="upload-cloud-sync"');
+
+  assert.ok(welcome !== -1 && report !== -1 && card !== -1);
+  assert.ok(card > welcome && card < report, 'the card must render in the welcome stage');
 });
 
 test('Cloud Sync is no longer buried in the More menu', async () => {
