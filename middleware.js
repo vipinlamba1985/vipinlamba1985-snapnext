@@ -12,6 +12,13 @@ const RATE_RULES = [
   { match: /\/(login|signup|password|auth)(\/|$)/i, limit: 20, windowMs: 60_000 },
   { match: /\/(checkout|billing|portal)(\/|$)/i, limit: 20, windowMs: 60_000 },
   { match: /\/(ai|generate|caption|video|protection\/upload)(\/|$)/i, limit: 30, windowMs: 60_000 },
+  // Smart search indexing spends per batch, so it is capped harder than search.
+  { match: /\/ai-index\/embeddings(\/|$)/i, limit: 20, windowMs: 600_000 },
+  // Searching by meaning embeds the phrase, and a phrase nobody has searched
+  // before cannot be served from cache. Without a limit here a script could mint
+  // unlimited cache misses; the `ai` rule above does not cover this path because
+  // it requires a slash after "ai" and this one has a hyphen.
+  { match: /\/ai-index(\/|$)/i, limit: 60, windowMs: 60_000 },
   { match: /\/(reindex|face|people\/reindex)(\/|$)/i, limit: 8, windowMs: 600_000 },
   { match: /\/(export|stream-zip|downloads\/export)(\/|$)/i, limit: 12, windowMs: 600_000 },
 ];
