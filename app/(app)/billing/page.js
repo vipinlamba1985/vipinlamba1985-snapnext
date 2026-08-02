@@ -193,16 +193,30 @@ function BillingInner() {
             {plans.filter((plan) => plan.id !== 'super_user').map((plan) => {
               const current = currentPlanId === plan.id;
               const requested = requestedPlanId === plan.id;
-              const price = plan.prices?.[interval]?.amount ?? plan.price;
-              const priceId = plan.prices?.[interval]?.stripePriceId;
+              // A yearly-only plan keeps showing its yearly price on the
+              // monthly tab rather than disappearing or showing a price that
+              // cannot be bought.
+              const yearlyOnly = Boolean(plan.yearlyOnly) && plan.id !== 'free';
+              const shownInterval = yearlyOnly ? 'yearly' : interval;
+              const price = plan.prices?.[shownInterval]?.amount ?? plan.price;
+              const priceId = plan.prices?.[shownInterval]?.stripePriceId;
               const stripeReady = !isStripeMode || !!priceId || plan.id === 'free';
               const freeDowngrade = plan.id === 'free' && !current;
+              const perMonth = yearlyOnly && price ? Math.round((price / 12) * 100) / 100 : null;
+              const saving = plan.savings;
               return (
                 <div key={plan.id} aria-current={requested ? 'true' : undefined} className={`relative rounded-2xl border p-6 ${requested ? 'ring-2 ring-pink-300/70' : ''} ${plan.popular ? 'border-pink-400/40 bg-gradient-to-b from-pink-500/10 to-transparent' : 'border-white/10 bg-white/[0.03]'}`}>
                   {plan.popular && <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-3 py-1 text-xs font-medium">Most popular</div>}
                   {requested && !current && <div className="mb-3 text-xs font-bold uppercase tracking-wider text-pink-200">Selected during signup</div>}
                   <div className="font-semibold">{plan.name}</div>
-                  <div className="mt-2 text-3xl font-bold">${price}<span className="text-base font-normal text-white/50">/{interval === 'monthly' ? 'mo' : 'yr'}</span></div>
+                  <div className="mt-2 text-3xl font-bold">${price}<span className="text-base font-normal text-white/50">/{shownInterval === 'monthly' ? 'mo' : 'yr'}</span></div>
+                  {/* The per-month figure is what makes a yearly price readable:
+                      $9.99 a year sounds dearer than $0.99 a month until it is
+                      shown as $0.83 a month. */}
+                  {perMonth && <div data-testid={`plan-permonth-${plan.id}`} className="mt-1 text-sm text-white/50">Works out to ${perMonth}/month · billed yearly</div>}
+                  {!yearlyOnly && shownInterval === 'yearly' && saving && (
+                    <div data-testid={`plan-saving-${plan.id}`} className="mt-1 text-sm font-bold text-emerald-300">Save ${saving.amount} a year · {saving.monthsFree} months free</div>
+                  )}
                   <ul className="mt-4 space-y-2 text-sm text-white/70">
                     {plan.features.map((feature, index) => <li key={index} className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-pink-400" />{feature}</li>)}
                   </ul>
