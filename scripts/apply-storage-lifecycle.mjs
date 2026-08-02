@@ -11,7 +11,7 @@
 import { mediaLifecycleConfiguration, projectedMonthlySaving } from '../lib/storage-lifecycle.js';
 
 const dryRun = process.argv.includes('--dry-run');
-const bucket = process.env.S3_BUCKET;
+const bucket = process.env.AWS_S3_BUCKET;
 
 const configuration = mediaLifecycleConfiguration({
   originalsPrefix: process.env.S3_ORIGINALS_PREFIX || 'originals/',
@@ -32,7 +32,7 @@ if (dryRun) {
 }
 
 if (!bucket) {
-  console.error('\nS3_BUCKET is not set. Refusing to guess which bucket to modify.');
+  console.error('\nAWS_S3_BUCKET is not set. Refusing to guess which bucket to modify.');
   process.exit(1);
 }
 
