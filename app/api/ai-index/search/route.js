@@ -20,10 +20,13 @@ export async function GET(request) {
 
   const db = await getDb();
 
-  // Smart search is opt-in per request and always optional: if it is not
+  // Smart search costs money, so it is opt-in per request rather than the
+  // default: the caller must ask for it (`?smart=true`). The Library asks only
+  // when the user presses "Search by meaning" after keyword results came up
+  // short, so an ordinary search never spends anything. If it is not
   // configured, or the spend gate declines, the search still runs on keywords
-  // rather than failing. Users never lose search because of a budget.
-  const wantsSmart = url.searchParams.get('smart') !== 'false' && smartSearchConfigured();
+  // rather than failing — users never lose search because of a budget.
+  const wantsSmart = url.searchParams.get('smart') === 'true' && smartSearchConfigured();
   let queryVector = null;
   let smart = { used: false, reason: wantsSmart ? null : 'not_configured' };
 

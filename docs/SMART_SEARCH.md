@@ -90,6 +90,24 @@ Removing the cap means moving to a database vector index:
 This was left as a documented limit rather than built, because which database
 you run is a deployment fact I could not verify from the repository.
 
+## Spend safety
+
+Every guard below has a test in `tests/smart-search-spend-safety.test.mjs`.
+
+- **Ordinary search is free.** `/api/media` — what the Library search box uses —
+  cannot reach the embedding provider at all.
+- **Meaning search is opt-in.** The endpoint spends only on an explicit
+  `?smart=true`. Anything else runs on keywords.
+- **It takes a deliberate tap.** The Library offers "Search by meaning" only
+  after a free search returned fewer than five results, and only a click runs
+  it. Nothing spends from an effect, a timer or a keystroke.
+- **A phrase is paid for once, ever.** Query embeddings are cached by hash and
+  shared across users, so "beach" is embedded once for the whole product. Only
+  the hash is stored — what any individual searched for is not recoverable.
+- **Indexing is bounded.** Batches are capped and caller-driven; nothing
+  schedules itself.
+- **Failures refund.** A provider error releases the reservation.
+
 ## Re-indexing
 
 `EMBEDDING_VERSION` (`smart-search-v1`) is stored on every vector. Changing the

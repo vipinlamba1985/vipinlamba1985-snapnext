@@ -8,8 +8,8 @@ import { groupByDay } from '@/lib/media-day-groups';
 import LibraryTabs from '@/components/LibraryTabs';
 import { toast } from 'sonner';
 import {
-  Check, Download, FileText, HardDrive, Images, Play, Search,
-  Star, Trash2, Upload, X,
+  Check, Download, FileText, HardDrive, Images, Loader2, Play, Search,
+  Sparkles, Star, Trash2, Upload, X,
 } from 'lucide-react';
 
 // "People" is deliberately absent: organising by person is what the Magic tab
@@ -51,10 +51,13 @@ export default function GalleryPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [viewer, setViewer] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [meaningBusy, setMeaningBusy] = useState(false);
+  const [meaningTried, setMeaningTried] = useState(false);
   const serverFilter = SERVER_FILTERS.has(collection) ? collection : 'all';
 
   async function load() {
     setLoading(true);
+    setMeaningTried(false);
     const params = new URLSearchParams({ filter: serverFilter });
     if (search) params.set('q', search);
     try {
@@ -64,6 +67,28 @@ export default function GalleryPage() {
       toast.error(error.message || 'Library could not load.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Searching by meaning calls an AI model, so it is never automatic. Ordinary
+  // searching stays free and instant; this runs only when someone asks for it
+  // after the plain search came up short.
+  async function searchByMeaning() {
+    setMeaningBusy(true);
+    try {
+      const found = await apiFetch(`/ai-index/search?smart=true&q=${encodeURIComponent(search)}`);
+      const results = Array.isArray(found?.results) ? found.results : [];
+      setMeaningTried(true);
+      if (!results.length) {
+        toast.message('Still nothing close. Try different words.');
+        return;
+      }
+      setItems(results);
+      toast.success(`Found ${results.length} ${results.length === 1 ? 'memory' : 'memories'} by meaning.`);
+    } catch (error) {
+      toast.error(error.message || 'Could not search by meaning.');
+    } finally {
+      setMeaningBusy(false);
     }
   }
 
@@ -128,6 +153,24 @@ export default function GalleryPage() {
             <input aria-label="Search your library" data-testid="library-search-input" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => event.key === 'Enter' && submitSearch()} placeholder="Search by moment, person, place, or date" className="h-12 w-full rounded-full border border-white/10 bg-white/[0.04] pl-11 pr-20 text-sm outline-none placeholder:text-white/30 focus:border-pink-400/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300" />
             {query ? <button data-testid="library-search-clear" aria-label="Clear search" onClick={() => { setQuery(''); setSearch(''); }} className="absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><X className="h-4 w-4 text-white/55" /></button> : <button aria-label="Submit library search" data-testid="library-search-submit" onClick={() => submitSearch()} className="absolute right-2 top-1/2 min-h-9 -translate-y-1/2 rounded-full px-3 py-1.5 text-xs font-black text-pink-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Search</button>}
           </div>
+
+          {/* Offered only when the free search came up short, and only on an
+              explicit tap — searching by meaning costs a credit, so it is never
+              something the app decides to spend on its own. */}
+          {!loading && !!search && !meaningTried && visibleItems.length < 5 && (
+            <div data-testid="library-meaning-prompt" className="mt-3 flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+              <span className="text-sm text-white/55">{visibleItems.length ? 'Not what you meant?' : 'Nothing matched those words.'}</span>
+              <button
+                data-testid="library-search-by-meaning"
+                onClick={searchByMeaning}
+                disabled={meaningBusy}
+                className="ml-auto inline-flex min-h-10 items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-black disabled:opacity-45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"
+              >
+                {meaningBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {meaningBusy ? 'Looking…' : 'Search by meaning'}
+              </button>
+            </div>
+          )}
 
           <div data-testid="library-filter-row" className="no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Library filters" tabIndex={0}>
             {CHIPS.map(([id, label]) => <button data-testid={`library-filter-${id}`} key={id} onClick={() => chooseCollection(id)} aria-pressed={collection === id} className={`h-10 shrink-0 rounded-full border px-4 text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${collection === id ? 'border-pink-400/45 bg-pink-500/15 text-pink-200' : 'border-white/8 bg-white/[0.035] text-white/55'}`}>{label}</button>)}
