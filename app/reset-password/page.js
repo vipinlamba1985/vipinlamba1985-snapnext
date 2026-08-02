@@ -36,9 +36,30 @@ export default function ResetPasswordPage() {
 function ResetPasswordInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const token = params.get('token_hash') || params.get('token') || '';
-  const accessToken = params.get('access_token') || '';
-  const refreshToken = params.get('refresh_token') || '';
+
+  // Supabase returns the recovery session in the URL *fragment*
+  // (#access_token=...&refresh_token=...&type=recovery). A fragment is never
+  // sent to the server and is invisible to useSearchParams, so reading only the
+  // query string made every valid reset link look like a missing one.
+  // `null` means the fragment has not been read yet, which is different from
+  // having read it and found nothing.
+  const [hashParams, setHashParams] = useState(null);
+
+  useEffect(() => {
+    const raw = typeof window === 'undefined' ? '' : window.location.hash.replace(/^#/, '');
+    setHashParams(new URLSearchParams(raw));
+    if (raw) {
+      // Once read, drop the tokens from the address bar so they do not linger
+      // in history or leak through a referrer header.
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
+
+  const token = params.get('token_hash') || params.get('token') || hashParams?.get('token_hash') || '';
+  const accessToken = params.get('access_token') || hashParams?.get('access_token') || '';
+  const refreshToken = params.get('refresh_token') || hashParams?.get('refresh_token') || '';
+  // Supabase reports a dead link in the fragment too, rather than as an HTTP error.
+  const linkError = hashParams?.get('error_code') || hashParams?.get('error') || '';
 
   const [checking, setChecking] = useState(true);
   const [tokenState, setTokenState] = useState({ ok: false, reason: '' });
@@ -49,6 +70,15 @@ function ResetPasswordInner() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    // Wait for the fragment to be read before judging the link, or the first
+    // render would always report it missing.
+    if (hashParams === null) return;
+
+    if (linkError) {
+      setTokenState({ ok: false, reason: /expired/i.test(linkError) ? 'expired' : 'invalid' });
+      setChecking(false);
+      return;
+    }
     if (!token && !accessToken) { setTokenState({ ok: false, reason: 'missing' }); setChecking(false); return; }
     if (accessToken && refreshToken) { setTokenState({ ok: true, reason: '' }); setChecking(false); return; }
     fetch(`/api/auth/reset/verify?token_hash=${encodeURIComponent(token)}`)
@@ -56,7 +86,7 @@ function ResetPasswordInner() {
       .then((d) => setTokenState({ ok: !!d.ok, reason: d.reason || '' }))
       .catch(() => setTokenState({ ok: false, reason: 'invalid' }))
       .finally(() => setChecking(false));
-  }, [token, accessToken, refreshToken]);
+  }, [hashParams, linkError, token, accessToken, refreshToken]);
 
   const strength = useMemo(() => scorePassword(password), [password]);
   const tooShort = password.length > 0 && password.length < 6;

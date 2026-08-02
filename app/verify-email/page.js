@@ -16,16 +16,37 @@ export default function VerifyEmailPage() {
 function VerifyEmailInner() {
   const params = useSearchParams();
   const router = useRouter();
-  const token = params.get('token') || '';
+
+  // Same fragment problem as the reset page: Supabase can return the
+  // verification in the URL fragment, which never reaches the server and is
+  // invisible to useSearchParams. `null` means not yet read.
+  const [hashParams, setHashParams] = useState(null);
+
+  useEffect(() => {
+    const raw = typeof window === 'undefined' ? '' : window.location.hash.replace(/^#/, '');
+    setHashParams(new URLSearchParams(raw));
+    if (raw) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, []);
+
+  // /auth/callback forwards this as `token_hash`, so accepting only `token`
+  // made every link that arrived through the callback look unverifiable.
+  const token = params.get('token_hash') || params.get('token')
+    || hashParams?.get('token_hash') || hashParams?.get('access_token') || '';
+  const linkError = hashParams?.get('error_code') || hashParams?.get('error') || '';
   const [state, setState] = useState({ checking: true, ok: false, reason: '' });
 
   useEffect(() => {
+    if (hashParams === null) return;
+    if (linkError) {
+      setState({ checking: false, ok: false, reason: /expired/i.test(linkError) ? 'expired' : 'invalid' });
+      return;
+    }
     if (!token) { setState({ checking: false, ok: false, reason: 'missing' }); return; }
-    fetch(`/api/auth/verify?token=${encodeURIComponent(token)}`)
+    fetch(`/api/auth/verify?token_hash=${encodeURIComponent(token)}`)
       .then((r) => r.json().then((d) => ({ d, ok: r.ok })))
       .then(({ d, ok }) => setState({ checking: false, ok: !!d.ok, reason: d.reason || '' }))
       .catch(() => setState({ checking: false, ok: false, reason: 'invalid' }));
-  }, [token]);
+  }, [hashParams, linkError, token]);
 
   return (
     <div className="min-h-screen grid place-items-center px-6">
