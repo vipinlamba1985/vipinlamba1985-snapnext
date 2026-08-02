@@ -38,7 +38,9 @@ test('free features cost nothing and metered features cost something', () => {
       assert.ok(feature.credits > 0, `${feature.id} is metered but declares no cost`);
     }
   }
-  assert.deepEqual(meteredFeatureIds(), ['photo_enhance']);
+  // Every feature that calls an external model, so adding one is a deliberate
+  // change rather than something that slips in unnoticed.
+  assert.deepEqual(meteredFeatureIds(), ['photo_enhance', 'smart_search_index', 'smart_search_query']);
   assert.equal(isMeteredFeature('photo_enhance'), true);
   assert.equal(isMeteredFeature('post_caption'), false);
   assert.equal(isMeteredFeature('nonsense'), false);
