@@ -23,7 +23,9 @@
     "native:add:android": "npx cap add android",
     "native:add:ios": "npx cap add ios",
     "native:open:android": "npx cap open android",
-    "native:open:ios": "npx cap open ios"
+    "native:open:ios": "npx cap open ios",
+    "storage:lifecycle": "node scripts/apply-storage-lifecycle.mjs",
+    "storage:lifecycle:dry": "node scripts/apply-storage-lifecycle.mjs --dry-run"
   },
   "dependencies": {
     "@aws-sdk/client-rekognition": "3.713.0",

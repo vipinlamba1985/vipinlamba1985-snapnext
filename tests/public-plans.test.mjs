@@ -8,7 +8,7 @@ test('public plan catalogue mirrors the authoritative launch plans', () => {
   assert.deepEqual(plans.map((plan) => plan.id), ['free', 'starter', 'plus', 'pro', 'family']);
   // Starter carries no monthly price, so its headline monthly figure is 0.
   assert.deepEqual(plans.map((plan) => plan.price), [0, 0, 3.99, 8.99, 14.99]);
-  assert.deepEqual(plans.map((plan) => plan.storageGb), [15, 20, 75, 200, 400]);
+  assert.deepEqual(plans.map((plan) => plan.storageGb), [10, 20, 75, 200, 400]);
   assert.equal(plans.some((plan) => plan.id === 'super_user'), false);
 
   const starter = plans.find((plan) => plan.id === 'starter');
