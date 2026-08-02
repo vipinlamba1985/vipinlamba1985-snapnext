@@ -18,7 +18,7 @@ test('an interval a plan does not sell cannot become a Stripe line item', () => 
   // Starter is yearly only, so a monthly line item must be refused outright
   // rather than built from a missing amount.
   assert.throws(() => inlineStripeLineItem(PLANS.starter, 'monthly'), /positive paid-plan amount/i);
-  assert.equal(inlineStripeLineItem(PLANS.starter, 'yearly').price_data.unit_amount, 999);
+  assert.equal(inlineStripeLineItem(PLANS.starter, 'yearly').price_data.unit_amount, 1188);
 });
 
 test('billing API falls back to inline recurring pricing only for missing configured prices', () => {

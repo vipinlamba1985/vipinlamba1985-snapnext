@@ -13,7 +13,7 @@ test('Starter is sold yearly only', () => {
   assert.equal(PLANS.starter.yearlyOnly, true);
   assert.equal(PLANS.starter.prices.monthly.amount, null);
   assert.equal(PLANS.starter.prices.monthly.stripePriceId, null);
-  assert.equal(PLANS.starter.prices.yearly.amount, 9.99);
+  assert.equal(PLANS.starter.prices.yearly.amount, 11.88);
 });
 
 test('a monthly Starter checkout is refused by the server', () => {
@@ -44,8 +44,9 @@ test('the other paid plans keep both intervals', () => {
 });
 
 test('a yearly price is shown as what it costs per month', () => {
-  // $9.99 a year reads as dearer than "$0.99 a month" until it is shown this way.
-  assert.equal(monthlyEquivalent('starter'), 0.83);
+  // The yearly amount is twelve months at the price point, so the per-month
+  // figure is exactly $0.99 rather than an odd number from a rounded total.
+  assert.equal(monthlyEquivalent('starter'), 0.99);
   assert.ok(monthlyEquivalent('plus') < PLANS.plus.prices.monthly.amount);
 });
 

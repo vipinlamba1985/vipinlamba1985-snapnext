@@ -7,7 +7,7 @@ test('launch pricing follows the approved entry-to-family ladder', () => {
   // Starter is yearly only: a $0.99 monthly charge loses about a third to the
   // fixed card processing fee before storage or AI is paid for.
   assert.equal(PLANS.starter.prices.monthly.amount, null);
-  assert.equal(PLANS.starter.prices.yearly.amount, 9.99);
+  assert.equal(PLANS.starter.prices.yearly.amount, 11.88);
 
   assert.equal(PLANS.plus.prices.monthly.amount, 3.99);
   assert.equal(PLANS.pro.prices.monthly.amount, 8.99);

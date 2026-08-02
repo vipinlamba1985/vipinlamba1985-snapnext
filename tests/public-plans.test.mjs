@@ -13,7 +13,7 @@ test('public plan catalogue mirrors the authoritative launch plans', () => {
 
   const starter = plans.find((plan) => plan.id === 'starter');
   assert.equal(starter.yearlyOnly, true);
-  assert.equal(starter.prices.yearly.amount, 9.99);
+  assert.equal(starter.prices.yearly.amount, 11.88);
   assert.equal(starter.prices.yearly.checkoutMode, 'inline_price');
   // Nothing may present a buyable monthly Starter.
   assert.equal(starter.prices.monthly.stripePriceId, null);

@@ -173,7 +173,11 @@ export default function AppShell({ children }) {
   const pct = usage && !currentIsSuperExperience && usage.plan?.storageBytes ? Math.min(100, Math.round((usage.usage.bytes / usage.plan.storageBytes) * 100)) : 0;
 
   return <div className="min-h-screen md:grid md:grid-cols-[248px_1fr]">
-    <aside className={`fixed md:static z-50 inset-y-0 left-0 w-72 md:w-auto bg-[#0b0414]/95 md:bg-white/[0.02] backdrop-blur border-r border-white/5 transform ${open ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform`}>
+    {/* A column that scrolls its own navigation. Without this the sidebar was
+        a fixed, full-height block with no overflow handling, so every item past
+        the bottom of the screen — Trash, Billing, Support — was unreachable on
+        a short window or a phone. */}
+    <aside className={`fixed md:sticky md:top-0 z-50 inset-y-0 left-0 flex h-full md:h-screen w-72 md:w-auto flex-col bg-[#0b0414]/95 md:bg-white/[0.02] backdrop-blur border-r border-white/5 transform ${open ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-transform`}>
       <div className="p-5 flex items-center justify-between"><Link href="/dashboard" className="flex items-center gap-2"><BrandLogo size={32} priority /><span className="font-semibold">SnapNext AI</span></Link><button className="md:hidden" onClick={() => setOpen(false)}><X className="h-5 w-5" /></button></div>
 
       <Link href="/settings" onClick={() => setOpen(false)} className="mx-3 mb-4 block rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:bg-white/[0.05]">
@@ -182,7 +186,13 @@ export default function AppShell({ children }) {
         {currentIsSuperExperience && <div className="mt-3 text-[11px] text-amber-300">Unlimited storage · Unlimited AI</div>}
       </Link>
 
-      <nav aria-label="Primary navigation" className="px-2">
+      <nav
+        aria-label="Primary navigation"
+        data-testid="sidebar-nav"
+        // flex-1 + overflow-y-auto is what makes the list reachable; the bottom
+        // padding clears the phone home indicator so "Sign out" is not cut off.
+        className="flex-1 overflow-y-auto overscroll-contain px-2 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]"
+      >
         <div className="mb-2 px-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/30">Your SnapNext</div>
         <div className="space-y-1">{primaryNav.map(item => <NavItem key={item.href} item={item} pathname={pathname} onClick={() => setOpen(false)} />)}</div>
 
