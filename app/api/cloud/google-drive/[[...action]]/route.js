@@ -19,7 +19,13 @@ const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
 const GOOGLE_REVOKE = 'https://oauth2.googleapis.com/revoke';
 const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+// `drive.file` grants access only to files the user picks in Google's own
+// Picker. `drive.readonly` — which this used to request — reads the user's
+// entire Drive, is classified by Google as a restricted scope, and requires an
+// annual third-party security assessment before it can be used outside testing.
+// SnapNext only ever needs the files someone chooses to import, so the
+// per-file scope is both the honest one and the one that needs no audit.
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const OAUTH_COOKIE = 'snapnext_cloud_state';
 const MAX_IMPORT_FILES = 10;
 const DRIVE_FIELDS = 'id,name,mimeType,size,createdTime,modifiedTime,thumbnailLink,md5Checksum,sha1Checksum,sha256Checksum,version,trashed';
@@ -190,7 +196,33 @@ export async function GET(request, context) {
   }
 
   const connection = await getConnection(db, user.id);
+  // Google Picker runs in the browser and needs an access token there. The
+  // token is short-lived and scoped to drive.file, so it can only reach files
+  // the user has already chosen — it is not a key to their Drive. The refresh
+  // token stays server-side and is never sent.
+  if (action === 'picker-token') {
+    if (!connection) return json({ error: 'Connect Google Drive first.' }, 400);
+    const token = await accessToken(db, connection);
+    return json({
+      accessToken: token,
+      appId: process.env.GOOGLE_DRIVE_PROJECT_NUMBER || null,
+      apiKey: process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY || null,
+      scope: DRIVE_SCOPE,
+    });
+  }
+
   if (action === 'files') {
+    // Listing someone's whole Drive is exactly what drive.file does not allow,
+    // and exactly what the restricted scope existed for. Selection now happens
+    // in Google's Picker instead, which hands back the chosen file ids.
+    return json({
+      error: 'Google Drive files are chosen in the Google Picker now.',
+      code: 'picker_required',
+      items: [],
+    }, 410);
+  }
+
+  if (action === 'files-legacy') {
     if (!connection) return json({ error: 'Connect Google Drive first.' }, 400);
     await ensureCloudAssetIndexes(db);
     const token = await accessToken(db, connection);

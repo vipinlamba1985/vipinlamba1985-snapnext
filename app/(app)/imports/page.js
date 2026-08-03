@@ -49,17 +49,76 @@ export default function ImportsPage() {
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const allLoadedSelected = items.length > 0 && items.every(item => selectedSet.has(item.id));
 
-  async function loadFiles(pageToken = '', append = false) {
-    const query = pageToken ? `?pageToken=${encodeURIComponent(pageToken)}` : '';
-    const files = await apiFetch(`/cloud/google-drive/files${query}`);
-    setItems(current => {
-      if (!append) return files.items || [];
-      const map = new Map(current.map(item => [item.id, item]));
-      for (const item of files.items || []) map.set(item.id, item);
-      return [...map.values()];
+  // Files are chosen in Google's own Picker rather than listed here. SnapNext
+  // asks for the per-file `drive.file` scope, which cannot read a whole Drive —
+  // so there is nothing to page through, and no restricted-scope security
+  // assessment standing between this feature and launch.
+  async function loadFiles() {
+    setItems([]);
+    setNextPageToken(null);
+    return { items: [] };
+  }
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) return resolve();
+      const element = document.createElement('script');
+      element.src = src;
+      element.onload = () => resolve();
+      element.onerror = () => reject(new Error('Google Picker could not be loaded.'));
+      document.body.appendChild(element);
     });
-    setNextPageToken(files.nextPageToken || null);
-    return files;
+  }
+
+  async function openGooglePicker() {
+    setBusy('picker');
+    try {
+      const auth = await apiFetch('/cloud/google-drive/picker-token');
+      if (!auth.accessToken) throw new Error('Connect Google Drive first.');
+      if (!auth.apiKey) throw new Error('Google Picker is not configured for this deployment yet.');
+
+      await loadScript('https://apis.google.com/js/api.js');
+      await new Promise(resolve => window.gapi.load('picker', resolve));
+
+      const picked = await new Promise((resolve) => {
+        const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
+          .setIncludeFolders(true)
+          .setMimeTypes('image/png,image/jpeg,image/heic,image/webp,video/mp4,video/quicktime');
+
+        const builder = new window.google.picker.PickerBuilder()
+          .addView(view)
+          .setOAuthToken(auth.accessToken)
+          .setDeveloperKey(auth.apiKey)
+          .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
+          .setCallback((data) => {
+            if (data.action === window.google.picker.Action.PICKED) resolve(data.docs || []);
+            else if (data.action === window.google.picker.Action.CANCEL) resolve([]);
+          });
+
+        if (auth.appId) builder.setAppId(auth.appId);
+        builder.build().setVisible(true);
+      });
+
+      if (!picked.length) return;
+      if (picked.length > MAX_SELECTED_FILES) {
+        toast.error(`Choose up to ${MAX_SELECTED_FILES} items at a time.`);
+        return;
+      }
+
+      setItems(picked.map(doc => ({
+        id: doc.id,
+        name: doc.name,
+        mime: doc.mimeType,
+        size: Number(doc.sizeBytes || 0),
+        importState: 'available_to_import',
+      })));
+      setSelected(picked.map(doc => doc.id));
+      toast.success(`${picked.length} ${picked.length === 1 ? 'item' : 'items'} chosen. Review and bring them in.`);
+    } catch (error) {
+      toast.error(error.message || 'Google Picker could not be opened.');
+    } finally {
+      setBusy('');
+    }
   }
 
   async function loadStatus() {
@@ -80,7 +139,7 @@ export default function ImportsPage() {
         setNextPageToken(null);
       }
     } catch (error) {
-      toast.error(error.message || 'We could not open Cloud Sync.');
+      toast.error(error.message || 'We could not open cloud import.');
     } finally {
       setLoading(false);
     }
@@ -276,10 +335,16 @@ export default function ImportsPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="font-black">Choose memories to bring in</h3>
-                <p className="mt-1 text-xs text-white/45">{items.length} loaded · {selected.length} selected · up to {MAX_SELECTED_FILES} per import job</p>
+                <p className="mt-1 text-xs text-white/45">{items.length} chosen · {selected.length} selected · up to {MAX_SELECTED_FILES} per import job</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={toggleAllLoaded} disabled={!items.length || busy === 'import'} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold">{allLoadedSelected ? 'Clear loaded' : 'Select all loaded'}</button>
+                {/* Selection happens in Google's own window. SnapNext only ever
+                    receives the files chosen there — it cannot see the rest of
+                    the Drive, by design. */}
+                <button data-testid="drive-open-picker" onClick={openGooglePicker} disabled={busy === 'picker' || busy === 'import'} className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-black disabled:opacity-45">
+                  {busy === 'picker' ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <CloudDownload className="h-3.5 w-3.5"/>} Choose from Google Drive
+                </button>
+                <button onClick={toggleAllLoaded} disabled={!items.length || busy === 'import'} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold">{allLoadedSelected ? 'Clear chosen' : 'Select all chosen'}</button>
                 <button onClick={loadStatus} disabled={busy === 'import'} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs font-bold"><RefreshCw className="h-3.5 w-3.5"/> Refresh</button>
                 <button onClick={disconnect} disabled={busy === 'disconnect' || busy === 'import'} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/60"><LogOut className="h-3.5 w-3.5"/> Disconnect</button>
               </div>
@@ -298,12 +363,13 @@ export default function ImportsPage() {
                   </button>;
                 })}
               </div>
-            ) : <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-white/45">No photos or videos were found in this connected account.</div>}
-
-            {nextPageToken && (
-              <div className="flex flex-wrap gap-2">
-                <button onClick={loadMore} disabled={loadingMore || busy === 'import'} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm font-bold disabled:opacity-40">{loadingMore && <Loader2 className="h-4 w-4 animate-spin"/>} Load next 100</button>
-                <button onClick={loadAll} disabled={loadingMore || busy === 'import'} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-bold disabled:opacity-40">Load complete library</button>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center">
+                <p className="text-sm text-white/55">Nothing chosen yet.</p>
+                <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-white/40">Open Google Drive to pick the photos and videos you want. SnapNext only ever sees the items you choose — it cannot browse the rest of your Drive.</p>
+                <button data-testid="drive-open-picker-empty" onClick={openGooglePicker} disabled={busy === 'picker'} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-black text-black disabled:opacity-45">
+                  {busy === 'picker' ? <Loader2 className="h-4 w-4 animate-spin"/> : <CloudDownload className="h-4 w-4"/>} Choose from Google Drive
+                </button>
               </div>
             )}
 

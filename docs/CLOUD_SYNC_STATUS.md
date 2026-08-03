@@ -99,3 +99,43 @@ claim that it is finished.
 `tests/cloud-sync-provider-surface.test.mjs` checks that every web provider has
 credentials, a connect path and a real adapter behind it, and that the browser
 payload never carries environment variable names.
+
+## Google Drive uses the Picker, not whole-Drive access
+
+Drive requests `drive.file`, the per-file scope. It has no ability to list or
+read a user's Drive; it can only reach files the user picked in Google's own
+Picker window.
+
+This is a deliberate compliance decision. `drive.readonly` — what this used to
+request — is classified by Google as a **restricted scope** and requires an
+annual third-party security assessment before it can be used outside testing
+mode. The assessment is priced by external assessors, not Google, and takes
+months. SnapNext only ever needs the files someone chooses, so the per-file
+scope is both the honest request and the one with no audit attached.
+
+Consequences:
+
+- `/api/cloud/google-drive/files` returns **410** with `picker_required`.
+  Nothing can list a Drive any more, by design.
+- Selection happens client-side via Google Picker; the chosen file ids go to the
+  existing import endpoint unchanged.
+- `/api/cloud/google-drive/picker-token` hands the browser a short-lived
+  access token scoped to `drive.file`. The refresh token never leaves the server.
+
+### Extra configuration
+
+| Variable | Purpose |
+| :--- | :--- |
+| `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY` | Browser API key for the Picker. Restrict it to your domain. |
+| `GOOGLE_DRIVE_PROJECT_NUMBER` | Optional Picker `appId`. |
+
+Without the API key the Picker reports that it is not configured rather than
+failing silently.
+
+## The feature is import, not sync
+
+It is named "Import from Cloud" everywhere a user can see it. Nothing polls a
+provider on a schedule on the user's behalf, so calling it sync would promise
+background work that does not happen. Ongoing background sync remains a
+possible paid feature later, with explicit consent and storage-limit
+enforcement — see `SNAPNEXT_BLUEPRINT_V4.md`.

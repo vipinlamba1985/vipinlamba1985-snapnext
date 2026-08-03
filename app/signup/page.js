@@ -70,7 +70,7 @@ function SignupContent() {
         <div className="rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur p-8 relative">
           {isSupabaseConfigured && (
             <div className="absolute top-4 right-4 flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-bold">
-              <CheckCircle2 className="h-3 w-3" /> Cloud Sync Active
+              <CheckCircle2 className="h-3 w-3" /> Import from Cloud
             </div>
           )}
 

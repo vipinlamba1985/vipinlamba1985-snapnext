@@ -31,7 +31,7 @@ const ROUTES = [
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/journal', label: 'Life Journal', icon: BookOpen },
   { href: '/gallery/cleanup', label: 'Memory Health', icon: ShieldAlert },
-  { href: '/imports', label: 'Cloud Sync', icon: RefreshCw },
+  { href: '/imports', label: 'Import from Cloud', icon: RefreshCw },
   { href: '/life-graph', label: 'Life Graph', icon: Network },
   { href: '/ready-to-post', label: 'Ready to Post', icon: Send },
   { href: '/ai-video', label: 'AI Video', icon: Film, aiCapability: 'video', featureFlag: 'aiVideo' },

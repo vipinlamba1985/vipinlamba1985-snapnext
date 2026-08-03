@@ -62,7 +62,9 @@ test('Cloud Sync is no longer buried in the More menu', async () => {
 
   // The route entry itself must stay: AppShell resolves the page's label and
   // gating from ROUTES, independently of which menu lists it.
-  assert.match(shell, /\{ href: '\/imports', label: 'Cloud Sync'/);
+  // "Import from Cloud", not "Cloud Sync": nothing syncs continuously, and
+  // naming it sync promises ongoing background work the product does not do.
+  assert.match(shell, /\{ href: '\/imports', label: 'Import from Cloud'/);
 });
 
 test('primary navigation is still exactly five items', async () => {
