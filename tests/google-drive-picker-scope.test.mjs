@@ -17,7 +17,10 @@ const IMPORTS_PAGE = path.join('app', '(app)', 'imports', 'page.js');
 
 test('Drive asks for the per-file scope, never the restricted one', async () => {
   const route = await read(DRIVE_ROUTE);
-  assert.match(route, /auth\/drive\.file/);
+  const scopes = await read(path.join('lib', 'google-drive-scope.js'));
+  // The scope is defined once, in the module that also refuses the wide ones.
+  assert.match(scopes, /REQUIRED_DRIVE_SCOPE = 'https:\/\/www\.googleapis\.com\/auth\/drive\.file'/);
+  assert.match(route, /DRIVE_SCOPE = REQUIRED_DRIVE_SCOPE/);
   assert.doesNotMatch(route, /auth\/drive\.readonly/, 'the restricted scope must not come back');
 });
 
@@ -78,7 +81,9 @@ test('a grant issued under the old scope is revoked, not reused', async () => {
   const route = await read(DRIVE_ROUTE);
   // Rewriting what the code requests does not narrow a grant Google already
   // issued, so an old connection must be handed back rather than kept.
-  assert.match(route, /grantedScope: DRIVE_SCOPE/);
+  // The granted scope is stored, not the requested one — see
+  // tests/google-drive-grant.test.mjs for why that distinction matters.
+  assert.match(route, /grantedScope: grant\.scopes\.join/);
   assert.match(route, /needsRescope/);
   assert.match(route, /oauth2\.googleapis\.com\/revoke/);
   assert.match(route, /rescope_required/);

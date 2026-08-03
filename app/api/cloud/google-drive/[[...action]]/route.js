@@ -12,6 +12,7 @@ import {
   metricsIncrementPatch,
   normalizeSyncMetrics,
 } from '@/lib/smart-sync/cloud-assets';
+import { REQUIRED_DRIVE_SCOPE, grantNeedsRescope, inspectDriveGrant } from '@/lib/google-drive-scope';
 
 export const runtime = 'nodejs';
 
@@ -25,7 +26,7 @@ const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files';
 // annual third-party security assessment before it can be used outside testing.
 // SnapNext only ever needs the files someone chooses to import, so the
 // per-file scope is both the honest one and the one that needs no audit.
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_SCOPE = REQUIRED_DRIVE_SCOPE;
 const OAUTH_COOKIE = 'snapnext_cloud_state';
 const MAX_IMPORT_FILES = 10;
 const DRIVE_FIELDS = 'id,name,mimeType,size,createdTime,modifiedTime,thumbnailLink,md5Checksum,sha1Checksum,sha256Checksum,version,trashed';
@@ -84,7 +85,9 @@ async function getConnection(db, userId) { return db.collection('cloud_connectio
  * they are revoked and the user reconnects.
  */
 function needsRescope(connection) {
-  return Boolean(connection) && connection.grantedScope !== DRIVE_SCOPE;
+  // Exact equality would reject valid grants: Google varies scope order and may
+  // legitimately add identity scopes. A grant is judged by what it can reach.
+  return Boolean(connection) && grantNeedsRescope(connection.grantedScope);
 }
 
 /**
@@ -97,7 +100,7 @@ async function revokeStaleGrant(db, connection) {
   const token = connection.refreshToken || connection.accessToken;
   if (token) {
     try {
-      await fetch('https://oauth2.googleapis.com/revoke', {
+      await fetch(GOOGLE_REVOKE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ token: decrypt(token) }),
@@ -178,6 +181,21 @@ export async function GET(request, context) {
     const data = await response.json();
     if (!response.ok || !data.access_token) return cloudRedirect(request, 'failed');
 
+    // Trust what Google granted, not what was requested. Incremental
+    // authorisation can carry an older, wider grant into a new one, so a
+    // connection is refused outright — and the grant handed back — rather than
+    // stored, if it can still read more than the files a user picks.
+    const grant = inspectDriveGrant(data.scope);
+    if (!grant.ok) {
+      console.error('[google-drive] refused grant', grant.reason, grant.forbidden.join(' '));
+      await fetch(GOOGLE_REVOKE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: data.refresh_token || data.access_token }),
+      }).catch(() => {});
+      return cloudRedirect(request, 'failed');
+    }
+
     const set = {
       userId: parsed.userId,
       provider: 'google_drive',
@@ -185,10 +203,10 @@ export async function GET(request, context) {
       expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000),
       connectedAt: new Date(),
       smartSyncInitialCompleted: false,
-      // Recorded so a connection authorised under an older, wider scope can be
-      // detected later. Changing what the code requests does not shrink a grant
-      // Google has already issued — only reconnecting does.
-      grantedScope: DRIVE_SCOPE,
+      // What Google actually granted, not what was requested. The two differ
+      // when an older grant is carried forward, and only the granted value can
+      // reveal that.
+      grantedScope: grant.scopes.join(' '),
       updatedAt: new Date(),
     };
     if (data.refresh_token) set.refreshToken = encrypt(data.refresh_token);
@@ -269,6 +287,20 @@ export async function GET(request, context) {
       }, 503);
     }
     const token = await accessToken(db, connection);
+
+    // Last gate before a token leaves the server. A refresh token representing
+    // a combined authorisation can mint an access token carrying the whole
+    // grant, so the stored scope is checked again here rather than assumed
+    // from the connection having been accepted earlier.
+    const grant = inspectDriveGrant(connection.grantedScope);
+    if (!grant.ok) {
+      await revokeStaleGrant(db, connection);
+      return json({
+        error: 'Google Drive permissions were narrowed to the photos you choose. Please reconnect.',
+        code: 'rescope_required',
+      }, 409);
+    }
+
     return json({
       accessToken: token,
       appId: process.env.GOOGLE_DRIVE_PROJECT_NUMBER || null,
