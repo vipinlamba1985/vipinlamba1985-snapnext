@@ -68,7 +68,7 @@ Authorize: `https://<your-domain>/api/circles/connections/youtube/callback`
 | `DROPBOX_CLIENT_ID` / `DROPBOX_CLIENT_SECRET` | REQUIRED FOR FEATURE | Dropbox read-only Smart Sync. |
 | `ONEDRIVE_CLIENT_ID` / `ONEDRIVE_CLIENT_SECRET` | REQUIRED FOR FEATURE | OneDrive read-only Smart Sync. |
 | `ONEDRIVE_TENANT_ID` | OPTIONAL (default `common`) | Microsoft tenant for OneDrive OAuth. |
-| `SMART_SYNC_TOKEN_ENCRYPTION_KEY` | REQUIRED FOR FEATURE | Encrypts cloud refresh tokens at rest. |
+| `CLOUD_CONNECTOR_SECRET` | REQUIRED FOR FEATURE | Encrypts cloud refresh tokens at rest (`lib/cloud-token-crypto.js`) and signs the OAuth state. Required by every provider above. Rotating it makes stored tokens undecryptable, so every user must reconnect. |
 
 ## Storage (AWS S3 and persistent local volumes)
 
@@ -100,7 +100,7 @@ SnapNext supports two Stripe pricing modes:
 | `STRIPE_SECRET_KEY` | REQUIRED FOR WEB PRODUCTION | Creates customers, subscriptions, Checkout and portal sessions. |
 | `STRIPE_WEBHOOK_SECRET` | REQUIRED FOR WEB PRODUCTION | Verifies webhook signatures before changing entitlements. |
 | `STRIPE_CURRENCY` | OPTIONAL (default `usd`) | Three-letter currency used by inline recurring-price Checkout. |
-| `STRIPE_PRICE_STARTER_MONTHLY` / `STRIPE_PRICE_STARTER_YEARLY` | OPTIONAL | Reuse pre-created Starter Stripe Prices instead of inline pricing. |
+| `STRIPE_PRICE_STARTER_YEARLY` | OPTIONAL | Reuse a pre-created Starter Stripe Price instead of inline pricing. Starter is sold yearly only, so there is no monthly price to configure. |
 | `STRIPE_PRICE_PLUS_MONTHLY` / `STRIPE_PRICE_PLUS_YEARLY` | OPTIONAL | Reuse pre-created Plus Stripe Prices instead of inline pricing. |
 | `STRIPE_PRICE_PRO_MONTHLY` / `STRIPE_PRICE_PRO_YEARLY` | OPTIONAL | Reuse pre-created Pro Stripe Prices instead of inline pricing. |
 | `STRIPE_PRICE_FAMILY_MONTHLY` / `STRIPE_PRICE_FAMILY_YEARLY` | OPTIONAL | Reuse pre-created Family Stripe Prices instead of inline pricing. |

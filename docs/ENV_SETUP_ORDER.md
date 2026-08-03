@@ -94,12 +94,11 @@ URL below must be registered with that provider exactly.
 
 | Variable | Where to get it |
 |---|---|
-| `SMART_SYNC_TOKEN_ENCRYPTION_KEY` | `openssl rand -base64 32`. **Required for any provider below** |
+| `CLOUD_CONNECTOR_SECRET` | `openssl rand -base64 32`. **Required for any provider below** — it encrypts stored refresh tokens and signs the OAuth state |
 | `GOOGLE_DRIVE_CLIENT_ID` / `_SECRET` | console.cloud.google.com → APIs & Services → Credentials → OAuth client ID → Web application |
 | `GOOGLE_PHOTOS_CLIENT_ID` / `_SECRET` | Same place, separate client |
 | `DROPBOX_CLIENT_ID` / `_SECRET` | dropbox.com/developers/apps → Create app → Scoped access |
 | `ONEDRIVE_CLIENT_ID` / `_SECRET` | portal.azure.com → App registrations → New registration |
-| `CLOUD_CONNECTOR_SECRET` | `openssl rand -base64 32` |
 
 Callback URLs to register:
 
