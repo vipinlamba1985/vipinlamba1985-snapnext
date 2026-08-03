@@ -8,7 +8,7 @@ cannot happen yet. Providers are declared once, in
 
 | Provider | Auth | Strategy | Status |
 | :--- | :--- | :--- | :--- |
-| Google Drive | OAuth (`drive.readonly`) | Durable cloud job | ✅ Browse, pick, import, auto-sync |
+| Google Drive | OAuth (`drive.file`) | User-selected picker | ✅ Pick in Google Picker, then import |
 | Google Photos | Picker OAuth | User-selected picker | ✅ User picks items, then import |
 | Dropbox | OAuth | Durable cloud job | ✅ Delta cursor, checksums, download |
 | OneDrive | OAuth (Graph delta) | Durable cloud job | ✅ Delta link, checksums, download |
@@ -22,14 +22,25 @@ from `process.env`, never from a hand-maintained flag. If a cloud shows "Not set
 up", the deployment is missing keys — see
 `docs/SMART_SYNC_PROVIDER_ENV_CHECKLIST.md`. Nothing in the code needs changing.
 
-All cloud access is **read-only**. SnapNext never requests write or delete
-scope, so an import can never modify the original account.
+Dropbox, OneDrive and Google Photos are requested with **read-only** scopes, so
+an import cannot modify those accounts even in principle.
+
+**Google Drive is the exception, and the wording matters.** `drive.file` is a
+per-file scope, not a read-only one: it permits creating and modifying the files
+the app has been given access to. Google offers no per-file read-only
+equivalent, so read-only behaviour for Drive is enforced by SnapNext's own code
+rather than by the scope. The import path only ever reads metadata and content —
+it never calls update, delete, permissions or upload against Drive — and
+`tests/google-drive-picker-scope.test.mjs` fails if it starts to.
+
+Saying "SnapNext cannot touch your Drive" would therefore be a claim the scope
+does not back. What is true: SnapNext cannot enumerate a Drive, and only reaches
+files the user picked.
 
 ### Two surfaces, two jobs
 
-- **`/imports` (Cloud Sync)** — connect a cloud, browse it, pick what to bring
-  in once. Google Drive browses inline; other providers connect here and are
-  then managed in Smart Backup.
+- **`/imports` (Import from Cloud)** — connect a cloud and pick what to bring
+  in once. Drive and Photos use Google's Picker; other providers connect here.
 - **`/smart-sync` (Smart Backup)** — ongoing automatic backup: rules, modes,
   jobs, capacity.
 
@@ -127,10 +138,18 @@ Consequences:
 | Variable | Purpose |
 | :--- | :--- |
 | `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY` | Browser API key for the Picker. Restrict it to your domain. |
-| `GOOGLE_DRIVE_PROJECT_NUMBER` | Optional Picker `appId`. |
+| `GOOGLE_DRIVE_PROJECT_NUMBER` | Cloud project number, used as the Picker `appId`. **Required** — without it picked files are not associated with this app. |
 
-Without the API key the Picker reports that it is not configured rather than
-failing silently.
+Both are required. `/picker-token` returns 503 `picker_not_configured` when
+either is missing, rather than opening a Picker that cannot return usable files.
+
+### Migrating an older connection
+
+A Drive connection authorised before this change still holds a `drive.readonly`
+grant — rewriting what the code requests does not narrow a grant Google has
+already issued. Such a connection is revoked at Google and deleted on first
+sight, and the user is asked to reconnect once. Responses carry
+`rescope_required` so the UI can explain why.
 
 ## The feature is import, not sync
 

@@ -77,6 +77,38 @@ function decrypt(value) {
 }
 async function getConnection(db, userId) { return db.collection('cloud_connections').findOne({ userId, provider: 'google_drive' }); }
 
+/**
+ * A connection authorised before the move to `drive.file` still holds a grant
+ * for the wider scope. Rewriting what the code asks for does not narrow a grant
+ * Google has already issued, so those credentials keep whole-Drive access until
+ * they are revoked and the user reconnects.
+ */
+function needsRescope(connection) {
+  return Boolean(connection) && connection.grantedScope !== DRIVE_SCOPE;
+}
+
+/**
+ * Hands the old grant back to Google and drops the stored credentials, so no
+ * restricted-scope token is left behind. Revocation is best effort — if Google
+ * cannot be reached the local credentials are still removed, because keeping
+ * them is the worse outcome.
+ */
+async function revokeStaleGrant(db, connection) {
+  const token = connection.refreshToken || connection.accessToken;
+  if (token) {
+    try {
+      await fetch('https://oauth2.googleapis.com/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: decrypt(token) }),
+      });
+    } catch (error) {
+      console.error('[google-drive] revoke failed', error?.name);
+    }
+  }
+  await db.collection('cloud_connections').deleteOne({ _id: connection._id });
+}
+
 async function accessToken(db, connection) {
   if (connection.accessToken && connection.expiresAt && new Date(connection.expiresAt).getTime() > Date.now() + 60_000) return decrypt(connection.accessToken);
   if (!connection.refreshToken) throw new Error('Please reconnect Google Drive.');
@@ -153,6 +185,10 @@ export async function GET(request, context) {
       expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000),
       connectedAt: new Date(),
       smartSyncInitialCompleted: false,
+      // Recorded so a connection authorised under an older, wider scope can be
+      // detected later. Changing what the code requests does not shrink a grant
+      // Google has already issued — only reconnecting does.
+      grantedScope: DRIVE_SCOPE,
       updatedAt: new Date(),
     };
     if (data.refresh_token) set.refreshToken = encrypt(data.refresh_token);
@@ -195,13 +231,43 @@ export async function GET(request, context) {
     return response;
   }
 
-  const connection = await getConnection(db, user.id);
+  let connection = await getConnection(db, user.id);
+
+  // A grant issued under the old whole-Drive scope is revoked on first sight
+  // rather than reused. The user reconnects once and the wider permission is
+  // gone from their Google account as well as from this database.
+  if (needsRescope(connection)) {
+    await revokeStaleGrant(db, connection);
+    connection = null;
+    if (action === 'status' || !action) {
+      return json({
+        configured: configured(),
+        connected: false,
+        rescopeRequired: true,
+        message: 'Google Drive permissions were narrowed to the photos you choose. Please reconnect.',
+      });
+    }
+    return json({
+      error: 'Google Drive permissions were narrowed to the photos you choose. Please reconnect.',
+      code: 'rescope_required',
+    }, 409);
+  }
+
   // Google Picker runs in the browser and needs an access token there. The
   // token is short-lived and scoped to drive.file, so it can only reach files
   // the user has already chosen — it is not a key to their Drive. The refresh
   // token stays server-side and is never sent.
   if (action === 'picker-token') {
     if (!connection) return json({ error: 'Connect Google Drive first.' }, 400);
+    // Fail closed: without both the browser API key and the project number the
+    // Picker cannot associate picked files with this app, so it is better to
+    // say so than to open a window that cannot return anything usable.
+    if (!process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY || !process.env.GOOGLE_DRIVE_PROJECT_NUMBER) {
+      return json({
+        error: 'Google Picker is not configured. NEXT_PUBLIC_GOOGLE_PICKER_API_KEY and GOOGLE_DRIVE_PROJECT_NUMBER are both required.',
+        code: 'picker_not_configured',
+      }, 503);
+    }
     const token = await accessToken(db, connection);
     return json({
       accessToken: token,

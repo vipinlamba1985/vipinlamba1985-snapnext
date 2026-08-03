@@ -73,3 +73,43 @@ test('the feature is not called sync anywhere users can see', async () => {
     assert.doesNotMatch(code, /Cloud Sync/, `${file} still calls it Cloud Sync`);
   }
 });
+
+test('a grant issued under the old scope is revoked, not reused', async () => {
+  const route = await read(DRIVE_ROUTE);
+  // Rewriting what the code requests does not narrow a grant Google already
+  // issued, so an old connection must be handed back rather than kept.
+  assert.match(route, /grantedScope: DRIVE_SCOPE/);
+  assert.match(route, /needsRescope/);
+  assert.match(route, /oauth2\.googleapis\.com\/revoke/);
+  assert.match(route, /rescope_required/);
+  // Local credentials go even if the revoke call fails — keeping them is worse.
+  assert.match(route, /deleteOne\(\{ _id: connection\._id \}\)/);
+});
+
+test('the Picker fails closed when it is not fully configured', async () => {
+  const route = await read(DRIVE_ROUTE);
+  assert.match(route, /picker_not_configured/);
+  // Both are needed: the key authorises the widget, the project number
+  // associates picked files with this app.
+  assert.match(route, /NEXT_PUBLIC_GOOGLE_PICKER_API_KEY \|\| !process\.env\.GOOGLE_DRIVE_PROJECT_NUMBER/);
+});
+
+test('Drive is never written to, because the scope alone does not prevent it', async () => {
+  // drive.file permits create and modify. Read-only behaviour is a property of
+  // this code, not of the scope, so it has to be asserted here.
+  const route = await read(DRIVE_ROUTE);
+  const driveCalls = [...route.matchAll(/googleapis\.com\/(?:upload\/)?drive\/v3\/[^\s'"`]*/g)].map(m => m[0]);
+  assert.ok(driveCalls.length > 0, 'expected some Drive API usage to check');
+  for (const call of driveCalls) {
+    assert.doesNotMatch(call, /\/permissions|\/copy|\/trash/, `${call} is not a read`);
+  }
+  assert.doesNotMatch(route, /method: 'DELETE'[^}]*drive\/v3/s);
+  assert.doesNotMatch(route, /upload\/drive\/v3/, 'uploading to a user Drive is never correct here');
+});
+
+test('the read-only claim in the docs matches what the scope actually allows', async () => {
+  const doc = await read(path.join('docs', 'CLOUD_SYNC_STATUS.md'));
+  // The old blanket claim was false once Drive moved to drive.file.
+  assert.doesNotMatch(doc, /All cloud access is \*\*read-only\*\*/);
+  assert.match(doc, /per-file scope, not a read-only one/);
+});
