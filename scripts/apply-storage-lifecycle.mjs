@@ -13,9 +13,11 @@ import { mediaLifecycleConfiguration, projectedMonthlySaving } from '../lib/stor
 const dryRun = process.argv.includes('--dry-run');
 const bucket = process.env.AWS_S3_BUCKET;
 
+// Defaults come from the module so the script cannot drift from where
+// lib/storage.js actually writes.
 const configuration = mediaLifecycleConfiguration({
-  originalsPrefix: process.env.S3_ORIGINALS_PREFIX || 'originals/',
-  derivativesPrefix: process.env.S3_DERIVATIVES_PREFIX || 'thumbs/',
+  ...(process.env.S3_ORIGINALS_PREFIX ? { originalsPrefix: process.env.S3_ORIGINALS_PREFIX } : {}),
+  ...(process.env.S3_DERIVATIVES_PREFIX ? { derivativesPrefix: process.env.S3_DERIVATIVES_PREFIX } : {}),
 });
 
 console.log(JSON.stringify(configuration, null, 2));

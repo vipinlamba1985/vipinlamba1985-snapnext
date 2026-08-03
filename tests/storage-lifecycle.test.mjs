@@ -22,7 +22,10 @@ test('only originals cool down; thumbnails stay hot', () => {
   const rules = new Map(mediaLifecycleConfiguration().Rules.map(rule => [rule.ID, rule]));
 
   const originals = rules.get('snapnext-originals-cooldown');
-  assert.equal(originals.Filter.Prefix, 'originals/');
+  // Must match where lib/storage.js actually writes: `users/{userId}/media/...`.
+  // An earlier `originals/` matched nothing and would have saved nothing while
+  // appearing to be configured correctly.
+  assert.equal(originals.Filter.Prefix, 'users/');
   assert.deepEqual(originals.Transitions.map(t => t.StorageClass), ['STANDARD_IA', 'GLACIER_IR']);
 
   // Thumbnails are read constantly. Moving them would add a retrieval charge to

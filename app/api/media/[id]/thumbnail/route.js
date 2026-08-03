@@ -3,6 +3,8 @@ import { Readable } from 'node:stream';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { storage } from '@/lib/storage';
+import { DEFAULT_THUMBNAIL_SIZE } from '@/lib/thumbnails';
+import { getOrCreateThumbnail } from '@/lib/thumbnails.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,11 +25,16 @@ function inferImageType(doc = {}) {
   return 'application/octet-stream';
 }
 
-function imageHeaders({ contentType, contentLength }) {
+function imageHeaders({ contentType, contentLength, cached = false }) {
   const headers = new Headers({
     'Content-Type': contentType || 'application/octet-stream',
     'Content-Disposition': 'inline',
-    'Cache-Control': 'private, max-age=3600, stale-while-revalidate=86400',
+    // A cached derivative is immutable — its key carries the version and width,
+    // so it can be held for a year instead of re-fetched hourly. That long hold
+    // is most of what stops the originals being read over and over.
+    'Cache-Control': cached
+      ? 'private, max-age=31536000, immutable'
+      : 'private, max-age=3600, stale-while-revalidate=86400',
     'X-Content-Type-Options': 'nosniff',
   });
   if (Number.isFinite(Number(contentLength))) headers.set('Content-Length', String(contentLength));
@@ -50,6 +57,31 @@ export async function GET(request, context) {
   if (doc.kind !== 'photo') return NextResponse.json({ error: 'Thumbnail source is not a photo' }, { status: 415 });
 
   try {
+    const size = new URL(request.url).searchParams.get('w');
+
+    // Read-through cache. The original is fetched only on a miss, so a warm
+    // thumbnail never touches it — which is what lets originals move to cold
+    // storage without ordinary browsing paying a retrieval fee.
+    const thumbnail = await getOrCreateThumbnail({
+      doc,
+      userId: user.id,
+      size: size ? Number(size) : DEFAULT_THUMBNAIL_SIZE,
+      source: () => storage.read({ provider: doc.provider || 'local', storageKey: doc.storageKey }),
+    });
+
+    if (thumbnail) {
+      return new Response(thumbnail.buffer, {
+        status: 200,
+        headers: imageHeaders({
+          contentType: 'image/jpeg',
+          contentLength: thumbnail.buffer.length,
+          cached: thumbnail.cached,
+        }),
+      });
+    }
+
+    // Anything a thumbnail cannot be generated from still renders, by streaming
+    // the stored file as before rather than showing a broken tile.
     if ((doc.provider || 'local') === 's3') {
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const client = new S3Client({
