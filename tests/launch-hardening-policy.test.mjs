@@ -34,9 +34,13 @@ test('core media dialogs use the shared accessibility contract', () => {
   }
 });
 
-test('Vercel schedules both Smart Sync and trash lifecycle jobs', () => {
+test('Vercel schedules the trash lifecycle job and no cloud polling', () => {
   const config = JSON.parse(read('vercel.json'));
   const paths = config.crons.map((cron) => cron.path);
-  assert.ok(paths.includes('/api/cron/google-drive-sync'));
-  assert.ok(paths.includes('/api/cron/trash-purge'));
+  assert.ok(paths.includes('/api/cron/trash-purge'), 'expired trash must still be reclaimed');
+
+  // Drive polling is deliberately not scheduled. Import is user-initiated, and
+  // drive.file cannot enumerate a Drive, so a background enumeration job has
+  // nothing valid to do and would only keep credentials warm.
+  assert.ok(!paths.includes('/api/cron/google-drive-sync'));
 });

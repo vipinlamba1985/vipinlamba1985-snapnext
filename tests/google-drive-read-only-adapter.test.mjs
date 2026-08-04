@@ -23,7 +23,7 @@ test('the adapter exposes only reads', async () => {
   const source = await read(ADAPTER);
   const exported = [...source.matchAll(/export (?:async )?function (\w+)/g)].map(match => match[1]);
 
-  assert.deepEqual(exported.sort(), ['assertDriveFileId', 'readDriveContent', 'readDriveMetadata']);
+  assert.deepEqual(exported.sort(), ['assertDriveFileId', 'driveResourceHeaders', 'readDriveContent', 'readDriveMetadata']);
   for (const name of exported) {
     assert.doesNotMatch(name, /create|update|delete|write|upload|copy|trash|permission/i);
   }
@@ -48,7 +48,7 @@ test('the adapter cannot be pointed at an arbitrary URL', async () => {
 
 test('a file id is validated, not trusted', () => {
   assert.equal(assertDriveFileId('1AbC_-xyz'), '1AbC_-xyz');
-  for (const bad of ['', null, '../../etc', 'a/b', 'a?alt=media', 'a b', 'x'.repeat(257)]) {
+  for (const bad of ['', null, '../../etc', 'a/b', 'a?alt=media', 'a#b', 'a&x=1', 'a b', 'x'.repeat(513)]) {
     assert.throws(() => assertDriveFileId(bad), /not valid/, `${JSON.stringify(bad)} should be refused`);
   }
 });
@@ -67,4 +67,57 @@ test('the general client keeps its arbitrary-URL helper away from imports', asyn
   assert.match(general, /export async function fetchDriveJson/);
   const importer = await read(IMPORTER);
   assert.doesNotMatch(importer, /fetchDriveJson/);
+});
+
+test('every Drive credential passes the scope guard, including the worker', async () => {
+  // Guarding only the pages a person visits left a real gap: the sync worker
+  // refreshes tokens on a schedule, so a legacy drive.readonly connection could
+  // have been refreshed and used by cron long before anyone opened a page that
+  // would have revoked it.
+  const api = await read(path.join('lib', 'smart-sync', 'google-drive-api.js'));
+  const refresh = api.slice(api.indexOf('export async function freshGoogleDriveAccessToken'));
+  const body = refresh.slice(0, refresh.indexOf('\n}'));
+
+  assert.match(body, /inspectDriveGrant\(connection\?\.grantedScope\)/);
+  assert.match(body, /DriveRescopeRequiredError/);
+  // The guard must run before any cached token is handed back.
+  assert.ok(body.indexOf('inspectDriveGrant') < body.indexOf('connection.accessToken'));
+});
+
+test('no scheduled job polls Google Drive', async () => {
+  const vercel = JSON.parse(await read('vercel.json'));
+  const paths = (vercel.crons || []).map(entry => entry.path);
+  assert.ok(!paths.some(entry => entry.includes('google-drive')), `a Drive cron is still scheduled: ${paths}`);
+});
+
+test('a link-shared file can carry its resource key', async () => {
+  const { driveResourceHeaders, readDriveMetadata } = await import('../lib/smart-sync/google-drive-read-only.js');
+  assert.deepEqual(driveResourceHeaders('abc', 'k1'), { 'X-Goog-Drive-Resource-Keys': 'abc/k1' });
+  // Most files have none, and that is not an error.
+  assert.deepEqual(driveResourceHeaders('abc', ''), {});
+  assert.equal(readDriveMetadata.length, 2, 'resourceKey is optional, so it does not count toward arity');
+});
+
+test('a resource key cannot inject a header', async () => {
+  const { driveResourceHeaders } = await import('../lib/smart-sync/google-drive-read-only.js');
+  for (const bad of ['a\r\nX-Evil: 1', 'a\nb', 'a b', 'x'.repeat(257)]) {
+    assert.throws(() => driveResourceHeaders('abc', bad), /not valid/, `${JSON.stringify(bad)} should be refused`);
+  }
+});
+
+test('metadata asks for what the server needs to decide, not just to display', async () => {
+  const source = await read(ADAPTER);
+  // canDownload is what Google recommends checking before fetching content,
+  // and resourceKey is needed to fetch link-shared files at all.
+  assert.match(source, /capabilities\/canDownload/);
+  assert.match(source, /resourceKey/);
+  assert.match(source, /md5Checksum/);
+});
+
+test('an opaque id is length- and structure-checked rather than alphabet-checked', async () => {
+  const source = await read(ADAPTER);
+  // Drive ids are opaque and Google publishes no permanent character-set
+  // contract, so a narrow alphabet would be a compatibility bet.
+  assert.doesNotMatch(source, /\^\[A-Za-z0-9_-\]\+\$/);
+  assert.match(source, /encodeURIComponent\(id\)/);
 });
