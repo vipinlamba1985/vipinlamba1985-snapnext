@@ -181,3 +181,22 @@ test('legacy whole-Drive sync jobs cannot run', async () => {
   assert.ok(guard > 0 && guard < entry.indexOf('freshGoogleDriveAccessToken'));
   assert.match(entry.slice(0, 600), /cancelled/);
 });
+
+test('the queue trap for future Picker imports is recorded in the code', async () => {
+  // Picker imports run inline today, which is the only reason the legacy job
+  // cancellation guard is sufficient. Moving them into a durable queue without
+  // classifying DriveRescopeRequiredError as terminal would reintroduce the
+  // retry storm the guard exists to prevent — so the warning lives beside the
+  // function rather than only in a review thread.
+  const importer = await readFile(path.join(repoRoot, 'lib', 'smart-sync', 'google-drive-importer.js'), 'utf8');
+  assert.match(importer, /MOVED INTO A BACKGROUND QUEUE/);
+  assert.match(importer, /terminal, non-retryable and user-action-required/);
+});
+
+test('Picker imports do not enter the durable queue today', async () => {
+  const route = await readFile(path.join(repoRoot, 'app', 'api', 'cloud', 'google-drive', '[[...action]]', 'route.js'), 'utf8');
+  // If this ever changes, the comment above stops being a warning about the
+  // future and becomes a description of a live bug.
+  assert.match(route, /importGoogleDriveAsset/);
+  assert.doesNotMatch(route, /enqueue|smart_sync_jobs.*insert/i);
+});
