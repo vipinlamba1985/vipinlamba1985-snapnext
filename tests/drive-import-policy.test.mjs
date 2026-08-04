@@ -110,3 +110,46 @@ test('both halves of the resource-key header are validated', async () => {
   assert.throws(() => driveResourceHeaders('abc', 'a,b'), /not valid/);
   assert.deepEqual(driveResourceHeaders('abc', 'k1'), { 'X-Goog-Drive-Resource-Keys': 'abc/k1' });
 });
+
+test('content is identified by its bytes, not by what it claims to be', async () => {
+  const { detectMediaSignature, verifyDownloadedContent } = await import('../lib/smart-sync/drive-import-policy.js');
+
+  assert.equal(detectMediaSignature(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0])), 'image/jpeg');
+  assert.equal(detectMediaSignature(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])), 'image/png');
+
+  // HTML dressed as a photo must not become a stored memory.
+  const html = Buffer.from('<!doctype html><html><body>hi</body></html>');
+  assert.equal(detectMediaSignature(html), null);
+  assert.equal(verifyDownloadedContent({ bytes: html }).reason, 'unrecognised_content');
+
+  // Too short to identify is a refusal, not a pass.
+  assert.equal(detectMediaSignature(Buffer.from([0xff, 0xd8])), null);
+});
+
+test('the ISO container is split into image and video by brand', async () => {
+  const { detectMediaSignature } = await import('../lib/smart-sync/drive-import-policy.js');
+  const iso = brand => Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftyp'), Buffer.from(brand)]);
+  assert.equal(detectMediaSignature(iso('heic')), 'image/heic');
+  assert.equal(detectMediaSignature(iso('qt  ')), 'video/quicktime');
+  assert.equal(detectMediaSignature(iso('isom')), 'video/mp4');
+});
+
+test("Google's checksum is compared when it supplies one", async () => {
+  const { verifyDownloadedContent } = await import('../lib/smart-sync/drive-import-policy.js');
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+  // A same-length replacement between metadata and download is exactly what a
+  // byte count cannot catch.
+  assert.equal(verifyDownloadedContent({ bytes: jpeg, expectedMd5: 'aaa', actualMd5: 'bbb' }).reason, 'checksum_mismatch');
+  assert.equal(verifyDownloadedContent({ bytes: jpeg, expectedMd5: 'ABC', actualMd5: 'abc' }).ok, true, 'case must not matter');
+  // Absent is normal for some items and must not block them.
+  assert.equal(verifyDownloadedContent({ bytes: jpeg, expectedMd5: null, actualMd5: null }).ok, true);
+});
+
+test('the importer checks content before storing, not after', async () => {
+  const importer = await readFile(path.join(repoRoot, 'lib', 'smart-sync', 'google-drive-importer.js'), 'utf8');
+  assert.match(importer, /verifyDownloadedContent/);
+  assert.match(importer, /createHash\('md5'\)/);
+  // Content verification must precede the storage write.
+  assert.ok(importer.indexOf('verifyDownloadedContent') < importer.indexOf('storage.save'));
+});
