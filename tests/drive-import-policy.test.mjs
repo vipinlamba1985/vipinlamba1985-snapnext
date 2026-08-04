@@ -153,3 +153,31 @@ test('the importer checks content before storing, not after', async () => {
   // Content verification must precede the storage write.
   assert.ok(importer.indexOf('verifyDownloadedContent') < importer.indexOf('storage.save'));
 });
+
+test('the Drive import ceiling stays well below the buffered-memory danger zone', async () => {
+  const { MAX_IMPORT_BYTES, DIRECT_UPLOAD_MAX_BYTES } = await import('../lib/smart-sync/drive-import-policy.js');
+  // The download path still reads the whole file into memory before validating
+  // it, so repeated large imports would exhaust a serverless function — a
+  // denial of service against ourselves, not merely a robustness problem.
+  assert.ok(MAX_IMPORT_BYTES <= 256 * 1024 ** 2, 'the buffered path must not accept large media');
+  assert.ok(MAX_IMPORT_BYTES < DIRECT_UPLOAD_MAX_BYTES, 'Drive must be capped below direct upload');
+});
+
+test('an oversized Drive file points the user at direct upload', async () => {
+  const { MAX_IMPORT_BYTES, rejectionMessage, REJECTION, inspectDriveMetadata } = await import('../lib/smart-sync/drive-import-policy.js');
+  const verdict = inspectDriveMetadata({ mimeType: 'video/mp4', size: String(MAX_IMPORT_BYTES + 1), capabilities: { canDownload: true } });
+  assert.equal(verdict.reason, REJECTION.TOO_LARGE);
+  // Saying only "too large" would be a dead end when a working route exists.
+  assert.match(rejectionMessage(REJECTION.TOO_LARGE), /upload it directly/i);
+});
+
+test('legacy whole-Drive sync jobs cannot run', async () => {
+  const worker = await readFile(path.join(repoRoot, 'lib', 'smart-sync', 'google-drive-job-worker.js'), 'utf8');
+  assert.match(worker, /LEGACY_DRIVE_SYNC_DISABLED = true/);
+  // Refused at the entry point, before any credential is touched — removing the
+  // cron stops new work but not a manual trigger claiming an old row.
+  const entry = worker.slice(worker.indexOf('export async function processGoogleDriveJobBatch'));
+  const guard = entry.indexOf('LEGACY_DRIVE_SYNC_DISABLED');
+  assert.ok(guard > 0 && guard < entry.indexOf('freshGoogleDriveAccessToken'));
+  assert.match(entry.slice(0, 600), /cancelled/);
+});
