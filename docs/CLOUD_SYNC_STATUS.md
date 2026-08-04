@@ -50,6 +50,45 @@ Both render the same registry. Neither hardcodes a provider list.
 
 **Do not tell users iPhone/Android sync works. It does not yet.**
 
+### Two different features, often confused
+
+- **Manual native selection** (Phase 1) — the system photo picker, albums,
+  favourites, date ranges. Needs a photo-library plugin and nothing else. Not
+  built.
+- **Private People Scan** (Phase 2) — on-device face detection, embedding,
+  grouping and user confirmation, so only photos of chosen people upload. Needs
+  a selected embedding model and custom native plugins. Not built, and not
+  scopeable until the model gates in `docs/adr/0001-native-media-intelligence.md`
+  are recorded.
+
+Phase 1 must not be blocked on Phase 2.
+
+### `confirmedPersonIds` does not come from the operating system
+
+The manifest protocol accepts `confirmedPersonIds`, and `buildNativeUploadPlan`
+filters on it through the `favorite_people` rule. It was written as though a
+platform could supply those identifiers. **None can.**
+
+Photo-library permission grants access to media, not to identities. Apple does
+not expose the Photos People album through PhotoKit, and Android MediaStore has
+no equivalent. Google Photos groups faces, but that is an application, not the
+operating system.
+
+So `confirmedPersonIds` are **SnapNext-generated local identifiers**, produced by
+SnapNext's own on-device detection, embedding, grouping and user confirmation.
+They are filtering metadata — never proof of identity, never an authorisation
+control. The server verifies every uploaded file independently regardless.
+
+A user *can* browse People in the system picker themselves and select from it;
+that is manual selection working as designed, not programmatic filtering, and it
+is not a foundation to build rules on.
+
+**Today there is no face detection, no embedding, no clustering and no local
+people index anywhere in this repository.** The native device endpoints and the
+upload plan are server contracts waiting for a producer. The shell is a
+Capacitor WebView; `native-web/` contains only an offline fallback page. Do not
+represent people-based import as available.
+
 The **server half is complete**:
 
 - `lib/smart-sync/native-bridge.js` — `validateNativeManifest()` and
@@ -70,11 +109,15 @@ no manifest can ever be produced.
    full camera-roll sync needs something like `@capawesome/capacitor-photo-editor`
    /`capacitor-plugin-media`, or a small custom plugin over `PHPhotoLibrary`
    (iOS) and `MediaStore` (Android). Choosing this is the first decision.
+   Capacitor can bridge to real Swift and Kotlin through custom plugins, so this
+   does not require a separate native application — see
+   `docs/adr/0001-native-media-intelligence.md`.
 2. **A manifest builder** that maps device assets to the shape
    `validateNativeManifest` expects — `localId`, `kind`, `filename`, `size`,
    `createdAt`, `favorite`, `albumIds`, `confirmedPersonIds`, `checksum`.
-   `favorite` and album membership are available from both platform APIs;
-   `confirmedPersonIds` maps to platform face grouping where permitted.
+   `favorite` and album membership are available from both platform APIs.
+   `confirmedPersonIds` is **not** — no platform supplies it, so it stays empty
+   until Phase 2 produces it locally (see above).
 3. **A checksum strategy.** The plan endpoint deduplicates on checksums, so the
    client must hash on device. Hashing large videos in JS is slow — this
    probably belongs in native code.
