@@ -64,16 +64,22 @@ test('manual and AI membership are queried separately and deduplicated by Mongo'
   assert.deepEqual(confirmedPersonIds({ userConfirmedPeople: [{ clusterId: 'p1' }, { clusterId: 'p1' }, { clusterId: 'p2' }] }), ['p1', 'p2']);
 });
 
-test('the visible upload flow has one review confirmation, not the old planning maze', async () => {
+test('the visible upload flow has one real review confirmation, not the planning maze', async () => {
   const discovery = await read(path.join('app', '(app)', 'upload', 'discover', 'DiscoveryFlow.js'));
+  const stages = await read(path.join('app', '(app)', 'upload', 'discover', 'ProtectionStages.js'));
   assert.doesNotMatch(discovery, /Build My Protection Plan|Protect These Memories|Choose What to Protect/);
   assert.doesNotMatch(discovery, /stage === 'report'|stage === 'priority'/);
-  assert.match(discovery, /Back up \{readyCount/);
-  assert.match(discovery, /does not train face recognition/);
+  assert.match(discovery, /stage === 'checking'/);
+  assert.match(discovery, /real server checks/);
+  assert.match(discovery, /Back up \$\{readyCount\}/);
   assert.match(discovery, /Unlimited storage available/);
+  assert.doesNotMatch(discovery, /Add to people/);
+  assert.match(stages, /Organize these memories/);
+  assert.match(stages, /Backup is already complete/);
+  assert.match(stages, /does not train face recognition/);
 });
 
-test('manual assignment is stored outside AI recognition and can be removed', async () => {
+test('manual assignment is stored outside AI recognition and can be added or removed safely', async () => {
   const commit = await read(path.join('lib', 'protection-commit.js'));
   const preflight = await read(path.join('lib', 'protection-preflight.js'));
   const organize = await read(path.join('app', 'api', 'media', '[id]', 'organize', 'route.js'));
@@ -81,8 +87,10 @@ test('manual assignment is stored outside AI recognition and can be removed', as
   assert.match(commit, /userConfirmedPeople/);
   assert.match(commit, /source: 'upload_assignment'/);
   assert.doesNotMatch(commit, /peopleIntelligence:\s*\{[\s\S]*assignedPeople/);
-  assert.match(preflight, /assignmentUpdated/);
-  assert.match(preflight, /'userConfirmedPeople.clusterId': \{ \$ne: person.clusterId \}/);
+  assert.match(preflight, /assignmentPending/);
+  assert.doesNotMatch(preflight, /db\.collection\('media'\)\.updateOne/);
+  assert.match(organize, /addConfirmedPersonClusterIds/);
+  assert.match(organize, /loadActivatedPersonAssignments/);
   assert.match(organize, /removeConfirmedPersonClusterId/);
   assert.match(organize, /\$pull/);
   assert.match(personRoute, /personMembershipQuery/);
@@ -90,16 +98,21 @@ test('manual assignment is stored outside AI recognition and can be removed', as
 
 test('direct upload failure cannot silently fall back into a large 413 request', async () => {
   const upload = await read(path.join('lib', 'protection-upload-one.js'));
-  assert.match(upload, /SAFE_SERVER_FALLBACK_BYTES/);
+  const preflight = await read(path.join('lib', 'protection-preflight.js'));
+  const limits = await read(path.join('lib', 'protection-upload-limits.js'));
+  assert.match(upload, /SAFE_SERVER_UPLOAD_BYTES/);
   assert.match(upload, /direct_upload_required/);
-  assert.match(upload, /it was not sent through the size-limited server route/);
+  assert.match(preflight, /SKIP_DIRECT_REQUIRED/);
+  assert.match(preflight, /SAFE_SERVER_UPLOAD_BYTES/);
+  assert.match(limits, /3 \* 1024 \* 1024/);
 });
 
-test('activated person thumbnails provide a preselected add-photos path', async () => {
+test('activated person thumbnails provide a preselected add-photos path without affecting normal upload', async () => {
   const shortcuts = await read(path.join('components', 'magic-library', 'PersonUploadShortcuts.js'));
   const discoveryHook = await read(path.join('components', 'protection', 'useDiscoveryFlow.js'));
   assert.match(shortcuts, /\/upload\/discover\?person=/);
   assert.match(shortcuts, /Add photos/);
-  assert.match(discoveryHook, /assignedPersonClusterIds/);
+  assert.match(discoveryHook, /assignedPersonClusterIds: uploadPersonIds/);
   assert.match(discoveryHook, /new URLSearchParams\(window\.location\.search\)/);
+  assert.match(discoveryHook, /confirmDuplicateAssignments/);
 });
