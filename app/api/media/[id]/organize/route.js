@@ -11,14 +11,15 @@ export async function PATCH(request, { params }) {
 
   const { id } = await params;
   const body = await request.json().catch(() => ({}));
-  const update = {};
+  const set = {};
+  const pull = {};
 
   if (body.category !== undefined) {
     const category = String(body.category || '').trim().toLowerCase();
     if (!MEDIA_CATEGORIES.includes(category)) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
-    update.userCategory = category;
+    set.userCategory = category;
   }
 
   if (body.screenshotType !== undefined) {
@@ -26,28 +27,39 @@ export async function PATCH(request, { params }) {
     if (!SCREENSHOT_TYPES.includes(screenshotType)) {
       return NextResponse.json({ error: 'Invalid screenshot type' }, { status: 400 });
     }
-    update.userScreenshotType = screenshotType;
-    update.screenshotTypeSource = 'user';
-    update.screenshotTypeConfidence = 1;
-    update.screenshotTypeReason = 'Chosen by user';
+    set.userScreenshotType = screenshotType;
+    set.screenshotTypeSource = 'user';
+    set.screenshotTypeConfidence = 1;
+    set.screenshotTypeReason = 'Chosen by user';
   }
 
   if (body.tags !== undefined) {
     const tags = Array.isArray(body.tags)
       ? Array.from(new Set(body.tags.map((tag) => String(tag || '').trim().toLowerCase()).filter(Boolean))).slice(0, 30)
       : [];
-    update.userTags = tags;
+    set.userTags = tags;
   }
 
-  if (!Object.keys(update).length) {
+  if (body.removeConfirmedPersonClusterId !== undefined) {
+    const clusterId = String(body.removeConfirmedPersonClusterId || '').trim();
+    if (!clusterId || clusterId.length > 120 || /[\u0000-\u001f\u007f]/.test(clusterId)) {
+      return NextResponse.json({ error: 'Invalid person assignment' }, { status: 400 });
+    }
+    pull.userConfirmedPeople = { clusterId };
+  }
+
+  if (!Object.keys(set).length && !Object.keys(pull).length) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
   }
 
-  update.updatedAt = new Date();
+  set.updatedAt = new Date();
+  const update = { $set: set };
+  if (Object.keys(pull).length) update.$pull = pull;
+
   const db = await getDb();
   const result = await db.collection('media').findOneAndUpdate(
     { id, userId: user.id, trashed: { $ne: true } },
-    { $set: update },
+    update,
     { returnDocument: 'after' },
   );
 
