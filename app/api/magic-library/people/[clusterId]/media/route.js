@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { annotatePersonMedia } from '@/lib/people-gallery-rules';
 import { historicalPersonMediaIds, shouldUseHistoricalPersonFallback } from '@/lib/people-count-reconciliation';
+import { personMembershipQuery } from '@/lib/user-confirmed-people';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,14 +46,10 @@ export async function GET(request, context) {
   const url = new URL(request.url);
   const requestedLimit = Number(url.searchParams.get('limit') || MAX_PERSON_MEDIA);
   const limit = Math.max(1, Math.min(MAX_PERSON_MEDIA, Number.isFinite(requestedLimit) ? requestedLimit : MAX_PERSON_MEDIA));
-  const liveQuery = {
-    userId: user.id,
-    trashed: { $ne: true },
-    'peopleIntelligence.clusterIds': clusterId,
-  };
+  const liveQuery = personMembershipQuery(user.id, clusterId);
 
   let result = await loadPersonMedia(db, liveQuery, limit);
-  let countSource = 'live_cluster_membership';
+  let countSource = 'live_or_user_confirmed_membership';
   if (shouldUseHistoricalPersonFallback(person, result.total)) {
     const mediaIds = historicalPersonMediaIds(person);
     const historicalResult = await loadPersonMedia(db, {
@@ -83,6 +80,7 @@ export async function GET(request, context) {
     sections: {
       bestEligible: classifiedItems.filter((item) => item.peopleContext?.bestEligible).length,
       groupPhotos: classifiedItems.filter((item) => item.peopleContext?.groupPhoto).length,
+      userConfirmed: classifiedItems.filter((item) => item.peopleContext?.userConfirmed).length,
       largeGroupsExcludedFromBest: classifiedItems.filter((item) => item.peopleContext?.largeGroupPhoto && !item.peopleContext?.bestEligible).length,
     },
   });
