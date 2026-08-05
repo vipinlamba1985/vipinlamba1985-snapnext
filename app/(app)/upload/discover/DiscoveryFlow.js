@@ -173,9 +173,7 @@ export default function DiscoveryFlow() {
   const canConfirm = readyCount > 0 || duplicateActionCount > 0;
   const primaryLabel = readyCount > 0
     ? `Back up ${readyCount} ${readyLabel}`
-    : duplicateActionCount > 0
-      ? `Add ${duplicateActionCount} existing ${duplicateActionCount === 1 ? 'memory' : 'memories'}`
-      : 'Nothing to back up';
+    : `Add ${duplicateActionCount} existing ${duplicateActionCount === 1 ? 'memory' : 'memories'}`;
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-36 md:pb-12">
@@ -242,19 +240,27 @@ export default function DiscoveryFlow() {
         )}
 
         <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-          Nothing has uploaded yet. Press the single button below to begin.
+          {canConfirm
+            ? 'Nothing has uploaded yet. Press the single button below to begin.'
+            : 'Everything selected is already in your Library, or cannot be uploaded with the current method.'}
         </div>
 
         {flow.error && <div className="mt-5 rounded-2xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">{flow.error}</div>}
 
         <div className="mt-7 flex flex-wrap gap-3">
-          <button
-            onClick={startProtection}
-            disabled={!canConfirm || flow.protecting}
-            className="inline-flex min-h-14 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-4 text-base font-black text-white disabled:opacity-40"
-          >
-            {primaryLabel} <ArrowRight className="h-4 w-4" />
-          </button>
+          {canConfirm ? (
+            <button
+              onClick={startProtection}
+              disabled={flow.protecting}
+              className="inline-flex min-h-14 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-4 text-base font-black text-white disabled:opacity-40"
+            >
+              {primaryLabel} <ArrowRight className="h-4 w-4" />
+            </button>
+          ) : (
+            <Link href="/gallery" className="inline-flex min-h-14 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-4 text-base font-black text-white">
+              <Images className="h-5 w-5" /> View in Library
+            </Link>
+          )}
           <button onClick={() => { void flow.resetFlow(); }} className="min-h-14 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">
             Choose different files
           </button>
