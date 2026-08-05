@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, Download, Heart, Plus, Send, Tag, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Heart, Plus, Send, Tag, Trash2, UserCheck, X } from 'lucide-react';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
 import { isScreenshotMedia, mediaCategory, mediaUserTags, screenshotType } from '@/lib/media-category';
 import { useAccessibleDialog } from '@/hooks/use-escape-close';
@@ -16,6 +16,7 @@ export default function MediaViewer({ item, items = [], index = 0, onClose, onCh
   const [selectedScreenshotType, setSelectedScreenshotType] = useState('info');
   const [screenshotMeta, setScreenshotMeta] = useState(null);
   const [tags, setTags] = useState([]);
+  const [confirmedPeople, setConfirmedPeople] = useState([]);
   const [tagInput, setTagInput] = useState('');
   const [saving, setSaving] = useState(false);
   const list = useMemo(() => items.length ? items : item ? [item] : [], [items, item]);
@@ -31,6 +32,7 @@ export default function MediaViewer({ item, items = [], index = 0, onClose, onCh
     setSelectedScreenshotType(type.type);
     setScreenshotMeta(type);
     setTags(mediaUserTags(current));
+    setConfirmedPeople(Array.isArray(current.userConfirmedPeople) ? current.userConfirmedPeople : []);
     setTagInput('');
   }, [current?.id]);
 
@@ -64,9 +66,10 @@ export default function MediaViewer({ item, items = [], index = 0, onClose, onCh
   async function saveOrganization(patch, successMessage) {
     setSaving(true);
     try {
-      await apiFetch(`/media/${current.id}/organize`, { method: 'PATCH', body: JSON.stringify(patch) });
+      const response = await apiFetch(`/media/${current.id}/organize`, { method: 'PATCH', body: JSON.stringify(patch) });
       toast.success(successMessage);
       await onChanged?.();
+      return response;
     } catch (error) {
       toast.error(error?.message || 'Could not update this memory');
       throw error;
@@ -101,6 +104,23 @@ export default function MediaViewer({ item, items = [], index = 0, onClose, onCh
     try { await saveOrganization({ tags: next }, `Removed #${tag}`); }
     catch { setTags(previous); }
   }
+  async function removeConfirmedPerson(person) {
+    const previous = confirmedPeople;
+    const aiAlsoRecognized = Array.isArray(current.peopleIntelligence?.clusterIds)
+      && current.peopleIntelligence.clusterIds.includes(person.clusterId);
+    setConfirmedPeople((currentPeople) => currentPeople.filter((entry) => entry.clusterId !== person.clusterId));
+    try {
+      const response = await saveOrganization(
+        { removeConfirmedPersonClusterId: person.clusterId },
+        aiAlsoRecognized
+          ? `Removed your manual link. SnapNext still recognizes ${person.displayName || 'this person'} here.`
+          : `Removed from ${person.displayName || 'this person'}`,
+      );
+      setConfirmedPeople(Array.isArray(response?.item?.userConfirmedPeople) ? response.item.userConfirmedPeople : []);
+    } catch {
+      setConfirmedPeople(previous);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -108,12 +128,34 @@ export default function MediaViewer({ item, items = [], index = 0, onClose, onCh
         <button aria-label="Close memory viewer" onClick={onClose} className="absolute right-4 top-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><X className="h-6 w-6" /></button>
         {list.length > 1 && <><button aria-label="Previous memory" onClick={() => move(-1)} className="absolute left-3 top-1/2 z-20 grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><ChevronLeft className="h-7 w-7" /></button><button aria-label="Next memory" onClick={() => move(1)} className="absolute right-3 top-1/2 z-20 grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><ChevronRight className="h-7 w-7" /></button></>}
 
-        <div className="grid flex-1 place-items-center p-4 pb-[19rem] pt-16 md:pb-[16rem]">
+        <div className="grid flex-1 place-items-center p-4 pb-[22rem] pt-16 md:pb-[18rem]">
           {current.kind === 'photo' ? <img src={mediaSrc(current.id)} alt={current.name || 'Memory'} className="max-h-full max-w-full object-contain" /> : current.kind === 'video' ? <video src={mediaSrc(current.id)} className="max-h-full max-w-full" controls autoPlay aria-label={current.name || 'Memory video'} /> : <div className="max-w-lg rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-white/75">{current.aiAnalysis?.description || current.name}</div>}
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 max-h-[46vh] overflow-y-auto border-t border-white/10 bg-[#0b0414]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <div className="absolute bottom-0 left-0 right-0 max-h-[52vh] overflow-y-auto border-t border-white/10 bg-[#0b0414]/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0"><h2 id={titleId} className="truncate text-sm font-black text-white">{current.name}</h2><p className="text-xs text-white/45" aria-live="polite">Memory {currentIndex + 1} of {list.length}. Use arrow keys or buttons to navigate.</p></div></div>
+
+          {!!confirmedPeople.length && (
+            <div className="mb-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.08] p-3">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-emerald-100"><UserCheck className="h-4 w-4" /> Added to people by you</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {confirmedPeople.map((person) => (
+                  <button
+                    key={person.clusterId}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => removeConfirmedPerson(person)}
+                    aria-label={`Remove from ${person.displayName || 'this person'}`}
+                    className="min-h-9 rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1.5 text-xs font-bold text-emerald-100 disabled:opacity-45"
+                  >
+                    Added to {person.displayName || 'this person'} by you ×
+                    {Array.isArray(current.peopleIntelligence?.clusterIds) && current.peopleIntelligence.clusterIds.includes(person.clusterId) && <span className="ml-1 text-emerald-200/65">· also recognized</span>}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-white/40">This is a reversible organization choice. It does not train or overwrite face recognition.</p>
+            </div>
+          )}
 
           <div className="mb-3 grid gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 md:grid-cols-2">
             {screenshot ? (

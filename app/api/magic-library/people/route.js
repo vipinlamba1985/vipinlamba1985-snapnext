@@ -40,14 +40,28 @@ async function liveCountsByCluster(db, userId, clusterIds) {
       $match: {
         userId,
         trashed: { $ne: true },
-        'peopleIntelligence.clusterIds': { $in: clusterIds },
+        $or: [
+          { 'peopleIntelligence.clusterIds': { $in: clusterIds } },
+          { 'userConfirmedPeople.clusterId': { $in: clusterIds } },
+        ],
       },
     },
-    { $unwind: '$peopleIntelligence.clusterIds' },
-    { $match: { 'peopleIntelligence.clusterIds': { $in: clusterIds } } },
+    {
+      $project: {
+        kind: 1,
+        clusterIds: {
+          $setUnion: [
+            { $ifNull: ['$peopleIntelligence.clusterIds', []] },
+            { $ifNull: ['$userConfirmedPeople.clusterId', []] },
+          ],
+        },
+      },
+    },
+    { $unwind: '$clusterIds' },
+    { $match: { clusterIds: { $in: clusterIds } } },
     {
       $group: {
-        _id: '$peopleIntelligence.clusterIds',
+        _id: '$clusterIds',
         count: { $sum: 1 },
         photos: { $sum: { $cond: [{ $eq: ['$kind', 'photo'] }, 1, 0] } },
         videos: { $sum: { $cond: [{ $eq: ['$kind', 'video'] }, 1, 0] } },
