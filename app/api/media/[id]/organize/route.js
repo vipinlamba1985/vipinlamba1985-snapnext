@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { MEDIA_CATEGORIES, SCREENSHOT_TYPES } from '@/lib/media-category';
+import {
+  loadActivatedPersonAssignments,
+  parseAssignedPersonClusterIds,
+  UserConfirmedPeopleError,
+} from '@/lib/user-confirmed-people';
 
 export const runtime = 'nodejs';
 
@@ -13,6 +18,7 @@ export async function PATCH(request, { params }) {
   const body = await request.json().catch(() => ({}));
   const set = {};
   const pull = {};
+  const db = await getDb();
 
   if (body.category !== undefined) {
     const category = String(body.category || '').trim().toLowerCase();
@@ -48,20 +54,60 @@ export async function PATCH(request, { params }) {
     pull.userConfirmedPeople = { clusterId };
   }
 
-  if (!Object.keys(set).length && !Object.keys(pull).length) {
+  let peopleToAdd = [];
+  if (body.addConfirmedPersonClusterIds !== undefined) {
+    try {
+      const clusterIds = parseAssignedPersonClusterIds(body.addConfirmedPersonClusterIds);
+      const peopleById = await loadActivatedPersonAssignments({ db, userId: user.id, clusterIds });
+      peopleToAdd = clusterIds.map((clusterId) => peopleById.get(clusterId));
+    } catch (error) {
+      if (error instanceof UserConfirmedPeopleError) {
+        return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+      }
+      return NextResponse.json({ error: 'Could not validate this person assignment.' }, { status: 500 });
+    }
+  }
+
+  if (!Object.keys(set).length && !Object.keys(pull).length && !peopleToAdd.length) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
   }
 
-  set.updatedAt = new Date();
-  const update = { $set: set };
-  if (Object.keys(pull).length) update.$pull = pull;
+  const now = new Date();
+  for (const person of peopleToAdd) {
+    await db.collection('media').updateOne(
+      {
+        id,
+        userId: user.id,
+        trashed: { $ne: true },
+        'userConfirmedPeople.clusterId': { $ne: person.clusterId },
+      },
+      {
+        $push: {
+          userConfirmedPeople: {
+            clusterId: person.clusterId,
+            displayName: String(person.displayName || 'This person').slice(0, 80),
+            assignedAt: now,
+            source: 'upload_assignment',
+          },
+        },
+        $set: { updatedAt: now },
+      },
+    );
+  }
 
-  const db = await getDb();
-  const result = await db.collection('media').findOneAndUpdate(
-    { id, userId: user.id, trashed: { $ne: true } },
-    update,
-    { returnDocument: 'after' },
-  );
+  let result;
+  if (Object.keys(set).length || Object.keys(pull).length) {
+    set.updatedAt = now;
+    const update = { $set: set };
+    if (Object.keys(pull).length) update.$pull = pull;
+    result = await db.collection('media').findOneAndUpdate(
+      { id, userId: user.id, trashed: { $ne: true } },
+      update,
+      { returnDocument: 'after' },
+    );
+  } else {
+    result = await db.collection('media').findOne({ id, userId: user.id, trashed: { $ne: true } });
+  }
 
   if (!result) return NextResponse.json({ error: 'Memory not found' }, { status: 404 });
   const { _id, ...item } = result;
