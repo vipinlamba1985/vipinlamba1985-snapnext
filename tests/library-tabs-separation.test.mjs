@@ -33,7 +33,7 @@ test('days group newest first with undated media collected last', () => {
   assert.deepEqual(groups.map(group => group.items.length), [2, 1, 1]);
   assert.equal(groups[0].items[0].id, 'b');
   assert.equal(groups[0].items[1].id, 'd');
-  assert.equal(groups.at(-1).title, 'Date not available');
+  assert.equal(groups.at(-1).title, 'Backup date not available');
   assert.equal(groups.at(-1).items[0].id, 'c');
 });
 

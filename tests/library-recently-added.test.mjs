@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
+  addedDayTitle,
   groupByDay,
   groupByMemoryDay,
   libraryDate,
@@ -22,7 +24,7 @@ test('Library date prefers backup time over an old capture date', () => {
   assert.equal(photoDate(item).toISOString(), '2012-03-04T12:00:00.000Z');
 });
 
-test('an old photo backed up today appears in the Today section of Library All', () => {
+test('an old photo backed up today appears in the Added today section of Library All', () => {
   const groups = groupByDay([
     {
       id: 'old-photo-new-backup',
@@ -33,8 +35,14 @@ test('an old photo backed up today appears in the Today section of Library All',
   ], NOW);
 
   assert.equal(groups.length, 1);
-  assert.equal(groups[0].title, 'Today');
+  assert.equal(groups[0].title, 'Added today');
   assert.equal(groups[0].items[0].id, 'old-photo-new-backup');
+});
+
+test('backup headings remain explicit for yesterday and older dates', () => {
+  assert.equal(addedDayTitle(new Date('2026-08-04T08:00:00.000Z'), NOW), 'Added yesterday');
+  assert.match(addedDayTitle(new Date('2025-01-02T08:00:00.000Z'), NOW), /^Added .*2025$/);
+  assert.equal(addedDayTitle(new Date(0), NOW), 'Backup date not available');
 });
 
 test('capture-date grouping remains available for chronological memory views', () => {
@@ -47,6 +55,17 @@ test('capture-date grouping remains available for chronological memory views', (
   ], NOW);
 
   assert.match(groups[0].title, /2012/);
+});
+
+test('the media viewer labels capture and backup dates separately', async () => {
+  const source = await readFile(new URL('../app/(app)/gallery/page.js', import.meta.url), 'utf8');
+
+  assert.match(source, /data-testid="library-viewer-taken"/);
+  assert.match(source, />Taken:<\/span>/);
+  assert.match(source, /data-testid="library-viewer-backed-up"/);
+  assert.match(source, />Backed up:<\/span>/);
+  assert.match(source, /item\?\.uploadedAt \|\| item\?\.createdAt/);
+  assert.match(source, /item\?\.capturedAt \|\| item\?\.takenAt \|\| item\?\.mediaCreatedAt/);
 });
 
 test('the media query selects recent backups before applying the 500 item limit', async () => {

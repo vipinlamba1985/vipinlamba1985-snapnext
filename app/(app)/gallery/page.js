@@ -31,6 +31,12 @@ function dateLabel(value) {
   try { return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value)); }
   catch { return ''; }
 }
+function captureDateValue(item) {
+  return item?.capturedAt || item?.takenAt || item?.mediaCreatedAt || item?.createdAt || '';
+}
+function backupDateValue(item) {
+  return item?.uploadedAt || item?.createdAt || '';
+}
 function metadataList(value) { return Array.isArray(value) ? value.filter(Boolean) : []; }
 function matchesCollection(item, collection) {
   if (collection === 'places') return metadataList(item?.aiAnalysis?.locations).length > 0;
@@ -217,9 +223,34 @@ function Viewer({ item, onClose, onStar, onDownload, onTrash }) {
   const people = metadataList(item?.aiAnalysis?.faces);
   const places = metadataList(item?.aiAnalysis?.locations);
   const description = item?.aiAnalysis?.description || item?.aiAnalysis?.summary || '';
+  const takenLabel = dateLabel(captureDateValue(item)) || 'Date not available';
+  const backedUpLabel = dateLabel(backupDateValue(item)) || 'Date not available';
+  const context = [places[0], people.slice(0, 2).join(', ')].filter(Boolean).join(' · ');
   const titleId = `library-viewer-title-${item.id}`;
   const dialogRef = useAccessibleDialog(true, onClose);
-  return <div data-testid="library-viewer" className="fixed inset-0 z-50 overflow-y-auto bg-black/95 p-3 backdrop-blur-xl" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><div className="mx-auto grid min-h-full max-w-4xl place-items-center"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0711] outline-none"><div className="relative grid min-h-[45vh] place-items-center bg-black"><Media item={item} className="max-h-[70vh] w-full" /><button data-testid="library-viewer-close" aria-label="Close memory" onClick={onClose} className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-black/65 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><X className="h-5 w-5" /></button></div><div className="p-5"><h2 id={titleId} className="text-2xl font-black">{item.name || 'Memory'}</h2><p className="mt-1 text-sm text-white/45">{[dateLabel(item.createdAt), places[0], people.slice(0, 2).join(', ')].filter(Boolean).join(' · ')}</p><Link data-testid="library-add-to-story" href="/ai-studio" className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-gradient-to-r from-pink-500 via-purple-600 to-cyan-500 px-5 font-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Add to a story</Link>{description && <div data-testid="library-snapnext-take" className="mt-4 rounded-2xl border border-pink-300/10 bg-gradient-to-br from-pink-500/10 to-purple-500/8 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-pink-200">SnapNext&apos;s take</p><p className="mt-2 text-sm leading-6 text-white/60">{description}</p></div>}<div className="mt-5 grid grid-cols-3 gap-2"><Action testId="library-viewer-favorite" icon={Star} label="Star" onClick={onStar} /><Action testId="library-viewer-download" icon={Download} label="Save" onClick={onDownload} /><Action testId="library-viewer-trash" icon={Trash2} label="Trash" onClick={onTrash} /></div></div></div></div></div>;
+  return (
+    <div data-testid="library-viewer" className="fixed inset-0 z-50 overflow-y-auto bg-black/95 p-3 backdrop-blur-xl" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="mx-auto grid min-h-full max-w-4xl place-items-center">
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0711] outline-none">
+          <div className="relative grid min-h-[45vh] place-items-center bg-black">
+            <Media item={item} className="max-h-[70vh] w-full" />
+            <button data-testid="library-viewer-close" aria-label="Close memory" onClick={onClose} className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-black/65 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300"><X className="h-5 w-5" /></button>
+          </div>
+          <div className="p-5">
+            <h2 id={titleId} className="text-2xl font-black">{item.name || 'Memory'}</h2>
+            <div className="mt-2 space-y-1 text-sm text-white/50">
+              <p data-testid="library-viewer-taken"><span className="font-bold text-white/70">Taken:</span> {takenLabel}</p>
+              <p data-testid="library-viewer-backed-up"><span className="font-bold text-white/70">Backed up:</span> {backedUpLabel}</p>
+              {context && <p data-testid="library-viewer-context">{context}</p>}
+            </div>
+            <Link data-testid="library-add-to-story" href="/ai-studio" className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-gradient-to-r from-pink-500 via-purple-600 to-cyan-500 px-5 font-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Add to a story</Link>
+            {description && <div data-testid="library-snapnext-take" className="mt-4 rounded-2xl border border-pink-300/10 bg-gradient-to-br from-pink-500/10 to-purple-500/8 p-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-pink-200">SnapNext&apos;s take</p><p className="mt-2 text-sm leading-6 text-white/60">{description}</p></div>}
+            <div className="mt-5 grid grid-cols-3 gap-2"><Action testId="library-viewer-favorite" icon={Star} label="Star" onClick={onStar} /><Action testId="library-viewer-download" icon={Download} label="Save" onClick={onDownload} /><Action testId="library-viewer-trash" icon={Trash2} label="Trash" onClick={onTrash} /></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Action({ testId, icon: Icon, label, onClick }) {
