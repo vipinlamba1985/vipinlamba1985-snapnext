@@ -59,4 +59,8 @@ test('v1.2.1 records the deliberate 5+ automatic exclusion', () => {
   assert.match(decisions, /5\+ faces/);
   assert.match(decisions, /not truly flat-cost per photo/);
   assert.match(decisions, /does \*\*not\*\* refund/);
+
+  const implementation = read('docs/MAGIC_LIBRARY_IMPLEMENTATION.md');
+  assert.match(implementation, /MAGIC_LIBRARY_INTELLIGENCE_V1_2_1\.md/);
+  assert.match(implementation, /awaiting_analysis/);
 });
