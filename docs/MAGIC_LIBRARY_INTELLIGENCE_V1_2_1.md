@@ -12,7 +12,7 @@ For the initial rollout the automatic gate is:
 - Missing or stale local analysis → `awaiting_analysis`, never `no_faces`.
 - Missing consent → `awaiting_consent`.
 
-The 5+ boundary is intentional for v1.2.1. It preserves the existing `MAX_FAMILY_SIZED_FACE_COUNT = 4` quality boundary and is also a cost guard for the current implementation: `IndexFaces` is followed by per-usable-face `SearchUsers` and `AssociateFaces` work, so the present pipeline is not truly flat-cost per photo. `MAX_INDEXED_FACES_PER_PHOTO` remains a second defensive cap, not a replacement for this boundary in this release.
+The 5+ boundary is intentional for v1.2.1. It preserves the existing `MAX_FAMILY_SIZED_FACE_COUNT = 4` quality boundary and is also a cost guard for the current implementation. Rekognition Collections remove the multiplier based on the number of activated People, but the current SnapNext code still performs one `IndexFaces` operation per eligible photo and then per-usable-face `SearchUsers` and `AssociateFaces` work. Therefore the present implementation is not truly flat-cost per photo. `MAX_INDEXED_FACES_PER_PHOTO` remains a second defensive cap, not a replacement for this boundary in this release.
 
 A future explicit "Find people in this group photo" action may process larger groups under a separately bounded user action.
 
