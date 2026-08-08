@@ -68,6 +68,18 @@ export async function POST(request, { params }) {
     { upsert: true },
   );
 
+  // Mirror only the version/timestamp needed for the bounded missing-analysis
+  // sweep. The full local result stays in media_analysis as its source of truth.
+  await db.collection('media').updateOne(
+    { id, userId: user.id, trashed: { $ne: true } },
+    {
+      $set: {
+        magicAnalysisVersion: normalized.analysisVersion,
+        magicAnalysisUpdatedAt: now,
+      },
+    },
+  );
+
   // A fresh local result makes a previously deferred People item eligible for
   // another policy check. It never forces a Rekognition call by itself.
   await db.collection('media').updateOne(
