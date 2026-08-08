@@ -6,8 +6,8 @@ const read = (path) => fs.readFileSync(path, 'utf8');
 
 test('web producer uses pinned local MediaPipe face detection assets', () => {
   const worker = read('public/workers/magic-face-worker.js');
-  assert.match(worker, /@mediapipe\/tasks-vision@0\.10\.22/);
-  assert.match(worker, /blaze_face_short_range/);
+  assert.match(worker, /MEDIAPIPE_VERSION = '1\.0\.0'/);
+  assert.match(worker, /blaze_face_full_range/);
   assert.match(worker, /FaceDetector\.createFromOptions/);
   assert.match(worker, /detector\.detect\(bitmap\)/);
   assert.doesNotMatch(worker, /Rekognition|DetectFacesCommand|IndexFacesCommand/);
