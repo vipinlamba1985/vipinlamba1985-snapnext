@@ -1,0 +1,86 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { FACE_DELETE_STORE_KEYS, FACE_DELETION_INVENTORY } from '../lib/face-deletion-inventory.js';
+
+const read = (path) => fs.readFileSync(path, 'utf8');
+
+test('M7 inventory keeps local media_analysis outside cloud deletion while naming every cloud reference store', () => {
+  const byKey = new Map(FACE_DELETION_INVENTORY.map((row) => [row.key, row]));
+  assert.equal(byKey.get('media_analysis')?.classification, 'retain_cloud_delete');
+  for (const key of [
+    'rekognition_collection',
+    'face_index',
+    'person_clusters',
+    'media.peopleIntelligence',
+    'magic_library_activation.active',
+    'media.userConfirmedPeople',
+    'upload_reservations.assignedPeople',
+  ]) assert.ok(FACE_DELETE_STORE_KEYS.includes(key), `${key} must be in verified cloud deletion`);
+});
+
+test('verified deletion inspects AWS after delete and verifies all SnapNext delete stores', () => {
+  const worker = read('lib/face-deletion-worker.server.js');
+  const deleteAt = worker.indexOf('deleteRekognitionCollection(collectionId)');
+  const inspectAt = worker.indexOf('verifyRekognitionCollectionAbsent(collectionId)');
+  const dbVerifyAt = worker.indexOf('verifySnapNextFaceRecognitionStateDeleted({ db, userId })');
+  const verifiedAt = worker.indexOf("status: 'verified_deleted'");
+  assert.ok(deleteAt > 0);
+  assert.ok(inspectAt > deleteAt, 'AWS collection inspection must happen after deletion');
+  assert.ok(dbVerifyAt > deleteAt, 'SnapNext inventory verification must happen after deletion');
+  assert.ok(verifiedAt > inspectAt && verifiedAt > dbVerifyAt, 'verified_deleted must be written only after both verification paths');
+});
+
+test('deletion worker has no recognition-producing operation', () => {
+  const worker = read('lib/face-deletion-worker.server.js');
+  assert.doesNotMatch(worker, /CreateCollection|IndexFaces|CreateUser|AssociateFaces|SearchUsers/);
+  assert.match(worker, /deleteCollection/);
+  assert.match(worker, /describeCollection/);
+});
+
+test('worker state writes are generation and worker owned', () => {
+  const worker = read('lib/face-deletion-worker.server.js');
+  assert.match(worker, /\{ userId, generation, workerId/);
+  assert.match(worker, /status: 'pending'/);
+  assert.match(worker, /status: 'processing'/);
+  assert.match(worker, /status: 'verifying'/);
+  assert.match(worker, /face_deletion_stale_worker/);
+  assert.doesNotMatch(worker, /updateOne\(\s*\{ userId \},\s*\{\s*\$set:\s*\{\s*status: 'verified_deleted'/s);
+});
+
+test('failed deletion blocks cloud regrant but remains retryable on the same generation', () => {
+  const consent = read('app/api/settings/face-processing-consent/route.js');
+  const deletion = read('app/api/settings/face-processing-consent/deletion/route.js');
+  const worker = read('lib/face-deletion-worker.server.js');
+  assert.match(consent, /face_deletion_needs_retry/);
+  assert.match(deletion, /method|PATCH/);
+  assert.match(worker, /requeueFailedFaceDeletion/);
+  assert.match(worker, /generation: requeued\.generation/);
+});
+
+test('repeated deletion request does not create a new generation while one is active', () => {
+  const worker = read('lib/face-deletion-worker.server.js');
+  assert.match(worker, /ACTIVE_STATUSES\.includes\(existing\.status\).*created: false/s);
+  assert.match(worker, /existing\?\.status === 'failed'.*created: false/s);
+  assert.match(worker, /generation = Math\.max\(1, Number\(existing\?\.generation \|\| 0\) \+ 1\)/);
+});
+
+test('recovery cron uses the existing CRON_SECRET boundary and server worker', () => {
+  const cron = read('app/api/cron/face-deletion-recovery/route.js');
+  const vercel = read('vercel.json');
+  assert.match(cron, /CRON_SECRET/);
+  assert.match(cron, /recoverFaceDeletionRequests/);
+  assert.match(vercel, /face-deletion-recovery/);
+});
+
+test('Privacy & security is the authoritative face-control surface and Library only deep-links', () => {
+  const page = read('app/(app)/privacy-security/page.js');
+  const controls = read('components/privacy/FacePrivacyControls.js');
+  const library = read('components/magic-library/PeopleFaceConsent.js');
+  assert.match(page, /FacePrivacyControls/);
+  assert.match(controls, /local-face-detection-consent/);
+  assert.match(controls, /face-processing-consent\/deletion/);
+  assert.match(controls, /Deletion verified/);
+  assert.match(library, /href="\/privacy-security"/);
+  assert.doesNotMatch(library, /method: 'POST'|method: 'DELETE'/);
+});
