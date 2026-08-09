@@ -47,28 +47,49 @@ test('consent revoke queues deletion and never claims immediate deletion', () =>
   assert.match(route, /faceProcessingConsent\.granted': false/);
   assert.match(route, /faceProcessingConsent\.deletionState': 'pending'/);
   assert.match(route, /verifiedAt: null/);
-  assert.match(route, /never claims deletion is\s*\n?\/\/ complete/i);
+  assert.match(route, /\$inc: \{ generation: 1 \}/);
+  assert.match(route, /M7 can reject a stale verification/);
 });
 
-test('regrant cannot silently cancel pending deletion', () => {
+test('regrant cannot silently cancel pending deletion or bypass dormant rollout', () => {
   const route = read('app/api/settings/face-processing-consent/route.js');
   assert.match(route, /face_deletion_pending/);
   assert.match(route, /verified deletion completes/);
-  assert.match(route, /status: \{ \$in: \['pending', 'processing'\] \}/);
+  assert.match(route, /\['pending', 'processing'\]\.includes/);
+  assert.match(route, /people_rollout_disabled/);
 });
 
-test('Magic Library surfaces granted, off and pending-deletion consent states', () => {
+test('Magic Library hides a dormant ungranted feature and shows honest active states', () => {
   const page = read('app/(app)/gallery/magic/page.js');
   const component = read('components/magic-library/PeopleFaceConsent.js');
   assert.match(page, /<PeopleFaceConsent \/>/);
+  assert.match(component, /!state\.available && !state\.granted\) return null/);
+  assert.match(component, /People recognition is paused/);
   assert.match(component, /Enable People recognition/);
   assert.match(component, /Turn off & queue deletion/);
   assert.match(component, /Face-data deletion is pending/);
   assert.match(component, /will not label this data deleted until verification succeeds/);
+  assert.match(component, /window\.location\.reload/);
 });
 
-test('face deletion queue has indexes for the future M7 worker', () => {
+test('reindex itself blocks when rollout or consent is unavailable', () => {
+  const route = read('app/api/magic-library/people/reindex/route.js');
+  assert.match(route, /people_rollout_disabled/);
+  assert.match(route, /face_processing_consent_required/);
+  const block = route.indexOf('const blocked = await processingBlock');
+  const rebuild = route.indexOf('await rebuildPeopleIntelligence');
+  assert.ok(block > 0 && rebuild > block, 'server readiness check must run before reindex work');
+
+  const peopleRoute = read('app/api/magic-library/people/route.js');
+  assert.match(peopleRoute, /rolloutEnabled/);
+  assert.match(peopleRoute, /consentReady/);
+  assert.match(peopleRoute, /peopleIntelligenceReady\(\) && rolloutEnabled && consentReady/);
+  assert.match(peopleRoute, /'face_gate_disabled'/);
+  assert.match(peopleRoute, /'awaiting_consent'/);
+});
+
+test('face deletion queue has one generation-tracked state per user for the future M7 worker', () => {
   const db = read('lib/db.js');
+  assert.match(db, /collection\('face_deletion_requests'\)\.createIndex\(\{ userId: 1 \}, \{ unique: true \}\)/);
   assert.match(db, /collection\('face_deletion_requests'\)\.createIndex\(\{ status: 1, requestedAt: 1 \}\)/);
-  assert.match(db, /collection\('face_deletion_requests'\)\.createIndex\(\{ userId: 1, status: 1, requestedAt: -1 \}\)/);
 });
