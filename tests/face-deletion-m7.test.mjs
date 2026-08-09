@@ -94,16 +94,21 @@ test('failed deletion creates one privacy-safe actionable notification per gener
   assert.match(bell, /router\.push\(href\)/);
 });
 
-test('Privacy & security is the authoritative face-control surface and Library only deep-links', () => {
+test('Privacy & security is authoritative and reachable through More while Library only deep-links', () => {
   const page = read('app/(app)/privacy-security/page.js');
   const controls = read('components/privacy/FacePrivacyControls.js');
   const library = read('components/magic-library/PeopleFaceConsent.js');
+  const shell = read('components/AppShell.js');
   assert.match(page, /FacePrivacyControls/);
   assert.match(controls, /local-face-detection-consent/);
   assert.match(controls, /face-processing-consent\/deletion/);
   assert.match(controls, /Deletion verified/);
   assert.match(library, /href="\/privacy-security"/);
   assert.doesNotMatch(library, /method: 'POST'|method: 'DELETE'/);
+  assert.match(shell, /\{ href: '\/privacy-security', label: 'Privacy & security'/);
+  assert.match(shell, /MORE_HREFS[\s\S]*'\/privacy-security'/);
+  const primary = shell.match(/const PRIMARY_HREFS = \[([^\]]*)\]/)?.[1] || '';
+  assert.doesNotMatch(primary, /privacy-security/, 'Privacy & security belongs under More, not primary navigation');
 });
 
 test('Add asks local face consent only at Back up and allows backup without local detection', () => {
