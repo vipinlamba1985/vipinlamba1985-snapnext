@@ -13,7 +13,9 @@ test('mobile upload guidance recommends computer for large backups without promi
 });
 
 test('large mobile batches get a non-blocking follow-up coach', () => {
-  assert.match(source, /showLargeBackupCoach = flow\.report\.total >= 100 \|\| flow\.report\.bytes >= 1024 \* 1024 \* 1024/);
+  assert.match(source, /LARGE_MOBILE_BATCH_FILES = 100/);
+  assert.match(source, /LARGE_MOBILE_BATCH_BYTES = 1024 \*\* 3/);
+  assert.match(source, /flow\.report\.total >= LARGE_MOBILE_BATCH_FILES \|\| flow\.report\.bytes >= LARGE_MOBILE_BATCH_BYTES/);
   assert.match(source, /data-testid="mobile-large-batch-coach"/);
   assert.match(source, /You can continue this backup here/);
   assert.match(source, /For future large library moves/);
