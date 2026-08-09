@@ -2,11 +2,11 @@
 
 This document is the launch contract for cloud intake in SnapNext.
 
-**Launch product:** Smart Import — user-selected media intake.
+**Launch product:** Smart Import — user-selected media and document intake.
 
 **Not a launch product:** continuous whole-cloud synchronization.
 
-The provider registry remains in `lib/smart-sync/providers.js`, but a provider being technically known to the code does not mean SnapNext may create a new persistent/background connection for it.
+The provider registry remains in `lib/smart-sync/providers.js`. All launch web providers are picker-based and must not create background whole-account discovery.
 
 ## Launch matrix
 
@@ -14,8 +14,8 @@ The provider registry remains in `lib/smart-sync/providers.js`, but a provider b
 | :--- | :--- | :--- |
 | Google Drive | ✅ User selects files in Google Picker, then SnapNext imports those files | ❌ Disabled |
 | Google Photos | ✅ User selects media in Google Photos Picker; selection becomes a durable manual import job | ❌ Disabled |
-| Dropbox | File/Add fallback; legacy connections may be removed | ❌ New persistent OAuth disabled |
-| OneDrive | File/Add fallback; legacy connections may be removed | ❌ New persistent OAuth disabled |
+| Dropbox | ✅ User selects photos/videos/documents in Dropbox Chooser; SnapNext immediately consumes selected short-lived links | ❌ Disabled |
+| OneDrive | ✅ User selects photos/videos/documents in Microsoft’s hosted picker; SnapNext immediately consumes selected short-lived links | ❌ Disabled |
 | iPhone / iPad | Native-device workstream; do not claim complete until real native producer/device QA ships | N/A |
 | Android | Native-device workstream; do not claim complete until real native producer/device QA ships | N/A |
 
@@ -23,117 +23,62 @@ The provider registry remains in `lib/smart-sync/providers.js`, but a provider b
 
 Smart Import belongs to **(+) Add**.
 
-User path:
-
 ```text
 (+) Add
   → Import from Cloud / Smart Import
   → choose provider
-  → choose photos/videos
-  → SnapNext imports only the selected media
+  → choose files
+  → SnapNext imports only the selected files
   → originals remain unchanged
 ```
 
-`/imports` is the active launch surface.
-
-`/smart-sync` is now an explanatory/future surface for **Auto Cloud Sync**. It must not silently recreate the old automatic provider-crawl behavior.
-
-More → Integrations may manage service authorization, but it is not a second import workflow.
+`/imports` is the active launch surface. `/smart-sync` remains an explanatory/future surface for **Auto Cloud Sync** and must not recreate automatic provider crawling.
 
 ## Google Drive
 
-Google Drive uses OAuth plus Google Picker.
-
-The requested scope is:
-
-`https://www.googleapis.com/auth/drive.file`
-
-This is a **per-file scope, not a read-only one**. Google does not provide an equivalent per-file read-only scope. SnapNext therefore enforces read-only behavior in its own implementation:
-
-- no whole-Drive enumeration;
-- no Drive upload;
-- no Drive delete;
-- no Drive permission changes;
-- only metadata/content reads for files the user selected.
-
-The old `drive.readonly` path must not return. Existing grants with broader scopes are treated as needing re-authorization rather than being silently reused.
-
-Google Picker requires both:
-
-- `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY`
-- `GOOGLE_DRIVE_PROJECT_NUMBER`
-
-The import endpoint works in bounded batches. Google Drive import is **restart-safe/idempotent**, not a durable background queue: files already completed remain in SnapNext, and selecting the same items again skips copies that are already protected.
+Google Drive uses OAuth plus Google Picker with `https://www.googleapis.com/auth/drive.file`. The code performs no whole-Drive enumeration or provider mutations. Picker imports are bounded and content-deduplicated.
 
 ## Google Photos
 
-Google Photos uses the Picker permission:
+Google Photos uses `photospicker.mediaitems.readonly`. Picker selections become durable `manual_selection` jobs. `/api/cron/smart-import-recovery` may recover only those already-created jobs and never discovers a library or creates background work.
 
-`photospicker.mediaitems.readonly`
+## Dropbox
 
-The user explicitly selects media in Google's Picker. SnapNext inventories only that selection and creates a durable job with:
+Dropbox uses the hosted Chooser. It requires the Dropbox app key (`DROPBOX_CLIENT_ID`) and registered SnapNext domains, but no SnapNext-managed OAuth refresh token for this path.
 
-- provider `google_photos`;
-- mode `manual_selection`;
-- the selected provider file IDs only.
+SnapNext requests direct links for explicitly selected items with multi-select enabled. Those links are short-lived, are consumed immediately, and are not used to browse the rest of the Dropbox account.
 
-The job is resumable. A failed job is retried through the existing retry transition and continues on the **same selected job**, rather than discovering new media.
+## OneDrive
 
-`/api/cron/smart-import-recovery` is a low-frequency server recovery fallback. It processes only already-created Google Photos manual-selection jobs. It does **not** scan cloud connections, discover whole libraries, or create automatic cloud jobs.
+OneDrive uses Microsoft’s hosted JavaScript picker with the public Entra application ID (`ONEDRIVE_CLIENT_ID`) and a registered redirect page at `/onedrive-picker-redirect`.
 
-## Dropbox and OneDrive
+The picker returns short-lived download URLs for selected items. The picker response can also contain an access token; SnapNext deliberately discards that token and sends only the selected download URLs to the server. No OneDrive refresh token is stored and no background connection/job is created.
 
-Dropbox and OneDrive adapter code may remain for legacy cleanup and future picker work, but launch behavior is deliberately narrower:
+## Remote selected-file import
 
-- no new persistent/background OAuth start;
-- no automatic provider discovery job;
-- no scheduled Dropbox/OneDrive polling;
-- no claim that the provider is launch-connected merely because credentials exist.
+Dropbox and OneDrive selections enter `/api/smart-import/remote-selection` in small batches. The server validates HTTPS provider hosts and every redirect, enforces file/plan/storage limits, supports photos/videos/PDFs/common office documents, computes SHA-256 duplicate protection, and stores only successfully verified selections.
 
-Users may download/select files from those services and import them through the normal Add flow today.
-
-When a safe user-selected picker is later implemented and approved, the provider can move from `deferred_picker` to `user_selected_picker` in the registry with corresponding tests.
+If the browser closes mid-import, completed files remain safe. Reselecting the remaining files is idempotent because the stored content hash prevents duplicate storage.
 
 ## Auto Cloud Sync — future premium capability
 
-Auto Cloud Sync may be reconsidered after launch only when all of the following are justified:
-
-1. meaningful user demand;
-2. provider approval and stable API access;
-3. secure refresh-token lifecycle;
-4. rate-limit and reconciliation design;
-5. support/maintenance cost;
-6. storage and egress economics;
-7. explicit product consent and easy disconnect;
-8. a durable worker architecture that survives client lifecycle.
-
-It must not be enabled by simply restoring an old UI toggle or cron.
+Auto Cloud Sync may be reconsidered after launch only when meaningful user demand, provider approval, secure long-lived authorization, maintenance cost, storage economics and durable background architecture justify it. It must not be enabled by restoring an old toggle or cron.
 
 ## Launch safety invariants
 
-1. User-selected import is the default cloud model.
+1. Every web cloud import starts with an explicit user picker/chooser selection.
 2. Google Drive cannot enumerate a whole Drive.
 3. Google Photos jobs contain only Picker-selected media.
-4. Dropbox and OneDrive cannot create new background OAuth connections at launch.
-5. Generic web Smart Sync jobs require explicit selected file IDs.
-6. No scheduled job polls Google Drive, Dropbox, or OneDrive.
-7. The Smart Import recovery cron cannot create a job.
+4. Dropbox Chooser links represent only selected files and no Dropbox OAuth token is stored for the launch path.
+5. OneDrive picker access tokens are discarded; only selected short-lived download URLs reach SnapNext.
+6. Generic web Smart Sync jobs require explicit selected file IDs.
+7. No scheduled job polls Google Drive, Dropbox, or OneDrive.
 8. Import never modifies or deletes the provider original.
-9. Plan capacity and duplicate protection still apply before SnapNext stores media.
+9. Plan capacity and duplicate protection apply before storage.
 10. Auto Cloud Sync remains future-only until deliberately re-approved.
 
-These invariants are enforced by `tests/smart-import-launch.test.mjs`, the Google Drive scope tests, provider-surface tests, and existing storage/import tests.
-
-## Environment setup
-
-Use `docs/SMART_SYNC_PROVIDER_ENV_CHECKLIST.md` for the current launch variables. Do not provision Dropbox/OneDrive credentials merely to satisfy a launch checklist; they are not required for Smart Import launch.
-
-## Native media
-
-Native iOS/Android media intake is a separate client implementation track. Server contracts alone are not proof that native library import/background upload is complete. Do not market native automatic camera-roll sync until the real native producer, permissions, lifecycle behavior and device QA are complete.
+Use `docs/SMART_SYNC_PROVIDER_ENV_CHECKLIST.md` for launch configuration and provider-console verification.
 
 ## Permanent naming rule
 
-For launch, the feature is **Smart Import** / **Import from Cloud**.
-
-“Auto Cloud Sync” refers only to the future continuous-sync capability. Product copy must not use “sync” for the launch picker-import workflow in a way that implies unattended background monitoring.
+For launch, the feature is **Smart Import** / **Import from Cloud**. “Auto Cloud Sync” refers only to the future continuous-sync capability.
