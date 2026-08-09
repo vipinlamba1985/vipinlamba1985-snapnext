@@ -1,7 +1,7 @@
-// Cloud Sync used to hardcode its own provider list, which told users Dropbox
-// and OneDrive were "coming soon" long after both were fully implemented, left
-// Google Photos out entirely, and connected Google Drive no matter which tile
-// was clicked. These tests keep the surfaces reading from the one registry.
+// Smart Import has one provider registry, but launch availability is narrower
+// than technical adapter availability. Google Drive and Google Photos expose
+// user-selected picker paths; Dropbox and OneDrive remain declared for legacy
+// cleanup/future picker work without becoming launch background connections.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -16,50 +16,36 @@ import {
   smartSyncProvider,
 } from '../lib/smart-sync/providers.js';
 import { SMART_SYNC_PROVIDERS as PROVIDER_ARRAY } from '../lib/smart-sync.js';
-import { oauthAdapter } from '../lib/smart-sync/oauth-adapters.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => readFile(path.join(repoRoot, file), 'utf8');
 
 test('there is exactly one provider registry', () => {
-  // lib/smart-sync.js used to keep a second hand-maintained copy. It is now a
-  // view over the registry, so the two cannot disagree about which clouds exist.
   assert.deepEqual(PROVIDER_ARRAY.map(p => p.id), SMART_SYNC_PROVIDER_IDS);
   assert.equal(PROVIDER_ARRAY.length, Object.keys(SMART_SYNC_PROVIDERS).length);
-  for (const provider of PROVIDER_ARRAY) {
-    assert.equal(provider, SMART_SYNC_PROVIDERS[provider.id], `${provider.id} must be the registry object itself`);
-  }
+  for (const provider of PROVIDER_ARRAY) assert.equal(provider, SMART_SYNC_PROVIDERS[provider.id], `${provider.id} must be the registry object itself`);
 });
 
-test('every supported cloud is declared', () => {
-  assert.deepEqual(SMART_SYNC_PROVIDER_IDS, [
-    'google_drive',
-    'google_photos',
-    'dropbox',
-    'onedrive',
-    'ios_photos',
-    'android_media',
-  ]);
+test('every supported source is declared', () => {
+  assert.deepEqual(SMART_SYNC_PROVIDER_IDS, ['google_drive', 'google_photos', 'dropbox', 'onedrive', 'ios_photos', 'android_media']);
 });
 
-test('every web provider has a way to connect', () => {
-  for (const provider of Object.values(SMART_SYNC_PROVIDERS)) {
-    if (provider.surface !== 'web') {
-      assert.equal(provider.connectPath, null, `${provider.id} is native and needs no web connect path`);
-      continue;
-    }
-    assert.ok(provider.connectPath, `${provider.id} must declare how it connects`);
-    assert.ok(provider.env.length, `${provider.id} must declare its credentials`);
-    assert.ok(provider.description, `${provider.id} must explain itself to the user`);
+test('launch web sources have picker paths while deferred providers cannot start a new connection', () => {
+  const drive = smartSyncProvider('google_drive');
+  const photos = smartSyncProvider('google_photos');
+  const dropbox = smartSyncProvider('dropbox');
+  const onedrive = smartSyncProvider('onedrive');
 
-    // Google Drive predates the shared adapter and keeps its own route; every
-    // other web provider must have a real OAuth adapter behind it.
-    if (provider.id === 'google_drive') {
-      assert.match(provider.connectPath, /^\/cloud\/google-drive\//);
-    } else {
-      assert.ok(oauthAdapter(provider.id), `${provider.id} has no OAuth adapter`);
-      assert.equal(provider.connectPath, `/smart-sync/oauth/${provider.id}/start`);
-    }
+  assert.equal(drive.syncStrategy, 'user_selected_picker');
+  assert.match(drive.connectPath, /^\/cloud\/google-drive\//);
+  assert.equal(photos.syncStrategy, 'user_selected_picker');
+  assert.equal(photos.connectPath, '/smart-sync/oauth/google_photos/start');
+
+  for (const provider of [dropbox, onedrive]) {
+    assert.equal(provider.syncStrategy, 'deferred_picker');
+    assert.equal(provider.connectPath, null);
+    assert.ok(provider.env.length, `${provider.id} keeps credential metadata only for compatibility/future work`);
+    assert.match(provider.description, /planned|launch/i);
   }
 });
 
@@ -73,20 +59,16 @@ test('the public provider shape never leaks environment variable names', () => {
   assert.doesNotMatch(serialized, /CLIENT_SECRET|CLIENT_ID|CLOUD_CONNECTOR_SECRET/);
 });
 
-test('availability follows configured credentials, not a hand-maintained flag', () => {
+test('credentials do not accidentally make a deferred provider launch-available', () => {
   const dropbox = smartSyncProvider('dropbox');
   const saved = dropbox.env.map(key => process.env[key]);
   try {
-    for (const key of dropbox.env) delete process.env[key];
-    const missing = publicProviderStatus(dropbox);
-    assert.equal(missing.available, false);
-    assert.equal(missing.configured, false);
-    assert.equal(missing.availability, 'credentials_required');
-
     for (const key of dropbox.env) process.env[key] = 'test-value';
-    const ready = publicProviderStatus(dropbox);
-    assert.equal(ready.available, true);
-    assert.equal(ready.availability, 'ready');
+    const status = publicProviderStatus(dropbox);
+    assert.equal(status.configured, true);
+    assert.equal(status.availability, 'future_picker');
+    assert.equal(status.launchAvailable, false);
+    assert.equal(status.available, false);
   } finally {
     dropbox.env.forEach((key, index) => {
       if (saved[index] === undefined) delete process.env[key];
@@ -103,20 +85,18 @@ test('native providers are never gated on server credentials', () => {
   }
 });
 
-test('Cloud Sync renders the live registry instead of a hardcoded list', async () => {
+test('Smart Import exposes only launch picker actions and never starts Dropbox or OneDrive OAuth', async () => {
   const page = await read(path.join('app', '(app)', 'imports', 'page.js'));
-
-  // The old hardcoded list and its false "Soon" labels must not come back.
-  assert.doesNotMatch(page, /CLOUD_OPTIONS/, 'provider list must come from the server');
-  assert.doesNotMatch(page, /available: (true|false)/, 'availability is a deployment fact, not a literal');
-  assert.match(page, /apiFetch\('\/smart-sync\/providers'/);
-
-  // Clicking a tile must connect that provider, not always Google Drive.
-  assert.match(page, /provider\.id === 'google_drive'/);
-  assert.match(page, /\/smart-sync\/oauth\/\$\{provider\.id\}\/start/);
+  assert.doesNotMatch(page, /CLOUD_OPTIONS/);
+  assert.match(page, /\/cloud\/google-drive\/start/);
+  assert.match(page, /\/smart-sync\/oauth\/google_photos\/start/);
+  assert.match(page, /title="Dropbox"/);
+  assert.match(page, /title="OneDrive"/);
+  assert.doesNotMatch(page, /oauth\/dropbox\/start|oauth\/onedrive\/start/);
+  assert.match(page, /href="\/upload\/discover"/);
 });
 
-test('the providers endpoint requires a session and returns the safe shape', async () => {
+test('the providers endpoint remains authenticated and returns the safe registry shape', async () => {
   const route = await read(path.join('app', 'api', 'smart-sync', 'providers', 'route.js'));
   assert.match(route, /getUserFromRequest/);
   assert.match(route, /status: 401/);
