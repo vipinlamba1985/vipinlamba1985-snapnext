@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -16,12 +16,23 @@ import {
 } from 'lucide-react';
 import { formatBytes } from '@/lib/utils';
 import { classifyLocalFile } from '@/lib/discovery-classify';
+import { apiFetch } from '@/lib/api-client';
 import useDiscoveryFlow from '@/components/protection/useDiscoveryFlow';
 import ProtectionStages from './ProtectionStages';
 
 export default function DiscoveryFlow() {
   const inputRef = useRef(null);
   const flow = useDiscoveryFlow();
+  const [localFaceConsent, setLocalFaceConsent] = useState(null);
+  const [localConsentPrompt, setLocalConsentPrompt] = useState(false);
+  const [localConsentBusy, setLocalConsentBusy] = useState(false);
+  const [skipLocalFaceDetection, setSkipLocalFaceDetection] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/settings/local-face-detection-consent')
+      .then(setLocalFaceConsent)
+      .catch(() => setLocalFaceConsent(null));
+  }, []);
 
   useEffect(() => {
     if (flow.stage !== 'protecting') return undefined;
@@ -41,10 +52,12 @@ export default function DiscoveryFlow() {
       flow.setError('Choose at least one supported photo or video.');
       return;
     }
+    setLocalConsentPrompt(false);
+    setSkipLocalFaceDetection(false);
     await flow.checkItems(items);
   }
 
-  async function startProtection() {
+  async function runProtection() {
     let handoff = null;
     try {
       flow.setError('');
@@ -68,6 +81,38 @@ export default function DiscoveryFlow() {
     } finally {
       if (handoff) await flow.finalizeProtection(handoff).catch(() => null);
     }
+  }
+
+  async function startProtection() {
+    const localChoiceNeeded = flow.report.photos > 0
+      && localFaceConsent?.available
+      && !localFaceConsent?.granted
+      && !skipLocalFaceDetection;
+    if (localChoiceNeeded) {
+      setLocalConsentPrompt(true);
+      return;
+    }
+    await runProtection();
+  }
+
+  async function enableLocalDetectionAndProtect() {
+    setLocalConsentBusy(true);
+    try {
+      const next = await apiFetch('/settings/local-face-detection-consent', { method: 'POST' });
+      setLocalFaceConsent(next);
+      setLocalConsentPrompt(false);
+      await runProtection();
+    } catch (error) {
+      flow.setError(error?.message || 'On-device face detection could not be enabled. You can still back up without it.');
+    } finally {
+      setLocalConsentBusy(false);
+    }
+  }
+
+  async function protectWithoutLocalDetection() {
+    setSkipLocalFaceDetection(true);
+    setLocalConsentPrompt(false);
+    await runProtection();
   }
 
   if (flow.stage === 'protecting' || flow.stage === 'results') {
@@ -239,6 +284,28 @@ export default function DiscoveryFlow() {
           </div>
         )}
 
+        {localConsentPrompt && (
+          <div data-testid="upload-local-face-consent" className="mt-5 rounded-2xl border border-cyan-300/20 bg-cyan-400/[0.07] p-5">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-cyan-100" />
+              <div>
+                <h2 className="font-black text-cyan-50">Organize faces on this device?</h2>
+                <p className="mt-2 text-sm leading-6 text-cyan-50/65">
+                  After you press Back up, SnapNext can use MediaPipe on this device to count faces for Library organization. This local step does not send face images, crops, embeddings, or identifiers to AWS and does not enable cloud face recognition.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button disabled={localConsentBusy} onClick={() => { void enableLocalDetectionAndProtect(); }} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-xs font-black text-black disabled:opacity-50">
+                {localConsentBusy && <Loader2 className="h-4 w-4 animate-spin" />}Enable on-device detection & back up
+              </button>
+              <button disabled={localConsentBusy} onClick={() => { void protectWithoutLocalDetection(); }} className="min-h-11 rounded-full border border-white/10 px-5 text-xs font-black text-white/70 disabled:opacity-50">
+                Back up without face detection
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
           {canConfirm
             ? 'Nothing has uploaded yet. Press the single button below to begin.'
@@ -250,8 +317,8 @@ export default function DiscoveryFlow() {
         <div className="mt-7 flex flex-wrap gap-3">
           {canConfirm ? (
             <button
-              onClick={startProtection}
-              disabled={flow.protecting}
+              onClick={() => { void startProtection(); }}
+              disabled={flow.protecting || localConsentBusy}
               className="inline-flex min-h-14 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-4 text-base font-black text-white disabled:opacity-40"
             >
               {primaryLabel} <ArrowRight className="h-4 w-4" />
@@ -261,7 +328,7 @@ export default function DiscoveryFlow() {
               <Images className="h-5 w-5" /> View in Library
             </Link>
           )}
-          <button onClick={() => { void flow.resetFlow(); }} className="min-h-14 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">
+          <button onClick={() => { setLocalConsentPrompt(false); setSkipLocalFaceDetection(false); void flow.resetFlow(); }} className="min-h-14 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">
             Choose different files
           </button>
         </div>
