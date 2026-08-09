@@ -72,7 +72,8 @@ test('pending, processing, verifying and failed deletion states block cloud reco
 test('cloud revoke is separate from stored-data deletion', () => {
   const route = read('app/api/settings/face-processing-consent/route.js');
   assert.match(route, /M7 separates revoke from delete/);
-  assert.doesNotMatch(route, /collection\('face_deletion_requests'\).*updateOne/s);
+  assert.doesNotMatch(route, /reason: 'consent_revoked'/);
+  assert.doesNotMatch(route, /\$inc:\s*\{\s*generation:/);
   assert.match(route, /deletionQueued: false/);
   assert.match(route, /cloudFaceRecognitionConsent\.granted': false/);
 
