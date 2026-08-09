@@ -15,30 +15,26 @@ function withEnv(values, callback) {
   }
 }
 
-test('launch providers expose picker imports while Dropbox and OneDrive stay deferred', () => {
+test('all four launch web providers expose user-selected picker imports', () => {
   withEnv({
     CLOUD_CONNECTOR_SECRET: 'secret',
-    DROPBOX_CLIENT_ID: 'dropbox-id', DROPBOX_CLIENT_SECRET: 'dropbox-secret',
-    ONEDRIVE_CLIENT_ID: 'onedrive-id', ONEDRIVE_CLIENT_SECRET: 'onedrive-secret',
+    DROPBOX_CLIENT_ID: 'dropbox-id',
+    ONEDRIVE_CLIENT_ID: 'onedrive-id',
     GOOGLE_PHOTOS_CLIENT_ID: 'photos-id', GOOGLE_PHOTOS_CLIENT_SECRET: 'photos-secret',
     GOOGLE_DRIVE_CLIENT_ID: 'drive-id', GOOGLE_DRIVE_CLIENT_SECRET: 'drive-secret',
   }, () => {
     const providers = new Map(listProviderStatus().map(provider => [provider.id, provider]));
-    assert.equal(providers.get('dropbox').syncStrategy, 'deferred_picker');
-    assert.equal(providers.get('dropbox').availability, 'future_picker');
-    assert.equal(providers.get('dropbox').launchAvailable, false);
-    assert.equal(providers.get('onedrive').syncStrategy, 'deferred_picker');
-    assert.equal(providers.get('onedrive').availability, 'future_picker');
-    assert.equal(providers.get('onedrive').launchAvailable, false);
-    assert.equal(providers.get('google_photos').syncStrategy, 'user_selected_picker');
-    assert.equal(providers.get('google_photos').availability, 'picker_ready');
-    assert.equal(providers.get('google_photos').launchAvailable, true);
-    assert.equal(providers.get('google_drive').syncStrategy, 'user_selected_picker');
-    assert.equal(providers.get('google_drive').launchAvailable, true);
+    for (const id of ['dropbox', 'onedrive', 'google_photos', 'google_drive']) {
+      assert.equal(providers.get(id).syncStrategy, 'user_selected_picker');
+      assert.equal(providers.get(id).availability, 'picker_ready');
+      assert.equal(providers.get(id).launchAvailable, true);
+    }
+    assert.equal(providers.get('dropbox').auth, 'hosted_picker');
+    assert.equal(providers.get('onedrive').auth, 'hosted_picker');
   });
 });
 
-test('dormant OAuth adapters remain read-only for cleanup/future picker compatibility', () => {
+test('legacy OAuth adapters remain dormant and cannot define the hosted picker launch path', () => {
   assert.deepEqual(oauthAdapter('dropbox').scopes, ['files.metadata.read', 'files.content.read']);
   assert.deepEqual(oauthAdapter('onedrive').scopes, ['offline_access', 'Files.Read']);
   assert.equal(oauthAdapter('google_photos').callbackPath, '/api/smart-sync/oauth/google_photos/callback');
