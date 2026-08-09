@@ -4,20 +4,23 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateNativeManifest, buildNativeUploadPlan } from '../lib/smart-sync/native-bridge.js';
+import { nativePeopleScanCapability, canOfferPeopleScan } from '../lib/native/people-scan-contract.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => readFile(path.join(root, file), 'utf8');
 
-test('people scanning reports itself unsupported, with a reason', async () => {
-  const source = await read(path.join('lib', 'native', 'people-scan-contract.js'));
-  assert.match(source, /supported:\s*false/);
-  assert.match(source, /reason/);
+test('people scanning reports itself unsupported, with a reason', () => {
+  const capability = nativePeopleScanCapability();
+  assert.equal(capability.supported, false);
+  assert.equal(typeof capability.reason, 'string');
+  assert.ok(capability.reason.length > 0);
 });
 
-test('the contract carries no implementation and no mock success', async () => {
+test('the contract carries no runtime implementation or mock success', async () => {
   const source = await read(path.join('lib', 'native', 'people-scan-contract.js'));
-  assert.doesNotMatch(source, /supported:\s*true/);
-  assert.doesNotMatch(source, /mock|fake/i);
+  assert.equal(canOfferPeopleScan(), false);
+  assert.doesNotMatch(source, /return\s+\{\s*supported:\s*true/, 'runtime code must not manufacture scanning support');
+  assert.match(source, /native_plugin_missing/);
 });
 
 test('nothing in the app offers people scanning yet', async () => {
