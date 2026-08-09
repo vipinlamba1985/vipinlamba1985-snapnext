@@ -185,7 +185,7 @@ export default function DiscoveryFlow() {
           <div data-testid="upload-cloud-sync" className="mx-auto mt-6 flex max-w-xl flex-col items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 sm:flex-row sm:text-left">
             <CloudDownload className="h-5 w-5 shrink-0 text-cyan-200" />
             <p className="flex-1 text-sm leading-6 text-white/55">
-              Already stored in a cloud? Import selected files from Google Drive, Google Photos, Dropbox or OneDrive. SnapNext does not change the originals.
+              Already stored in a cloud? Import selected files from Google Drive or Google Photos. For Dropbox or OneDrive, download the files and add them here. SnapNext does not change the originals.
             </p>
             <Link data-testid="upload-cloud-sync-link" href="/imports" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.07] px-5 py-2.5 text-sm font-black text-white">
               Import from Cloud
