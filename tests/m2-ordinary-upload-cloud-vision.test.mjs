@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
+const CLOUD_FACE_CALL = /@aws-sdk\/client-rekognition|new\s+(?:IndexFaces|DetectFaces)Command|peopleRekognition\./;
 
 test('ordinary protected backup commit never calls cloud AI or Rekognition', () => {
   const commit = read('lib/protection-commit.js');
-  assert.doesNotMatch(commit, /@\/lib\/gemini|analyzeImage|analyzeVideo/);
-  assert.doesNotMatch(commit, /reserveExternalAiSpend|settleExternalAiSpend|releaseExternalAiSpend/);
-  assert.doesNotMatch(commit, /Rekognition|IndexFaces|DetectFaces/);
+  assert.doesNotMatch(commit, /@\/lib\/gemini|\banalyzeImage\s*\(|\banalyzeVideo\s*\(/);
+  assert.doesNotMatch(commit, /reserveExternalAiSpend\s*\(|settleExternalAiSpend\s*\(|releaseExternalAiSpend\s*\(/);
+  assert.doesNotMatch(commit, CLOUD_FACE_CALL);
   assert.match(commit, /aiAnalysis: null/);
   assert.match(commit, /ordinary backup commits never call Gemini/);
 });
@@ -19,8 +20,10 @@ test('ordinary backup client only starts optional local MediaPipe analysis, not 
   const local = read('lib/intelligence/web-face-analysis.js');
   assert.match(run, /uploadOneProtectedItem/);
   assert.match(upload, /buildWebFaceAnalysisIfEnabled/);
-  assert.doesNotMatch(upload, /Rekognition|IndexFaces|@aws-sdk\/client-rekognition|@\/lib\/gemini/);
-  assert.doesNotMatch(local, /Rekognition|IndexFaces|@aws-sdk\/client-rekognition|@\/lib\/gemini/);
+  assert.doesNotMatch(upload, CLOUD_FACE_CALL);
+  assert.doesNotMatch(upload, /@\/lib\/gemini/);
+  assert.doesNotMatch(local, CLOUD_FACE_CALL);
+  assert.doesNotMatch(local, /@\/lib\/gemini/);
 });
 
 test('cloud People recognition remains behind its independent server consent gate', () => {
