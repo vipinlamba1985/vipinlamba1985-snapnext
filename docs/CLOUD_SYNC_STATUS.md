@@ -1,203 +1,139 @@
-# Cloud Sync — what works, and what native still needs
+# Smart Import — launch status
 
-Honest status of every sync source, so nobody promises a user something that
-cannot happen yet. Providers are declared once, in
-`lib/smart-sync/providers.js`; every surface reads from there.
+This document is the launch contract for cloud intake in SnapNext.
 
-## Web clouds — complete
+**Launch product:** Smart Import — user-selected media intake.
 
-| Provider | Auth | Strategy | Status |
-| :--- | :--- | :--- | :--- |
-| Google Drive | OAuth (`drive.file`) | User-selected picker | ✅ Pick in Google Picker, then import |
-| Google Photos | Picker OAuth | User-selected picker | ✅ User picks items, then import |
-| Dropbox | OAuth | Durable cloud job | ✅ Delta cursor, checksums, download |
-| OneDrive | OAuth (Graph delta) | Durable cloud job | ✅ Delta link, checksums, download |
+**Not a launch product:** continuous whole-cloud synchronization.
 
-All four are **fully implemented server-side** — listing, normalising, delta
-cursors, content hashes, token refresh and download all live in
-`lib/smart-sync/provider-api.js` and `lib/smart-sync/oauth-adapters.js`.
+The provider registry remains in `lib/smart-sync/providers.js`, but a provider being technically known to the code does not mean SnapNext may create a new persistent/background connection for it.
 
-**A provider appears the moment its credentials exist.** Availability is derived
-from `process.env`, never from a hand-maintained flag. If a cloud shows "Not set
-up", the deployment is missing keys — see
-`docs/SMART_SYNC_PROVIDER_ENV_CHECKLIST.md`. Nothing in the code needs changing.
+## Launch matrix
 
-Dropbox, OneDrive and Google Photos are requested with **read-only** scopes, so
-an import cannot modify those accounts even in principle.
+| Source | Launch behavior | Background whole-library sync |
+| :--- | :--- | :--- |
+| Google Drive | ✅ User selects files in Google Picker, then SnapNext imports those files | ❌ Disabled |
+| Google Photos | ✅ User selects media in Google Photos Picker; selection becomes a durable manual import job | ❌ Disabled |
+| Dropbox | File/Add fallback; legacy connections may be removed | ❌ New persistent OAuth disabled |
+| OneDrive | File/Add fallback; legacy connections may be removed | ❌ New persistent OAuth disabled |
+| iPhone / iPad | Native-device workstream; do not claim complete until real native producer/device QA ships | N/A |
+| Android | Native-device workstream; do not claim complete until real native producer/device QA ships | N/A |
 
-**Google Drive is the exception, and the wording matters.** `drive.file` is a
-per-file scope, not a read-only one: it permits creating and modifying the files
-the app has been given access to. Google offers no per-file read-only
-equivalent, so read-only behaviour for Drive is enforced by SnapNext's own code
-rather than by the scope. The import path only ever reads metadata and content —
-it never calls update, delete, permissions or upload against Drive — and
-`tests/google-drive-picker-scope.test.mjs` fails if it starts to.
+## Product ownership
 
-Saying "SnapNext cannot touch your Drive" would therefore be a claim the scope
-does not back. What is true: SnapNext cannot enumerate a Drive, and only reaches
-files the user picked.
+Smart Import belongs to **(+) Add**.
 
-### Two surfaces, two jobs
+User path:
 
-- **`/imports` (Import from Cloud)** — connect a cloud and pick what to bring
-  in once. Drive and Photos use Google's Picker; other providers connect here.
-- **`/smart-sync` (Smart Backup)** — ongoing automatic backup: rules, modes,
-  jobs, capacity.
+```text
+(+) Add
+  → Import from Cloud / Smart Import
+  → choose provider
+  → choose photos/videos
+  → SnapNext imports only the selected media
+  → originals remain unchanged
+```
 
-Both render the same registry. Neither hardcodes a provider list.
+`/imports` is the active launch surface.
 
-## Native camera roll — server ready, client not built
+`/smart-sync` is now an explanatory/future surface for **Auto Cloud Sync**. It must not silently recreate the old automatic provider-crawl behavior.
 
-**Do not tell users iPhone/Android sync works. It does not yet.**
+More → Integrations may manage service authorization, but it is not a second import workflow.
 
-### Two different features, often confused
+## Google Drive
 
-- **Manual native selection** (Phase 1) — the system photo picker, albums,
-  favourites, date ranges. Needs a photo-library plugin and nothing else. Not
-  built.
-- **Private People Scan** (Phase 2) — on-device face detection, embedding,
-  grouping and user confirmation, so only photos of chosen people upload. Needs
-  a selected embedding model and custom native plugins. Not built, and not
-  scopeable until the model gates in `docs/adr/0001-native-media-intelligence.md`
-  are recorded.
+Google Drive uses OAuth plus Google Picker.
 
-Phase 1 must not be blocked on Phase 2.
+The requested scope is:
 
-### `confirmedPersonIds` does not come from the operating system
+`https://www.googleapis.com/auth/drive.file`
 
-The manifest protocol accepts `confirmedPersonIds`, and `buildNativeUploadPlan`
-filters on it through the `favorite_people` rule. It was written as though a
-platform could supply those identifiers. **None can.**
+This is a **per-file scope, not a read-only one**. Google does not provide an equivalent per-file read-only scope. SnapNext therefore enforces read-only behavior in its own implementation:
 
-Photo-library permission grants access to media, not to identities. Apple does
-not expose the Photos People album through PhotoKit, and Android MediaStore has
-no equivalent. Google Photos groups faces, but that is an application, not the
-operating system.
+- no whole-Drive enumeration;
+- no Drive upload;
+- no Drive delete;
+- no Drive permission changes;
+- only metadata/content reads for files the user selected.
 
-So `confirmedPersonIds` are **SnapNext-generated local identifiers**, produced by
-SnapNext's own on-device detection, embedding, grouping and user confirmation.
-They are filtering metadata — never proof of identity, never an authorisation
-control. The server verifies every uploaded file independently regardless.
+The old `drive.readonly` path must not return. Existing grants with broader scopes are treated as needing re-authorization rather than being silently reused.
 
-A user *can* browse People in the system picker themselves and select from it;
-that is manual selection working as designed, not programmatic filtering, and it
-is not a foundation to build rules on.
+Google Picker requires both:
 
-**Today there is no face detection, no embedding, no clustering and no local
-people index anywhere in this repository.** The native device endpoints and the
-upload plan are server contracts waiting for a producer. The shell is a
-Capacitor WebView; `native-web/` contains only an offline fallback page. Do not
-represent people-based import as available.
+- `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY`
+- `GOOGLE_DRIVE_PROJECT_NUMBER`
 
-The **server half is complete**:
+The import endpoint works in bounded batches. Google Drive import is **restart-safe/idempotent**, not a durable background queue: files already completed remain in SnapNext, and selecting the same items again skips copies that are already protected.
 
-- `lib/smart-sync/native-bridge.js` — `validateNativeManifest()` and
-  `buildNativeUploadPlan()`, protocol version `2`.
-- `POST /api/smart-sync/native/device` — register and authorise a device.
-- `POST /api/smart-sync/native/plan` — send a manifest of up to 500 assets,
-  receive the subset to upload, filtered by the user's rules, remaining
-  capacity, and checksums SnapNext already holds.
+## Google Photos
 
-The **client half does not exist**. `package.json` has `@capacitor/app`,
-`browser`, `network`, `share`, `haptics`, `splash-screen` and `status-bar` —
-**no photo-library plugin**. Nothing in the app can enumerate a camera roll, so
-no manifest can ever be produced.
+Google Photos uses the Picker permission:
 
-### What finishing it requires
+`photospicker.mediaitems.readonly`
 
-1. **A media-library plugin.** `@capacitor/camera` only picks single images; a
-   full camera-roll sync needs something like `@capawesome/capacitor-photo-editor`
-   /`capacitor-plugin-media`, or a small custom plugin over `PHPhotoLibrary`
-   (iOS) and `MediaStore` (Android). Choosing this is the first decision.
-   Capacitor can bridge to real Swift and Kotlin through custom plugins, so this
-   does not require a separate native application — see
-   `docs/adr/0001-native-media-intelligence.md`.
-2. **A manifest builder** that maps device assets to the shape
-   `validateNativeManifest` expects — `localId`, `kind`, `filename`, `size`,
-   `createdAt`, `favorite`, `albumIds`, `confirmedPersonIds`, `checksum`.
-   `favorite` and album membership are available from both platform APIs.
-   `confirmedPersonIds` is **not** — no platform supplies it, so it stays empty
-   until Phase 2 produces it locally (see above).
-3. **A checksum strategy.** The plan endpoint deduplicates on checksums, so the
-   client must hash on device. Hashing large videos in JS is slow — this
-   probably belongs in native code.
-4. **Background upload.** iOS needs `BGProcessingTask` and a background URLSession;
-   Android needs `WorkManager`. Capacitor's default WebView execution is
-   suspended in background, so a JS-only loop will not survive.
-5. **Permission strings and entitlements.**
-   - iOS `Info.plist`: `NSPhotoLibraryUsageDescription`, plus the Background
-     Modes capability.
-   - Android: `READ_MEDIA_IMAGES` and `READ_MEDIA_VIDEO` (API 33+), falling back
-     to `READ_EXTERNAL_STORAGE`, and a foreground-service type for long uploads.
-   - Both stores review photo-library access; the usage string must say plainly
-     that photos are uploaded to the user's own SnapNext library.
-6. **Device verification.** Building and testing this needs Xcode and Android
-   Studio on real hardware. It cannot be validated in CI.
+The user explicitly selects media in Google's Picker. SnapNext inventories only that selection and creates a durable job with:
 
-Until steps 1–6 are done, `ios_photos` and `android_media` correctly report
-`native_app_required` and the UI says the work happens in the mobile app. That
-message is accurate — it is a description of where the feature will live, not a
-claim that it is finished.
+- provider `google_photos`;
+- mode `manual_selection`;
+- the selected provider file IDs only.
 
-## Adding a new cloud
+The job is resumable. A failed job is retried through the existing retry transition and continues on the **same selected job**, rather than discovering new media.
 
-1. Add it to `lib/smart-sync/providers.js` with its `env`, `capabilities`,
-   `syncStrategy`, `connectPath` and `description`.
-2. Add an OAuth adapter in `lib/smart-sync/oauth-adapters.js`.
-3. Implement list / normalise / download in `lib/smart-sync/provider-api.js`,
-   returning the same normalised asset shape as the others.
-4. Add its variables and callback URL to
-   `docs/SMART_SYNC_PROVIDER_ENV_CHECKLIST.md`.
-5. Nothing in the UI needs editing — both surfaces render the registry.
+`/api/cron/smart-import-recovery` is a low-frequency server recovery fallback. It processes only already-created Google Photos manual-selection jobs. It does **not** scan cloud connections, discover whole libraries, or create automatic cloud jobs.
 
-`tests/cloud-sync-provider-surface.test.mjs` checks that every web provider has
-credentials, a connect path and a real adapter behind it, and that the browser
-payload never carries environment variable names.
+## Dropbox and OneDrive
 
-## Google Drive uses the Picker, not whole-Drive access
+Dropbox and OneDrive adapter code may remain for legacy cleanup and future picker work, but launch behavior is deliberately narrower:
 
-Drive requests `drive.file`, the per-file scope. It has no ability to list or
-read a user's Drive; it can only reach files the user picked in Google's own
-Picker window.
+- no new persistent/background OAuth start;
+- no automatic provider discovery job;
+- no scheduled Dropbox/OneDrive polling;
+- no claim that the provider is launch-connected merely because credentials exist.
 
-This is a deliberate compliance decision. `drive.readonly` — what this used to
-request — is classified by Google as a **restricted scope** and requires an
-annual third-party security assessment before it can be used outside testing
-mode. The assessment is priced by external assessors, not Google, and takes
-months. SnapNext only ever needs the files someone chooses, so the per-file
-scope is both the honest request and the one with no audit attached.
+Users may download/select files from those services and import them through the normal Add flow today.
 
-Consequences:
+When a safe user-selected picker is later implemented and approved, the provider can move from `deferred_picker` to `user_selected_picker` in the registry with corresponding tests.
 
-- `/api/cloud/google-drive/files` returns **410** with `picker_required`.
-  Nothing can list a Drive any more, by design.
-- Selection happens client-side via Google Picker; the chosen file ids go to the
-  existing import endpoint unchanged.
-- `/api/cloud/google-drive/picker-token` hands the browser a short-lived
-  access token scoped to `drive.file`. The refresh token never leaves the server.
+## Auto Cloud Sync — future premium capability
 
-### Extra configuration
+Auto Cloud Sync may be reconsidered after launch only when all of the following are justified:
 
-| Variable | Purpose |
-| :--- | :--- |
-| `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY` | Browser API key for the Picker. Restrict it to your domain. |
-| `GOOGLE_DRIVE_PROJECT_NUMBER` | Cloud project number, used as the Picker `appId`. **Required** — without it picked files are not associated with this app. |
+1. meaningful user demand;
+2. provider approval and stable API access;
+3. secure refresh-token lifecycle;
+4. rate-limit and reconciliation design;
+5. support/maintenance cost;
+6. storage and egress economics;
+7. explicit product consent and easy disconnect;
+8. a durable worker architecture that survives client lifecycle.
 
-Both are required. `/picker-token` returns 503 `picker_not_configured` when
-either is missing, rather than opening a Picker that cannot return usable files.
+It must not be enabled by simply restoring an old UI toggle or cron.
 
-### Migrating an older connection
+## Launch safety invariants
 
-A Drive connection authorised before this change still holds a `drive.readonly`
-grant — rewriting what the code requests does not narrow a grant Google has
-already issued. Such a connection is revoked at Google and deleted on first
-sight, and the user is asked to reconnect once. Responses carry
-`rescope_required` so the UI can explain why.
+1. User-selected import is the default cloud model.
+2. Google Drive cannot enumerate a whole Drive.
+3. Google Photos jobs contain only Picker-selected media.
+4. Dropbox and OneDrive cannot create new background OAuth connections at launch.
+5. Generic web Smart Sync jobs require explicit selected file IDs.
+6. No scheduled job polls Google Drive, Dropbox, or OneDrive.
+7. The Smart Import recovery cron cannot create a job.
+8. Import never modifies or deletes the provider original.
+9. Plan capacity and duplicate protection still apply before SnapNext stores media.
+10. Auto Cloud Sync remains future-only until deliberately re-approved.
 
-## The feature is import, not sync
+These invariants are enforced by `tests/smart-import-launch.test.mjs`, the Google Drive scope tests, provider-surface tests, and existing storage/import tests.
 
-It is named "Import from Cloud" everywhere a user can see it. Nothing polls a
-provider on a schedule on the user's behalf, so calling it sync would promise
-background work that does not happen. Ongoing background sync remains a
-possible paid feature later, with explicit consent and storage-limit
-enforcement — see `SNAPNEXT_BLUEPRINT_V4.md`.
+## Environment setup
+
+Use `docs/SMART_SYNC_PROVIDER_ENV_CHECKLIST.md` for the current launch variables. Do not provision Dropbox/OneDrive credentials merely to satisfy a launch checklist; they are not required for Smart Import launch.
+
+## Native media
+
+Native iOS/Android media intake is a separate client implementation track. Server contracts alone are not proof that native library import/background upload is complete. Do not market native automatic camera-roll sync until the real native producer, permissions, lifecycle behavior and device QA are complete.
+
+## Permanent naming rule
+
+For launch, the feature is **Smart Import** / **Import from Cloud**.
+
+“Auto Cloud Sync” refers only to the future continuous-sync capability. Product copy must not use “sync” for the launch picker-import workflow in a way that implies unattended background monitoring.
