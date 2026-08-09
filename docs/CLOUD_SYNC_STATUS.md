@@ -81,7 +81,7 @@ Auto Cloud Sync may be reconsidered after launch only when meaningful user deman
 
 ## Current code validation
 
-The four-provider Smart Import branch passed **565 tests with 0 failures**, compiled successfully with the optimized Next.js build, and generated **107/107 pages**, including `/onedrive-picker-redirect`. The validated Vercel preview deployment is `dpl_C83dpVHGNuWFE15eEebeLTaYUErC` on head `338d99692459fab945235a19e08c96497cf45cbe`.
+The four-provider Smart Import implementation passed **565 tests with 0 failures**, compiled successfully with the optimized Next.js build, and generated **107/107 pages**, including `/onedrive-picker-redirect`. Each final documentation-only head must continue passing the same repository build gate before it is treated as validated.
 
 This validates code/build behavior only. Real provider launch readiness still requires the provider-console setup and signed-in selection tests listed in `docs/SMART_SYNC_PROVIDER_ENV_CHECKLIST.md`.
 
