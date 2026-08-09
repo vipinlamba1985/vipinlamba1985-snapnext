@@ -5,13 +5,14 @@ import { apiFetch } from '@/lib/api-client';
 import { analyzeStoredWebPhoto } from '@/lib/intelligence/web-face-analysis';
 import { publishLibraryRefresh } from '@/lib/library-refresh';
 
-const BACKFILL_LIMIT = 6;
+const BACKFILL_PAGE_SIZE = 6;
+const BACKFILL_MAX_PER_VISIT = 18;
 
 /**
  * Bounded web producer for photos that arrived before local Magic Sorter data
- * existed. It runs only while the user is in Magic Library, processes a small
- * batch, and leaves unsupported/failed images deferred for a later visit or a
- * native producer. No AWS call is made here.
+ * existed. A stable cursor lets one visit advance beyond a bad first page, while
+ * per-media retryAt backoff prevents repeated failures from starving the queue.
+ * New uploads are analyzed in the upload path; this remains finite catch-up.
  */
 export default function PeopleLocalAnalysisBackfill() {
   const started = useRef(false);
@@ -22,18 +23,34 @@ export default function PeopleLocalAnalysisBackfill() {
     let cancelled = false;
 
     (async () => {
-      const batch = await apiFetch(`/media/analysis/backfill?limit=${BACKFILL_LIMIT}`);
+      let cursor = '';
+      let attempted = 0;
       let completed = 0;
-      for (const item of batch.items || []) {
-        if (cancelled) break;
-        try {
-          await analyzeStoredWebPhoto(item.id);
-          completed += 1;
-        } catch {
-          // Fail closed: unsupported formats/browsers remain awaiting_analysis.
-          // They are never converted to no_faces and never sent to AWS here.
+
+      while (!cancelled && attempted < BACKFILL_MAX_PER_VISIT) {
+        const remaining = BACKFILL_MAX_PER_VISIT - attempted;
+        const limit = Math.min(BACKFILL_PAGE_SIZE, remaining);
+        const query = new URLSearchParams({ limit: String(limit) });
+        if (cursor) query.set('cursor', cursor);
+        const batch = await apiFetch(`/media/analysis/backfill?${query}`);
+        if (!batch?.enabled || !(batch.items || []).length) break;
+
+        for (const item of batch.items || []) {
+          if (cancelled || attempted >= BACKFILL_MAX_PER_VISIT) break;
+          attempted += 1;
+          try {
+            const analysis = await analyzeStoredWebPhoto(item.id);
+            if (analysis) completed += 1;
+          } catch {
+            // analyzeStoredWebPhoto records bounded retry backoff. The media
+            // remains awaiting_analysis and the cursor advances past it.
+          }
         }
+
+        cursor = String(batch.nextCursor || '');
+        if (!cursor) break;
       }
+
       if (!cancelled && completed > 0) {
         publishLibraryRefresh({ source: 'web-local-face-backfill' });
       }
