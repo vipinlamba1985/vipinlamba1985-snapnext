@@ -32,14 +32,18 @@ test('web analysis persists face count through the authenticated media analysis 
   assert.match(client, /\/media\/analysis\/config/);
 });
 
-test('new web photo uploads start local analysis in the upload path', () => {
+test('new web photo uploads start local analysis in the upload path without delaying backup completion', () => {
   const upload = read('lib/protection-upload-one.js');
   const start = upload.indexOf('buildWebFaceAnalysisIfEnabled(item.file)');
   const network = upload.indexOf('uploadProtectedDirect(item, decision, progress)');
+  const completion = upload.indexOf('return status;');
   assert.ok(start > 0, 'upload path must start the local sorter for photos');
   assert.ok(network > start, 'local sorting should overlap the upload instead of waiting for backfill');
   assert.match(upload, /persistWebFaceAnalysis\(mediaId, prepared\.analysis\)/);
   assert.match(upload, /recordWebFaceAnalysisFailure/);
+  assert.match(upload, /localAnalysisPromise\s*\n\s*\.then/);
+  assert.doesNotMatch(upload, /await finishLocalPhotoAnalysis/);
+  assert.ok(completion > network, 'upload completion remains owned by media transfer, not face analysis');
 });
 
 test('backfill is bounded, cursor-based, backoff-aware and ownership-scoped', () => {
