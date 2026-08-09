@@ -36,7 +36,7 @@ Smart Import belongs to **(+) Add**.
 
 ## Google Drive
 
-Google Drive uses OAuth plus Google Picker with `https://www.googleapis.com/auth/drive.file`. The code performs no whole-Drive enumeration or provider mutations. Picker imports are bounded and content-deduplicated.
+Google Drive uses OAuth plus Google Picker with `https://www.googleapis.com/auth/drive.file`. This is a **per-file scope, not a read-only one**. SnapNext therefore enforces read-only behavior in code: no whole-Drive enumeration, no Drive uploads, no Drive deletes, and no Drive permission changes. Picker imports are bounded and content-deduplicated.
 
 ## Google Photos
 
