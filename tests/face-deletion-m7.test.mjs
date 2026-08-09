@@ -94,6 +94,17 @@ test('failed deletion creates one privacy-safe actionable notification per gener
   assert.match(bell, /router\.push\(href\)/);
 });
 
+test('recognition deletion is user-owned and never deletes source or shared media', () => {
+  const inventory = read('lib/face-deletion-inventory.js');
+  const worker = read('lib/face-deletion-worker.server.js');
+  assert.match(worker, /peopleCollectionId\(userId\)/, 'AWS deletion must target the requesting user collection');
+  assert.match(inventory, /collection\('face_index'\)\.deleteMany\(\{ userId \}\)/);
+  assert.match(inventory, /collection\('person_clusters'\)\.deleteMany\(\{ userId \}\)/);
+  assert.match(inventory, /collection\('media'\)\.updateMany\(\s*\{ userId \}/s);
+  assert.doesNotMatch(inventory, /collection\('media'\)\.delete/);
+  assert.doesNotMatch(inventory, /collection\('(circles|trusted_circle|albums|shared_media)'\)\.delete/);
+});
+
 test('Privacy & security is authoritative and reachable through More while Library only deep-links', () => {
   const page = read('app/(app)/privacy-security/page.js');
   const controls = read('components/privacy/FacePrivacyControls.js');
