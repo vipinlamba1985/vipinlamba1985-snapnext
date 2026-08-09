@@ -9,7 +9,7 @@
       "schedule": "45 5 * * *"
     },
     {
-      "path": "/api/cron/google-drive-sync",
+      "path": "/api/cron/smart-import-recovery",
       "schedule": "0 6 * * *"
     }
   ]
