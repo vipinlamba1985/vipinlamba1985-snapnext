@@ -1,10 +1,27 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, ShieldCheck, Trash2 } from 'lucide-react';
+import { Loader2, PauseCircle, ShieldCheck, Trash2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { publishLibraryRefresh } from '@/lib/library-refresh';
 import { toast } from 'sonner';
+
+function publishConsentChanged(source) {
+  publishLibraryRefresh({ source });
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('snapnext:people-consent-changed'));
+}
+
+function RevokeButtons({ busy, confirmRevoke, setConfirmRevoke, revoke }) {
+  if (!confirmRevoke) {
+    return <button onClick={() => setConfirmRevoke(true)} disabled={busy} className="min-h-11 rounded-full border border-white/10 bg-white/5 px-4 text-xs font-black text-white/65 disabled:opacity-50">Turn off</button>;
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button onClick={revoke} disabled={busy} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-rose-500 px-4 text-xs font-black text-white disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />}Turn off & queue deletion</button>
+      <button onClick={() => setConfirmRevoke(false)} disabled={busy} className="min-h-11 rounded-full border border-white/10 px-4 text-xs font-black text-white/60">Cancel</button>
+    </div>
+  );
+}
 
 export default function PeopleFaceConsent() {
   const [state, setState] = useState(null);
@@ -25,7 +42,7 @@ export default function PeopleFaceConsent() {
     try {
       const next = await apiFetch('/settings/face-processing-consent', { method: 'POST' });
       setState(next);
-      publishLibraryRefresh({ source: 'face-processing-consent-granted' });
+      publishConsentChanged('face-processing-consent-granted');
       toast.success('People recognition enabled.');
     } catch (error) {
       toast.error(error?.message || 'People recognition could not be enabled.');
@@ -40,7 +57,7 @@ export default function PeopleFaceConsent() {
       const next = await apiFetch('/settings/face-processing-consent', { method: 'DELETE' });
       setState(next);
       setConfirmRevoke(false);
-      publishLibraryRefresh({ source: 'face-processing-consent-revoked' });
+      publishConsentChanged('face-processing-consent-revoked');
       toast.success('People recognition is off. Face-data deletion is queued.');
     } catch (error) {
       toast.error(error?.message || 'People recognition could not be turned off.');
@@ -68,6 +85,24 @@ export default function PeopleFaceConsent() {
     );
   }
 
+  // A rollout can be paused centrally without pretending an existing consent
+  // disappeared. New users see no dormant feature; previously consented users
+  // can still revoke and queue deletion while processing is paused.
+  if (!state.available && !state.granted) return null;
+  if (!state.available && state.granted) {
+    return (
+      <section data-testid="people-consent-paused" className="mb-5 rounded-3xl border border-white/10 bg-white/[0.035] p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <PauseCircle className="mt-0.5 h-5 w-5 shrink-0 text-white/60" />
+            <div><h2 className="font-black">People recognition is paused</h2><p className="mt-1 text-sm leading-6 text-white/50">SnapNext is not starting new People processing in this environment. Your previous choice is preserved, and you can still turn it off and request deletion.</p></div>
+          </div>
+          <RevokeButtons busy={busy} confirmRevoke={confirmRevoke} setConfirmRevoke={setConfirmRevoke} revoke={revoke} />
+        </div>
+      </section>
+    );
+  }
+
   if (state.granted) {
     return (
       <section data-testid="people-consent-granted" className="mb-5 rounded-3xl border border-emerald-300/20 bg-emerald-500/[0.07] p-5">
@@ -76,14 +111,7 @@ export default function PeopleFaceConsent() {
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-200" />
             <div><h2 className="font-black">People recognition is on</h2><p className="mt-1 text-sm leading-6 text-white/50">Eligible photos can use People recognition after SnapNext&apos;s local face-count gate.</p></div>
           </div>
-          {!confirmRevoke ? (
-            <button onClick={() => setConfirmRevoke(true)} disabled={busy} className="min-h-11 rounded-full border border-white/10 bg-white/5 px-4 text-xs font-black text-white/65 disabled:opacity-50">Turn off</button>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              <button onClick={revoke} disabled={busy} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-rose-500 px-4 text-xs font-black text-white disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />}Turn off & queue deletion</button>
-              <button onClick={() => setConfirmRevoke(false)} disabled={busy} className="min-h-11 rounded-full border border-white/10 px-4 text-xs font-black text-white/60">Cancel</button>
-            </div>
-          )}
+          <RevokeButtons busy={busy} confirmRevoke={confirmRevoke} setConfirmRevoke={setConfirmRevoke} revoke={revoke} />
         </div>
       </section>
     );
