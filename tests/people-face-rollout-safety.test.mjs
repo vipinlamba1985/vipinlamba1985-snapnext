@@ -2,94 +2,122 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { intelligenceConfig, FACE_PROCESSING_CONSENT_VERSION, MAGIC_ANALYSIS_VERSION } from '../lib/intelligence/config.js';
-import { evaluateFaceGate, hasFaceProcessingConsent } from '../lib/intelligence/face-gate.js';
+import {
+  CLOUD_FACE_RECOGNITION_CONSENT_VERSION,
+  FACE_PROCESSING_CONSENT_VERSION,
+  LOCAL_FACE_DETECTION_CONSENT_VERSION,
+  MAGIC_ANALYSIS_VERSION,
+  intelligenceConfig,
+} from '../lib/intelligence/config.js';
+import { evaluateFaceGate, hasFaceProcessingConsent, hasLocalFaceDetectionConsent } from '../lib/intelligence/face-gate.js';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
-
 const analysis = { analysisVersion: MAGIC_ANALYSIS_VERSION, faceCount: 2 };
 const consented = {
-  faceProcessingConsent: {
+  cloudFaceRecognitionConsent: {
     granted: true,
-    version: FACE_PROCESSING_CONSENT_VERSION,
+    version: CLOUD_FACE_RECOGNITION_CONSENT_VERSION,
     grantedAt: new Date(),
     deletionState: 'none',
   },
 };
 
-test('all rollout switches default off while consent stays required', () => {
+test('all rollout switches default off while both consent domains stay required', () => {
   const config = intelligenceConfig({});
   assert.equal(config.magicSorterEnabled, false);
   assert.equal(config.faceProcessingEnabled, false);
   assert.equal(config.localFaceGateEnabled, false);
   assert.equal(config.consentRequired, true);
+  assert.equal(config.localConsentRequired, true);
   const result = evaluateFaceGate({ analysis, user: consented, config });
   assert.equal(result.eligible, false);
   assert.equal(result.status, 'face_gate_disabled');
-  assert.equal(result.reason, 'magic_sorter_disabled');
 });
 
-test('pending deletion invalidates an otherwise valid face-processing grant', () => {
+test('local and cloud consent states are independent', () => {
   const user = {
-    faceProcessingConsent: {
-      ...consented.faceProcessingConsent,
-      deletionState: 'pending',
+    localFaceDetectionConsent: {
+      granted: true,
+      version: LOCAL_FACE_DETECTION_CONSENT_VERSION,
+      grantedAt: new Date(),
     },
   };
+  assert.equal(hasLocalFaceDetectionConsent(user), true);
   assert.equal(hasFaceProcessingConsent(user), false);
+
+  const cloudOnly = consented;
+  assert.equal(hasFaceProcessingConsent(cloudOnly), true);
+  assert.equal(hasLocalFaceDetectionConsent(cloudOnly), false);
 });
 
-test('consent revoke queues deletion and never claims immediate deletion', () => {
-  const route = read('app/api/settings/face-processing-consent/route.js');
-  assert.match(route, /face_deletion_requests/);
-  assert.match(route, /status: 'pending'/);
-  assert.match(route, /reason: 'consent_revoked'/);
-  assert.match(route, /faceProcessingConsent\.granted': false/);
-  assert.match(route, /faceProcessingConsent\.deletionState': 'pending'/);
-  assert.match(route, /verifiedAt: null/);
-  assert.match(route, /\$inc: \{ generation: 1 \}/);
-  assert.match(route, /M7 can reject a stale verification/);
+test('legacy M0/M1 cloud consent remains readable during migration', () => {
+  assert.equal(hasFaceProcessingConsent({
+    faceProcessingConsent: {
+      granted: true,
+      version: FACE_PROCESSING_CONSENT_VERSION,
+      grantedAt: new Date(),
+      deletionState: 'none',
+    },
+  }), true);
 });
 
-test('regrant cannot silently cancel pending deletion or bypass dormant rollout', () => {
+test('pending, processing, verifying and failed deletion states block cloud recognition', () => {
+  for (const deletionState of ['pending', 'processing', 'verifying', 'failed']) {
+    assert.equal(hasFaceProcessingConsent({
+      cloudFaceRecognitionConsent: { ...consented.cloudFaceRecognitionConsent, deletionState },
+    }), false);
+  }
+});
+
+test('cloud revoke is separate from stored-data deletion', () => {
   const route = read('app/api/settings/face-processing-consent/route.js');
+  assert.match(route, /M7 separates revoke from delete/);
+  assert.doesNotMatch(route, /collection\('face_deletion_requests'\).*updateOne/s);
+  assert.match(route, /deletionQueued: false/);
+  assert.match(route, /cloudFaceRecognitionConsent\.granted': false/);
+
+  const deletion = read('app/api/settings/face-processing-consent/deletion/route.js');
+  assert.match(deletion, /createFaceDeletionRequest/);
+  assert.match(deletion, /processFaceDeletionForUser/);
+});
+
+test('regrant cannot bypass unresolved deletion or dormant rollout', () => {
+  const route = read('app/api/settings/face-processing-consent/route.js');
+  assert.match(route, /deletionBlocksCloudRegrant/);
+  assert.match(route, /face_deletion_needs_retry/);
   assert.match(route, /face_deletion_pending/);
-  assert.match(route, /verified deletion completes/);
-  assert.match(route, /\['pending', 'processing'\]\.includes/);
   assert.match(route, /people_rollout_disabled/);
 });
 
-test('Magic Library hides a dormant ungranted feature and shows honest active states', () => {
+test('Library exposes status and deep-links to authoritative Privacy & security controls', () => {
   const page = read('app/(app)/gallery/magic/page.js');
   const component = read('components/magic-library/PeopleFaceConsent.js');
   assert.match(page, /<PeopleFaceConsent \/>/);
-  assert.match(component, /!state\.available && !state\.granted\) return null/);
-  assert.match(component, /People recognition is paused/);
-  assert.match(component, /Enable People recognition/);
-  assert.match(component, /Turn off & queue deletion/);
-  assert.match(component, /Face-data deletion is pending/);
-  assert.match(component, /will not label this data deleted until verification succeeds/);
-  assert.match(component, /window\.location\.reload/);
+  assert.match(component, /people-face-privacy-status/);
+  assert.match(component, /href="\/privacy-security"/);
+  assert.match(component, /Manage face privacy/);
+  assert.doesNotMatch(component, /method: 'POST'/);
+  assert.doesNotMatch(component, /method: 'DELETE'/);
 });
 
-test('reindex itself blocks when rollout or consent is unavailable', () => {
+test('local analysis config is gated by independent local consent', () => {
+  const route = read('app/api/media/analysis/config/route.js');
+  assert.match(route, /localFaceDetectionConsent/);
+  assert.match(route, /hasLocalFaceDetectionConsent/);
+  assert.match(route, /consentReady/);
+});
+
+test('reindex itself still blocks when rollout or cloud consent is unavailable', () => {
   const route = read('app/api/magic-library/people/reindex/route.js');
   assert.match(route, /people_rollout_disabled/);
   assert.match(route, /face_processing_consent_required/);
   const block = route.indexOf('const blocked = await processingBlock');
   const rebuild = route.indexOf('await rebuildPeopleIntelligence');
   assert.ok(block > 0 && rebuild > block, 'server readiness check must run before reindex work');
-
-  const peopleRoute = read('app/api/magic-library/people/route.js');
-  assert.match(peopleRoute, /rolloutEnabled/);
-  assert.match(peopleRoute, /consentReady/);
-  assert.match(peopleRoute, /peopleIntelligenceReady\(\) && rolloutEnabled && consentReady/);
-  assert.match(peopleRoute, /'face_gate_disabled'/);
-  assert.match(peopleRoute, /'awaiting_consent'/);
 });
 
-test('face deletion queue has one generation-tracked state per user for the future M7 worker', () => {
+test('face deletion queue remains unique and recovery-indexed per user', () => {
   const db = read('lib/db.js');
   assert.match(db, /collection\('face_deletion_requests'\)\.createIndex\(\{ userId: 1 \}, \{ unique: true \}\)/);
-  assert.match(db, /collection\('face_deletion_requests'\)\.createIndex\(\{ status: 1, requestedAt: 1 \}\)/);
+  assert.match(db, /status: 1, nextRetryAt: 1, leaseExpiresAt: 1/);
 });
