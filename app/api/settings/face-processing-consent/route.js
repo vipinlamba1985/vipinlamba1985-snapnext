@@ -17,24 +17,43 @@ function rolloutAvailable() {
   return Boolean(config.magicSorterEnabled && config.localFaceGateEnabled && config.faceProcessingEnabled);
 }
 
+function time(value) {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// A verified deletion belongs to the recognition lifecycle that ended before
+// it. Once the user explicitly grants cloud recognition again, that old success
+// is historical and must never make later recognition data look already deleted.
+function currentLifecycleDeletionRequest(consent, deletionRequest) {
+  if (!deletionRequest) return null;
+  if (deletionRequest.status !== 'verified_deleted') return deletionRequest;
+  const verifiedAt = time(deletionRequest.verifiedAt);
+  const grantedAt = time(consent.grantedAt);
+  if (verifiedAt && grantedAt && grantedAt > verifiedAt) return null;
+  return deletionRequest;
+}
+
 function publicState(user, deletionRequest) {
   const consent = cloudFaceRecognitionConsent(user || {});
-  const deletionStatus = deletionRequest?.status || consent.deletionState || 'none';
+  const currentDeletion = currentLifecycleDeletionRequest(consent, deletionRequest);
+  const deletionStatus = currentDeletion?.status || consent.deletionState || 'none';
   const activeDeletion = ['pending', 'processing', 'verifying'].includes(deletionStatus);
   return {
     available: rolloutAvailable(),
     version: CLOUD_FACE_RECOGNITION_CONSENT_VERSION,
-    granted: consent.granted === true && !consent.revokedAt && !deletionBlocksCloudRegrant(deletionRequest),
+    granted: consent.granted === true && !consent.revokedAt && !deletionBlocksCloudRegrant(currentDeletion),
     grantedAt: consent.grantedAt || null,
     revokedAt: consent.revokedAt || null,
     pendingDeletion: activeDeletion,
     deletionNeedsRetry: deletionStatus === 'failed',
     deletionVerified: deletionStatus === 'verified_deleted',
-    deletionRequestedAt: deletionRequest?.requestedAt || consent.deletionRequestedAt || null,
+    deletionRequestedAt: currentDeletion?.requestedAt || consent.deletionRequestedAt || null,
     deletionStatus,
-    deletionGeneration: Number(deletionRequest?.generation || 0),
-    deletionAttempts: Number(deletionRequest?.attempts || 0),
-    deletionLastError: deletionRequest?.lastError || null,
+    deletionGeneration: Number(currentDeletion?.generation || 0),
+    deletionAttempts: Number(currentDeletion?.attempts || 0),
+    deletionLastError: currentDeletion?.lastError || null,
   };
 }
 
