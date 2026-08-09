@@ -9,9 +9,9 @@ import {
   Film,
   Images,
   Image as ImageIcon,
+  Laptop,
   Loader2,
   LockKeyhole,
-  Monitor,
   RefreshCcw,
   ShieldCheck,
 } from 'lucide-react';
@@ -20,6 +20,9 @@ import { classifyLocalFile } from '@/lib/discovery-classify';
 import { apiFetch } from '@/lib/api-client';
 import useDiscoveryFlow from '@/components/protection/useDiscoveryFlow';
 import ProtectionStages from './ProtectionStages';
+
+const LARGE_MOBILE_BATCH_FILES = 100;
+const LARGE_MOBILE_BATCH_BYTES = 1024 ** 3;
 
 export default function DiscoveryFlow() {
   const inputRef = useRef(null);
@@ -159,21 +162,19 @@ export default function DiscoveryFlow() {
             className="hidden"
           />
 
-          <div className="mx-auto mt-6 flex max-w-xl items-center justify-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-            <LockKeyhole className="h-4 w-4 shrink-0" /> Nothing uploads until you press Back up.
-          </div>
-
-          <div data-testid="mobile-large-backup-tip" className="mx-auto mt-4 max-w-xl rounded-2xl border border-cyan-300/15 bg-cyan-400/[0.06] p-4 text-left md:hidden">
+          <div data-testid="mobile-large-backup-tip" className="mx-auto mt-5 max-w-xl rounded-2xl border border-sky-300/15 bg-sky-400/[0.06] px-4 py-4 text-left md:hidden">
             <div className="flex items-start gap-3">
-              <Monitor className="mt-0.5 h-5 w-5 shrink-0 text-cyan-100" />
+              <Laptop className="mt-0.5 h-5 w-5 shrink-0 text-sky-100" />
               <div>
-                <div className="text-sm font-black text-cyan-50">Planning a big first backup?</div>
-                <p className="mt-1 text-sm leading-6 text-cyan-50/65">
-                  For hundreds or thousands of photos, SnapNext is easier on a computer. A larger screen makes big selections, drag and drop, and backup progress easier to manage.
-                </p>
-                <p className="mt-2 text-xs font-bold text-cyan-100/60">Your phone is perfect for quick everyday backups.</p>
+                <div className="text-sm font-black text-sky-50">Planning a big first backup?</div>
+                <p className="mt-1 text-sm leading-6 text-sky-50/60">For hundreds or thousands of photos, SnapNext is easier on a computer. A larger screen makes big selections, drag and drop, and backup progress easier to manage.</p>
+                <p className="mt-1 text-xs font-bold text-sky-100/70">Your phone is perfect for quick everyday backups.</p>
               </div>
             </div>
+          </div>
+
+          <div className="mx-auto mt-6 flex max-w-xl items-center justify-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
+            <LockKeyhole className="h-4 w-4 shrink-0" /> Nothing uploads until you press Back up.
           </div>
 
           {flow.error && (
@@ -185,7 +186,7 @@ export default function DiscoveryFlow() {
           <div data-testid="upload-cloud-sync" className="mx-auto mt-6 flex max-w-xl flex-col items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 sm:flex-row sm:text-left">
             <CloudDownload className="h-5 w-5 shrink-0 text-cyan-200" />
             <p className="flex-1 text-sm leading-6 text-white/55">
-              Already stored in a cloud? Import selected files from Google Drive or Google Photos. For Dropbox or OneDrive, download the files and add them here. SnapNext does not change the originals.
+              Already stored in the cloud? Smart Import lets you choose files directly from Google Photos, Google Drive, Dropbox, or OneDrive. SnapNext copies only what you select and leaves the originals unchanged.
             </p>
             <Link data-testid="upload-cloud-sync-link" href="/imports" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.07] px-5 py-2.5 text-sm font-black text-white">
               Import from Cloud
@@ -230,10 +231,10 @@ export default function DiscoveryFlow() {
   const readyLabel = readyCount === 1 ? 'memory' : 'memories';
   const duplicateActionCount = flow.uploadPeople.length ? duplicateCount : 0;
   const canConfirm = readyCount > 0 || duplicateActionCount > 0;
-  const showLargeBackupCoach = flow.report.total >= 100 || flow.report.bytes >= 1024 * 1024 * 1024;
   const primaryLabel = readyCount > 0
     ? `Back up ${readyCount} ${readyLabel}`
     : `Add ${duplicateActionCount} existing ${duplicateActionCount === 1 ? 'memory' : 'memories'}`;
+  const isLargeMobileBatch = flow.report.total >= LARGE_MOBILE_BATCH_FILES || flow.report.bytes >= LARGE_MOBILE_BATCH_BYTES;
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-36 md:pb-12">
@@ -251,26 +252,24 @@ export default function DiscoveryFlow() {
           </div>
         </div>
 
+        {isLargeMobileBatch && (
+          <div data-testid="mobile-large-batch-coach" className="mt-5 rounded-2xl border border-sky-300/15 bg-sky-400/[0.06] p-4 md:hidden">
+            <div className="flex items-start gap-3">
+              <Laptop className="mt-0.5 h-5 w-5 shrink-0 text-sky-100" />
+              <div>
+                <div className="text-sm font-black text-sky-50">Large batch selected</div>
+                <p className="mt-1 text-sm leading-6 text-sky-50/60">You can continue this backup here. For future large library moves, a computer gives you more room to select files and follow long backup progress.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
           <SummaryCard icon={CheckCircle2} label="Ready" value={readyCount} />
           <SummaryCard icon={RefreshCcw} label="Duplicates" value={duplicateCount} />
           <SummaryCard icon={ImageIcon} label="Photos" value={flow.report.photos} />
           <SummaryCard icon={Film} label="Videos" value={flow.report.videos} />
         </div>
-
-        {showLargeBackupCoach && (
-          <div data-testid="mobile-large-batch-coach" className="mt-5 rounded-2xl border border-cyan-300/15 bg-cyan-400/[0.06] p-4 md:hidden">
-            <div className="flex items-start gap-3">
-              <Monitor className="mt-0.5 h-5 w-5 shrink-0 text-cyan-100" />
-              <div>
-                <div className="text-sm font-black text-cyan-50">Large batch selected</div>
-                <p className="mt-1 text-sm leading-6 text-cyan-50/65">
-                  You can continue this backup here. For future large library moves, using SnapNext on a computer gives you more room for bigger selections, drag and drop, and progress tracking.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
