@@ -8,36 +8,37 @@ import { cloudItemMatchesImportant, selectCloudProtection } from '../lib/smart-s
 function withEnv(values, callback) {
   const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
   Object.assign(process.env, values);
-  try {
-    return callback();
-  } finally {
+  try { return callback(); } finally {
     for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
   }
 }
 
-test('Dropbox and OneDrive report durable workers when credentials are configured', () => {
+test('launch providers expose picker imports while Dropbox and OneDrive stay deferred', () => {
   withEnv({
     CLOUD_CONNECTOR_SECRET: 'secret',
-    DROPBOX_CLIENT_ID: 'dropbox-id',
-    DROPBOX_CLIENT_SECRET: 'dropbox-secret',
-    ONEDRIVE_CLIENT_ID: 'onedrive-id',
-    ONEDRIVE_CLIENT_SECRET: 'onedrive-secret',
-    GOOGLE_PHOTOS_CLIENT_ID: 'photos-id',
-    GOOGLE_PHOTOS_CLIENT_SECRET: 'photos-secret',
+    DROPBOX_CLIENT_ID: 'dropbox-id', DROPBOX_CLIENT_SECRET: 'dropbox-secret',
+    ONEDRIVE_CLIENT_ID: 'onedrive-id', ONEDRIVE_CLIENT_SECRET: 'onedrive-secret',
+    GOOGLE_PHOTOS_CLIENT_ID: 'photos-id', GOOGLE_PHOTOS_CLIENT_SECRET: 'photos-secret',
+    GOOGLE_DRIVE_CLIENT_ID: 'drive-id', GOOGLE_DRIVE_CLIENT_SECRET: 'drive-secret',
   }, () => {
     const providers = new Map(listProviderStatus().map(provider => [provider.id, provider]));
-    assert.equal(providers.get('dropbox').syncStrategy, 'durable_cloud_job');
-    assert.equal(providers.get('dropbox').availability, 'ready');
-    assert.equal(providers.get('onedrive').syncStrategy, 'durable_cloud_job');
-    assert.equal(providers.get('onedrive').availability, 'ready');
+    assert.equal(providers.get('dropbox').syncStrategy, 'deferred_picker');
+    assert.equal(providers.get('dropbox').availability, 'future_picker');
+    assert.equal(providers.get('dropbox').launchAvailable, false);
+    assert.equal(providers.get('onedrive').syncStrategy, 'deferred_picker');
+    assert.equal(providers.get('onedrive').availability, 'future_picker');
+    assert.equal(providers.get('onedrive').launchAvailable, false);
+    assert.equal(providers.get('google_photos').syncStrategy, 'user_selected_picker');
     assert.equal(providers.get('google_photos').availability, 'picker_ready');
+    assert.equal(providers.get('google_photos').launchAvailable, true);
+    assert.equal(providers.get('google_drive').syncStrategy, 'user_selected_picker');
+    assert.equal(providers.get('google_drive').launchAvailable, true);
   });
 });
 
-test('OAuth adapters keep read-only provider scopes and callback contracts', () => {
+test('dormant OAuth adapters remain read-only for cleanup/future picker compatibility', () => {
   assert.deepEqual(oauthAdapter('dropbox').scopes, ['files.metadata.read', 'files.content.read']);
   assert.deepEqual(oauthAdapter('onedrive').scopes, ['offline_access', 'Files.Read']);
   assert.equal(oauthAdapter('google_photos').callbackPath, '/api/smart-sync/oauth/google_photos/callback');
@@ -51,11 +52,7 @@ test('Shared Smart Sync selection understands provider-neutral favourite and rec
     { id: 'recent', createdAt: '2026-01-01T00:00:00.000Z' },
     { id: 'old', createdAt: '2018-01-01T00:00:00.000Z' },
   ];
-  const rules = [
-    { type: 'favorites', enabled: true, priority: 1 },
-    { type: 'recent', enabled: true, priority: 2 },
-  ];
-
+  const rules = [{ type: 'favorites', enabled: true, priority: 1 }, { type: 'recent', enabled: true, priority: 2 }];
   assert.equal(cloudItemMatchesImportant(items[0], rules, now), true);
   assert.equal(cloudItemMatchesImportant(items[1], rules, now), true);
   assert.equal(cloudItemMatchesImportant(items[2], rules, now), false);
