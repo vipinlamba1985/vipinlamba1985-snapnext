@@ -1,6 +1,6 @@
 # Smart Import provider environment checklist
 
-Launch policy: SnapNext uses **user-selected Smart Import**, not continuous whole-cloud synchronization. Only configure credentials for launch providers that have a real picker path. Never commit credentials to GitHub.
+Launch policy: SnapNext uses **user-selected Smart Import**, not continuous whole-cloud synchronization. All launch cloud providers must use an explicit picker/chooser. Never commit credentials to GitHub.
 
 ## Required for launch
 
@@ -44,19 +44,46 @@ Permission requested by SnapNext:
 
 Google Photos uses the Picker flow. The user explicitly chooses media, and SnapNext turns that selection into a durable manual import job.
 
-## Not required for launch
-
-Do **not** make these credentials a launch blocker:
+### Dropbox
 
 - `DROPBOX_CLIENT_ID`
-- `DROPBOX_CLIENT_SECRET`
+
+For Dropbox Chooser this value is the **Dropbox app key / client ID** and is intentionally safe to expose to the browser through SnapNext's authenticated picker-config endpoint. A Dropbox client secret is **not required** for the launch Chooser flow.
+
+In the Dropbox developer console, register the SnapNext production domain:
+
+- `snapnext.ai`
+- `www.snapnext.ai` if the www hostname is used by the app
+
+SnapNext uses Dropbox Chooser `linkType: direct`, `multiselect: true`, and accepts user-selected images, video and common document types. The returned direct link is short-lived and is consumed immediately by the SnapNext server. SnapNext does not store a Dropbox OAuth token or enumerate the account.
+
+### Microsoft OneDrive
+
 - `ONEDRIVE_CLIENT_ID`
-- `ONEDRIVE_CLIENT_SECRET`
-- `ONEDRIVE_TENANT_ID`
 
-Dropbox and OneDrive are registered as `future_picker` providers at launch. The product does not create new persistent/background OAuth connections for them. Users can download/select those files and bring them through the normal Add flow until a user-selected picker implementation is approved and shipped.
+A client secret and `ONEDRIVE_TENANT_ID` are **not required** for the hosted picker launch path. Register this production redirect URI in the Microsoft Entra app registration:
 
-Legacy Dropbox/OneDrive credentials may remain in an existing deployment temporarily so old connections can be inspected/disconnected, but they are not part of the launch Smart Import dependency set.
+- `https://snapnext.ai/onedrive-picker-redirect`
+
+SnapNext uses Microsoft's hosted JavaScript picker with `action: download` and multi-select. The browser passes only the short-lived download URLs for explicitly selected files to SnapNext. Any access token returned in the picker result is deliberately discarded and is never stored or sent to the SnapNext server.
+
+OneDrive/SharePoint delegated consent is still controlled by Microsoft. Production verification must therefore test both a personal Microsoft account and the business-account types SnapNext intends to support.
+
+## Remote picker import safety
+
+Dropbox and OneDrive selected-file links are imported through `/api/smart-import/remote-selection`.
+
+The server:
+
+- accepts Dropbox and OneDrive only;
+- accepts at most 5 remote files per request while the UI batches larger selections;
+- validates the provider hostname on the original URL and on every redirect;
+- accepts HTTPS only;
+- caps each imported file at 100 MB or the user's smaller plan/storage limit;
+- supports photos, videos, PDFs and common office/text document formats;
+- computes SHA-256 before writing and skips content duplicates;
+- checks the user's actual storage scope before saving;
+- never invokes background cloud discovery or automatic AI analysis.
 
 ## Recovery cron
 
@@ -66,7 +93,7 @@ Vercel schedules:
 
 The route is protected by `CRON_SECRET` and processes only already-created **Google Photos manual-selection jobs**. It does not scan cloud accounts, discover whole libraries, or create automatic cloud jobs.
 
-The cron is a recovery fallback. The normal Google Photos flow begins processing immediately after the user completes a picker selection.
+Dropbox, OneDrive and current Google Drive picker imports are immediate/idempotent. If the browser closes mid-import, already-saved files remain safe; the user can select the remaining files again and content-hash duplicate checks prevent duplicate storage.
 
 ## Native device media
 
@@ -80,7 +107,11 @@ Before calling Smart Import production-ready:
 2. Confirm Drive Picker API key origin restrictions and the project number.
 3. Confirm the granted Drive scope is `drive.file`; old broader grants must be revoked/re-authorized.
 4. Confirm the Google Photos OAuth client and callback.
-5. Complete one signed-in Google Drive Picker import on the production-like deployment.
-6. Complete one signed-in Google Photos Picker import, close the client mid-job, and verify the same selected job can resume/recover.
-7. Confirm Dropbox/OneDrive show the launch fallback rather than offering a new background connection.
-8. Confirm no scheduled route polls Google Drive, Dropbox, or OneDrive.
+5. Confirm `DROPBOX_CLIENT_ID` is the Dropbox app key and the production SnapNext domains are registered for Chooser.
+6. Confirm `ONEDRIVE_CLIENT_ID` and `https://snapnext.ai/onedrive-picker-redirect` are registered in Microsoft Entra.
+7. Complete one signed-in Google Drive Picker import.
+8. Complete one signed-in Google Photos Picker import, close the client mid-job, and verify the same selected job can resume/recover.
+9. Complete one Dropbox multi-select import containing a photo and a document.
+10. Complete OneDrive imports with the Microsoft account types SnapNext intends to support, including a photo and a document.
+11. Confirm Dropbox/OneDrive selections never create a `cloud_connections` record or background Smart Sync job.
+12. Confirm no scheduled route polls Google Drive, Dropbox, or OneDrive.
