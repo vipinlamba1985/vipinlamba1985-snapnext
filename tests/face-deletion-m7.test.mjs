@@ -58,6 +58,13 @@ test('failed deletion blocks cloud regrant but remains retryable on the same gen
   assert.match(worker, /generation: requeued\.generation/);
 });
 
+test('a verified deletion becomes historical after a later cloud-recognition grant', () => {
+  const consent = read('app/api/settings/face-processing-consent/route.js');
+  assert.match(consent, /currentLifecycleDeletionRequest/);
+  assert.match(consent, /grantedAt > verifiedAt/);
+  assert.match(consent, /that old success.*historical/s);
+});
+
 test('repeated deletion request does not create a new generation while one is active', () => {
   const worker = read('lib/face-deletion-worker.server.js');
   assert.match(worker, /ACTIVE_STATUSES\.includes\(existing\.status\).*created: false/s);
@@ -71,6 +78,20 @@ test('recovery cron uses the existing CRON_SECRET boundary and server worker', (
   assert.match(cron, /CRON_SECRET/);
   assert.match(cron, /recoverFaceDeletionRequests/);
   assert.match(vercel, /face-deletion-recovery/);
+});
+
+test('failed deletion creates one privacy-safe actionable notification per generation', () => {
+  const notifications = read('lib/face-deletion-notifications.server.js');
+  const worker = read('lib/face-deletion-worker.server.js');
+  const bell = read('components/NotificationBell.js');
+  assert.match(notifications, /privacy-deletion-retry:/);
+  assert.match(notifications, /\$setOnInsert/);
+  assert.match(notifications, /Action needed in SnapNext privacy settings/);
+  assert.match(notifications, /href: '\/privacy-security'/);
+  assert.match(worker, /publishFaceDeletionRetryNotification/);
+  assert.match(worker, /clearFaceDeletionRetryNotification/);
+  assert.match(bell, /privacy_action_required/);
+  assert.match(bell, /router\.push\(href\)/);
 });
 
 test('Privacy & security is the authoritative face-control surface and Library only deep-links', () => {
