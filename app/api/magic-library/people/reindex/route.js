@@ -5,6 +5,8 @@ import { PEOPLE_INTELLIGENCE_VERSION } from '@/lib/people-intelligence';
 import { PEOPLE_TERMINAL_SUCCESS_STATUSES, rebuildPeopleIntelligence } from '@/lib/people-intelligence.server';
 import { PEOPLE_COST_POLICY, estimatePhotoRunCost } from '@/lib/people-rekognition-capabilities';
 import { countPendingGroupPhotoCleanup } from '@/lib/people-group-photo-reconciliation.server';
+import { intelligenceConfig } from '@/lib/intelligence/config';
+import { hasFaceProcessingConsent } from '@/lib/intelligence/face-gate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,6 +56,19 @@ function publicError(error) {
   return { status: 503, code: error?.code || name || 'people_index_failed', error: 'People Magic could not finish this scan. Please try again.' };
 }
 
+async function processingBlock(db, userId) {
+  const config = intelligenceConfig();
+  if (!(config.magicSorterEnabled && config.localFaceGateEnabled && config.faceProcessingEnabled)) {
+    return { status: 409, code: 'people_rollout_disabled', error: 'People recognition is not enabled for this environment yet.' };
+  }
+  if (!config.consentRequired) return null;
+  const account = await db.collection('users').findOne({ id: userId }, { projection: { faceProcessingConsent: 1 } });
+  if (!hasFaceProcessingConsent(account || {})) {
+    return { status: 409, code: 'face_processing_consent_required', error: 'Enable People recognition before organizing photos by face.' };
+  }
+  return null;
+}
+
 export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -64,11 +79,14 @@ export async function GET(request) {
 export async function POST(request) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const db = await getDb();
+  const blocked = await processingBlock(db, user.id);
+  if (blocked) return NextResponse.json({ error: blocked.error, code: blocked.code }, { status: blocked.status });
+
   const body = await request.json().catch(() => ({}));
   const limit = Math.max(1, Math.min(PEOPLE_COST_POLICY.maxPhotosPerBatch, Number(body.limit || 12)));
   const estimatedMaxCost = estimatePhotoRunCost({ photos: limit, estimatedFaces: limit * 2 });
   if (estimatedMaxCost > PEOPLE_COST_POLICY.maxEstimatedUsdPerBatch) return NextResponse.json({ error: 'This batch is larger than the configured cost safety limit.', code: 'people_cost_guard_blocked' }, { status: 429 });
-  const db = await getDb();
   try {
     if (body.retryFailed === true) await db.collection('media').updateMany(
       { userId: user.id, 'peopleIntelligence.version': PEOPLE_INTELLIGENCE_VERSION, 'peopleIntelligence.status': 'failed' },
