@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   Loader2,
   LockKeyhole,
+  Monitor,
   RefreshCcw,
   ShieldCheck,
 } from 'lucide-react';
@@ -162,6 +163,19 @@ export default function DiscoveryFlow() {
             <LockKeyhole className="h-4 w-4 shrink-0" /> Nothing uploads until you press Back up.
           </div>
 
+          <div data-testid="mobile-large-backup-tip" className="mx-auto mt-4 max-w-xl rounded-2xl border border-cyan-300/15 bg-cyan-400/[0.06] p-4 text-left md:hidden">
+            <div className="flex items-start gap-3">
+              <Monitor className="mt-0.5 h-5 w-5 shrink-0 text-cyan-100" />
+              <div>
+                <div className="text-sm font-black text-cyan-50">Planning a big first backup?</div>
+                <p className="mt-1 text-sm leading-6 text-cyan-50/65">
+                  For hundreds or thousands of photos, SnapNext is easier on a computer. A larger screen makes big selections, drag and drop, and backup progress easier to manage.
+                </p>
+                <p className="mt-2 text-xs font-bold text-cyan-100/60">Your phone is perfect for quick everyday backups.</p>
+              </div>
+            </div>
+          </div>
+
           {flow.error && (
             <div className="mx-auto mt-5 max-w-xl rounded-2xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
               {flow.error}
@@ -216,6 +230,7 @@ export default function DiscoveryFlow() {
   const readyLabel = readyCount === 1 ? 'memory' : 'memories';
   const duplicateActionCount = flow.uploadPeople.length ? duplicateCount : 0;
   const canConfirm = readyCount > 0 || duplicateActionCount > 0;
+  const showLargeBackupCoach = flow.report.total >= 100 || flow.report.bytes >= 1024 * 1024 * 1024;
   const primaryLabel = readyCount > 0
     ? `Back up ${readyCount} ${readyLabel}`
     : `Add ${duplicateActionCount} existing ${duplicateActionCount === 1 ? 'memory' : 'memories'}`;
@@ -242,6 +257,20 @@ export default function DiscoveryFlow() {
           <SummaryCard icon={ImageIcon} label="Photos" value={flow.report.photos} />
           <SummaryCard icon={Film} label="Videos" value={flow.report.videos} />
         </div>
+
+        {showLargeBackupCoach && (
+          <div data-testid="mobile-large-batch-coach" className="mt-5 rounded-2xl border border-cyan-300/15 bg-cyan-400/[0.06] p-4 md:hidden">
+            <div className="flex items-start gap-3">
+              <Monitor className="mt-0.5 h-5 w-5 shrink-0 text-cyan-100" />
+              <div>
+                <div className="text-sm font-black text-cyan-50">Large batch selected</div>
+                <p className="mt-1 text-sm leading-6 text-cyan-50/65">
+                  You can continue this backup here. For future large library moves, using SnapNext on a computer gives you more room for bigger selections, drag and drop, and progress tracking.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
