@@ -60,7 +60,7 @@ test('Google Photos picker no longer depends on an approved Smart Sync profile',
 
 test('provider worker and recovery cron process selected Google Photos imports only', async () => {
   const worker = await read('lib/smart-sync/provider-job-worker.js');
-  const cron = await read('app/api/cron/google-drive-sync/route.js');
+  const cron = await read('app/api/cron/smart-import-recovery/route.js');
   assert.match(worker, /job\.providerId !== 'google_photos' \|\| job\.mode !== 'manual_selection'/);
   assert.match(worker, /export async function ensureProviderAutomaticJob\(\)[\s\S]*?return null/);
   assert.match(cron, /providerId: 'google_photos', mode: 'manual_selection'/);
