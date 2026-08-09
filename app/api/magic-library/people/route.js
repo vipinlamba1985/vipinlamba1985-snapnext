@@ -4,6 +4,8 @@ import { getUserFromRequest } from '@/lib/auth';
 import { PEOPLE_INTELLIGENCE_VERSION, cleanCluster, isGenericIdentityLabel, isUsableFaceBox } from '@/lib/people-intelligence';
 import { normalizePeopleIdentityState, PEOPLE_IDENTITY_UNKNOWN } from '@/lib/people-identity';
 import { peopleIntelligenceReady } from '@/lib/people-intelligence.server';
+import { hasFaceProcessingConsent } from '@/lib/intelligence/face-gate';
+import { intelligenceConfig } from '@/lib/intelligence/config';
 import { sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
 import { personThumbnailEligibility } from '@/lib/people-gallery-rules';
 import { choosePersonCounts, historicalPersonMediaIds, shouldUseHistoricalPersonFallback } from '@/lib/people-count-reconciliation';
@@ -101,7 +103,7 @@ export async function GET(request) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const db = await getDb();
-  const [rows, remaining, activation] = await Promise.all([
+  const [rows, remaining, activation, account] = await Promise.all([
     db.collection('person_clusters').find({
       userId: user.id,
       indexVersion: PEOPLE_INTELLIGENCE_VERSION,
@@ -115,11 +117,12 @@ export async function GET(request) {
       kind: 'photo',
       $or: [
         { 'peopleIntelligence.version': { $ne: PEOPLE_INTELLIGENCE_VERSION } },
-        { 'peopleIntelligence.status': { $in: ['queued', 'failed'] } },
+        { 'peopleIntelligence.status': { $in: ['queued', 'failed', 'awaiting_analysis', 'awaiting_consent', 'face_gate_disabled', 'face_processing_disabled'] } },
         { 'peopleIntelligence.status': 'completed', 'peopleIntelligence.faceIds.0': { $exists: false } },
       ],
     }),
     db.collection('magic_library_activation').findOne({ userId: user.id }),
+    db.collection('users').findOne({ id: user.id }, { projection: { faceProcessingConsent: 1 } }),
   ]);
   const activeNames = activation?.active || [];
   const deduped = dedupePeople(rows);
@@ -155,11 +158,16 @@ export async function GET(request) {
   });
   const eligiblePeopleCount = people.filter((person) => person.thumbnailEligible).length;
   const selfRepairRequired = Boolean(selfRepair);
+  const config = intelligenceConfig();
+  const rolloutEnabled = Boolean(config.magicSorterEnabled && config.localFaceGateEnabled && config.faceProcessingEnabled);
+  const consentReady = !config.consentRequired || hasFaceProcessingConsent(account || {});
   return NextResponse.json({
     people,
     eligiblePeopleCount,
     suppressedOneOffCount: Math.max(0, people.length - eligiblePeopleCount),
-    engineReady: peopleIntelligenceReady(),
+    engineReady: Boolean(peopleIntelligenceReady() && rolloutEnabled && consentReady),
+    rolloutEnabled,
+    consentReady,
     version: PEOPLE_INTELLIGENCE_VERSION,
     migrationRequired: remaining > 0 || selfRepairRequired,
     migrationRemaining: remaining,
@@ -189,33 +197,28 @@ export async function PATCH(request) {
     const displayName = String(body.displayName || '').trim().slice(0, 80);
     if (!displayName || isGenericIdentityLabel(displayName)) return NextResponse.json({ error: 'Choose a real name or relationship label.' }, { status: 400 });
     set.displayName = displayName;
+    set.identityState = 'confirmed';
+    set.confirmedAt = new Date();
   }
 
   if (hasThumbnailCrop) {
-    if (body.thumbnailCrop === null) unset.thumbnailCrop = '';
-    else set.thumbnailCrop = sanitizeThumbnailCrop(body.thumbnailCrop);
+    const crop = sanitizeThumbnailCrop(body.thumbnailCrop);
+    if (!crop) return NextResponse.json({ error: 'Invalid thumbnail crop.' }, { status: 400 });
+    set.thumbnailCrop = crop;
   }
 
-  if (hasIdentityState) set.identityState = normalizePeopleIdentityState(body.identityState);
-
-  const update = { $set: set };
-  if (Object.keys(unset).length) update.$unset = unset;
-
-  const db = await getDb();
-  const result = await db.collection('person_clusters').findOneAndUpdate(
-    { userId: user.id, clusterId, indexVersion: PEOPLE_INTELLIGENCE_VERSION },
-    update,
-    { returnDocument: 'after' },
-  );
-  if (!result) return NextResponse.json({ error: 'Person cluster not found' }, { status: 404 });
-
-  const markedUnknown = hasIdentityState && set.identityState === PEOPLE_IDENTITY_UNKNOWN;
-  if (markedUnknown) {
-    await db.collection('magic_library_activation').updateOne(
-      { userId: user.id },
-      { $pull: { active: clusterId }, $set: { updatedAt: new Date() } },
-    );
+  if (hasIdentityState) {
+    const identityState = normalizePeopleIdentityState(body.identityState);
+    if (identityState === PEOPLE_IDENTITY_UNKNOWN && body.identityState !== PEOPLE_IDENTITY_UNKNOWN) {
+      return NextResponse.json({ error: 'Invalid identity state.' }, { status: 400 });
+    }
+    set.identityState = identityState;
   }
 
-  return NextResponse.json({ ok: true, person: cleanCluster(result), deactivated: markedUnknown });
+  if (Object.keys(unset).length) {
+    await db.collection('person_clusters').updateOne({ userId: user.id, clusterId }, { $set: set, $unset: unset });
+  } else {
+    await db.collection('person_clusters').updateOne({ userId: user.id, clusterId }, { $set: set });
+  }
+  return NextResponse.json({ ok: true });
 }
