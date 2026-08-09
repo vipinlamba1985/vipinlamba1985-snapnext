@@ -44,6 +44,10 @@ export default function PeopleFaceConsent() {
       setState(next);
       publishConsentChanged('face-processing-consent-granted');
       toast.success('People recognition enabled.');
+      // PeopleMagicBootstrap captured the pre-consent readiness state on mount.
+      // One intentional reload after this rare privacy choice lets its bounded
+      // migration start from the newly authorized server state immediately.
+      if (typeof window !== 'undefined') window.setTimeout(() => window.location.reload(), 250);
     } catch (error) {
       toast.error(error?.message || 'People recognition could not be enabled.');
     } finally {
