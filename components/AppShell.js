@@ -39,6 +39,7 @@ const ROUTES = [
   { href: '/downloads', label: 'Downloads', icon: Download },
   { href: '/trash', label: 'Trash', icon: Trash2 },
   { href: '/billing', label: 'Billing', icon: CreditCard },
+  { href: '/privacy-security', label: 'Privacy & security', icon: Shield },
   { href: '/support', label: 'Support', icon: LifeBuoy },
   { href: '/ai-command', label: 'AI Command', icon: BrainCircuit, adminOnly: true, featureFlag: 'aiCommand' },
   { href: '/admin', label: 'Admin', icon: Shield, adminOnly: true },
@@ -51,7 +52,7 @@ const MORE_HREFS = [
   // job as adding them from the device, so its entry point lives on /upload
   // (Add) where people look for it, rather than buried in this menu.
   '/chat', '/journal', '/gallery/cleanup', '/life-graph', '/ready-to-post', '/ai-video',
-  '/community', '/downloads', '/trash', '/support',
+  '/community', '/downloads', '/trash', '/privacy-security', '/support',
 ];
 
 function routesInOrder(hrefs, routes) {
