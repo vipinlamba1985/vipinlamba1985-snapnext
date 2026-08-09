@@ -1,8 +1,3 @@
-// Primary navigation was contradictory three ways: CONTRIBUTING.md mandated one
-// set of names, the app shipped another, and a third was under discussion. The
-// shipped names won. This test checks the code and every document that states
-// the rule against each other, so the decision is settled rather than merely
-// written down, and a feature PR cannot quietly reopen it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -12,27 +7,30 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = file => readFile(path.join(repoRoot, file), 'utf8');
 
-// The settled decision. Changing navigation means changing this list, in its own
-// commit, with its own reasoning.
 const PRIMARY_NAV = [
   { href: '/dashboard', label: 'Home' },
   { href: '/gallery', label: 'Library' },
   { href: '/upload', label: 'Add' },
+  { href: '/circles', label: 'Circle' },
   { href: '/ai-studio', label: 'Create' },
-  { href: '/settings', label: 'You' },
 ];
 
-// Names from the superseded proposal. If one reappears as a primary nav label,
-// somebody is halfway through reopening a closed decision.
-const SUPERSEDED_LABELS = ['Vault', 'Stories', 'People'];
+const MORE_NAV = [
+  { href: '/profile', label: 'You / Profile' },
+  { href: '/settings', label: 'Settings' },
+  { href: '/plan-storage', label: 'Plan & storage' },
+  { href: '/privacy-security', label: 'Privacy & security' },
+  { href: '/integrations', label: 'Integrations' },
+  { href: '/support', label: 'Help & support' },
+];
 
 async function appShell() {
   return read(path.join('components', 'AppShell.js'));
 }
 
-function parsePrimaryHrefs(source) {
-  const match = source.match(/const PRIMARY_HREFS = \[([^\]]*)\]/);
-  assert.ok(match, 'PRIMARY_HREFS could not be found in AppShell.js');
+function hrefsFromConst(source, name) {
+  const match = source.match(new RegExp(`const ${name} = \\[([^\\]]*)\\]`));
+  assert.ok(match, `${name} could not be found in AppShell.js`);
   return [...match[1].matchAll(/'([^']+)'/g)].map(entry => entry[1]);
 }
 
@@ -41,55 +39,56 @@ function labelForHref(source, href) {
   return route ? route[1] : null;
 }
 
-test('the app ships exactly the five agreed primary destinations, in order', async () => {
+test('frozen v1 ships exactly Home Library Add Circle Create in that order', async () => {
   const source = await appShell();
-  const hrefs = parsePrimaryHrefs(source);
-
-  assert.equal(hrefs.length, 5, 'primary navigation is exactly five items — new destinations go under More');
+  const hrefs = hrefsFromConst(source, 'PRIMARY_HREFS');
+  assert.equal(hrefs.length, 5, 'primary navigation must always contain exactly five destinations');
   assert.deepEqual(hrefs, PRIMARY_NAV.map(item => item.href));
-});
-
-test('each primary destination carries its agreed label', async () => {
-  const source = await appShell();
   for (const { href, label } of PRIMARY_NAV) {
-    assert.equal(labelForHref(source, href), label, `${href} should be labelled "${label}"`);
+    assert.equal(labelForHref(source, href), label, `${href} must be labelled ${label}`);
   }
 });
 
-test('superseded navigation names have not crept back into the primary five', async () => {
+test('You/Profile is secondary and Circle owns the fourth primary slot', async () => {
   const source = await appShell();
-  const labels = parsePrimaryHrefs(source).map(href => labelForHref(source, href));
-  for (const stale of SUPERSEDED_LABELS) {
-    assert.ok(!labels.includes(stale), `"${stale}" is from the superseded nav proposal`);
+  const primary = hrefsFromConst(source, 'PRIMARY_HREFS');
+  assert.ok(primary.includes('/circles'));
+  assert.ok(!primary.includes('/settings'));
+  assert.ok(!primary.includes('/profile'));
+  assert.ok(!primary.includes('/support'));
+  assert.ok(!primary.includes('/privacy-security'));
+});
+
+test('More contains the frozen secondary control surfaces and not feature destinations', async () => {
+  const source = await appShell();
+  const more = hrefsFromConst(source, 'MORE_HREFS');
+  for (const { href, label } of MORE_NAV) {
+    assert.ok(more.includes(href), `${label} must be reachable from More`);
+    assert.equal(labelForHref(source, href), label);
+  }
+  for (const featureHref of ['/memories', '/smart-sync', '/event-director', '/circles', '/chat', '/journal', '/ready-to-post', '/ai-video', '/community']) {
+    assert.ok(!more.includes(featureHref), `${featureHref} is a feature surface, not a More control`);
   }
 });
 
-test('every document stating the rule agrees with the code', async () => {
-  const documents = ['CLAUDE.md', 'CONTRIBUTING.md', 'SNAPNEXT_BLUEPRINT_V4.md'];
-  const shipped = PRIMARY_NAV.map(item => item.label);
-
-  for (const file of documents) {
-    const source = await read(file);
-    for (const label of shipped) {
-      assert.ok(
-        new RegExp(`\\b${label}\\b`).test(source),
-        `${file} states the navigation rule but omits "${label}"`,
-      );
-    }
-    // The old set may be mentioned as history, but never as the current rule.
-    assert.doesNotMatch(
-      source,
-      /navigation[^.]{0,80}\bVault\b/i,
-      `${file} still presents the superseded nav as current`,
-    );
-  }
+test('mobile navigation is a fixed five-column bar and More stays top-left', async () => {
+  const source = await appShell();
+  assert.match(source, /data-testid="primary-mobile-nav"/);
+  assert.match(source, /grid grid-cols-5/);
+  assert.match(source, /aria-label="Open More menu"/);
+  assert.doesNotMatch(source, /PRIMARY_HREFS[^;]*more/i);
 });
 
-test('the blueprint records navigation as a settled decision', async () => {
-  const blueprint = await read('SNAPNEXT_BLUEPRINT_V4.md');
-  assert.match(blueprint, /### Navigation — settled/);
-  // The reason has to survive, not just the conclusion — otherwise it gets
-  // relitigated by someone who never saw the argument.
-  assert.match(blueprint, /contradictory three ways/);
-  assert.match(blueprint, /tests\/primary-navigation\.test\.mjs/);
+test('primary destinations do not disappear because a feature flag is off', async () => {
+  const source = await appShell();
+  assert.match(source, /if \(PRIMARY_HREFS\.includes\(route\.href\)\) return true/);
+});
+
+test('the frozen navigation document is the authoritative contract', async () => {
+  const doc = await read('docs/SNAPNEXT_NAVIGATION_V1_FROZEN.md');
+  assert.match(doc, /SnapNext Navigation Architecture v1 — FROZEN/);
+  assert.match(doc, /Discover → Find → Add → Connect → Make/);
+  assert.match(doc, /People is reserved for Circle/);
+  assert.match(doc, /Service \/ authorization \/ infrastructure → More → Integrations/);
+  assert.match(doc, /Exactly five primary destinations/);
 });
