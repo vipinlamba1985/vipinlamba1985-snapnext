@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Check, CloudDownload, FileUp, HardDrive, Image as ImageIcon, Loader2, RefreshCw, ShieldCheck, Smartphone, Unplug } from 'lucide-react';
+import { CloudDownload, FileUp, HardDrive, Image as ImageIcon, Loader2, RefreshCw, ShieldCheck, Smartphone, Unplug } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -143,6 +143,24 @@ export default function ImportsPage() {
     finally { setBusy(''); await load(); }
   }
 
+  async function resumePhotoJob(job) {
+    if (!job?.id) return;
+    try {
+      let runnable = job;
+      if (job.status === 'failed') {
+        setBusy('photos-retry');
+        const response = await apiFetch(`/smart-sync/jobs/${job.id}/retry`, { method: 'POST', body: '{}' });
+        runnable = response.job || { ...job, status: 'queued' };
+        setPhotoJob(runnable);
+      }
+      await runPhotoJob(runnable);
+    } catch (error) {
+      toast.error(error.message || 'This import could not be resumed yet.');
+      setBusy('');
+      await load();
+    }
+  }
+
   async function chooseGooglePhotos() {
     if (!photos?.connected) return connectPhotos();
     const popup = window.open('about:blank', 'snapnext-google-photos', 'popup,width=560,height=760');
@@ -190,7 +208,7 @@ export default function ImportsPage() {
       {driveProgress && <p className="mt-4 text-xs text-white/50">{driveProgress.completed}/{driveProgress.total} checked · {driveProgress.saved} saved · {driveProgress.skipped} already safe · {driveProgress.failed} failed</p>}
     </section>}
 
-    {photoJob && <section className="rounded-3xl border border-cyan-300/15 bg-cyan-400/[0.05] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-black">Google Photos import</h2><p className="mt-1 text-sm text-white/50">{photoJob.processedItems || 0}/{photoJob.fileCount || photoJob.estimatedItems || 0} processed · status {photoJob.status}</p></div>{['queued','failed'].includes(photoJob.status) && <button onClick={() => runPhotoJob(photoJob)} disabled={busy === 'photos-import'} className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-black"><RefreshCw className="h-3.5 w-3.5" /> Resume import</button>}</div></section>}
+    {photoJob && <section className="rounded-3xl border border-cyan-300/15 bg-cyan-400/[0.05] p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-black">Google Photos import</h2><p className="mt-1 text-sm text-white/50">{photoJob.processedItems || 0}/{photoJob.fileCount || photoJob.estimatedItems || 0} processed · status {photoJob.status}</p></div>{['queued','failed'].includes(photoJob.status) && <button onClick={() => resumePhotoJob(photoJob)} disabled={busy === 'photos-import' || busy === 'photos-retry'} className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-black text-black disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" /> Resume import</button>}</div></section>}
 
     <section className="grid gap-4 md:grid-cols-2">
       <FutureCard title="Dropbox" connected={legacy.dropbox?.connected} onDisconnect={() => disconnect('dropbox')} busy={busy === 'disconnect:dropbox'} />
