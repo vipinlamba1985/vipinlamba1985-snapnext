@@ -84,3 +84,16 @@ test('Privacy & security is the authoritative face-control surface and Library o
   assert.match(library, /href="\/privacy-security"/);
   assert.doesNotMatch(library, /method: 'POST'|method: 'DELETE'/);
 });
+
+test('Add asks local face consent only at Back up and allows backup without local detection', () => {
+  const flow = read('app/(app)/upload/discover/DiscoveryFlow.js');
+  const promptAt = flow.indexOf("setLocalConsentPrompt(true)");
+  const protectAt = flow.indexOf('await runProtection();', promptAt);
+  assert.match(flow, /upload-local-face-consent/);
+  assert.match(flow, /Enable on-device detection & back up/);
+  assert.match(flow, /Back up without face detection/);
+  assert.match(flow, /does not enable cloud face recognition/);
+  assert.match(flow, /flow\.report\.photos > 0/);
+  assert.ok(promptAt > 0 && protectAt > promptAt, 'local consent choice must happen before protection starts');
+  assert.doesNotMatch(flow, /face-processing-consent[^/]/, 'Add must not grant cloud recognition');
+});
