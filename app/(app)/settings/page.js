@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  CheckCircle2, ChevronRight, Integrations as IntegrationsIcon, LifeBuoy, Loader2,
+  CheckCircle2, ChevronRight, Cloud, LifeBuoy, Loader2,
   LogOut, Mail, Settings2, Shield, Trash2, UserRound, WalletCards,
 } from 'lucide-react';
 import { apiFetch, logout } from '@/lib/api-client';
@@ -88,7 +88,7 @@ export default function SettingsPage() {
       <ControlLink href="/profile" icon={UserRound} title="You / Profile" copy="Identity and account overview" />
       <ControlLink href="/plan-storage" icon={WalletCards} title="Plan & storage" copy="Plan, capacity and backup controls" />
       <ControlLink href="/privacy-security" icon={Shield} title="Privacy & security" copy="Face privacy, consent and deletion" />
-      <ControlLink href="/integrations" icon={IntegrationsIcon} title="Integrations" copy="App and cloud authorization" />
+      <ControlLink href="/integrations" icon={Cloud} title="Integrations" copy="App and cloud authorization" />
       <ControlLink href="/support" icon={LifeBuoy} title="Help & support" copy="Get help when you need it" />
     </section>
 
