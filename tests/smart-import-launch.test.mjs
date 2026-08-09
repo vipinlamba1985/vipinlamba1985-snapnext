@@ -61,8 +61,9 @@ test('hosted picker importer is selected-file only and SSRF constrained', async 
 test('OneDrive picker token is explicitly discarded and not sent to server', async () => {
   const source = await read('app/(app)/imports/page.js');
   assert.match(source, /response can include an accessToken/);
-  assert.match(source, /does not persist or transmit it/);
+  assert.match(source, /selected short-lived[\s\S]*download URL/);
   assert.doesNotMatch(source, /accessToken:\s*response\.accessToken/);
+  assert.doesNotMatch(source, /body:\s*JSON\.stringify\([^)]*accessToken/);
 });
 
 test('generic web job API cannot create background discovery work', async () => {
