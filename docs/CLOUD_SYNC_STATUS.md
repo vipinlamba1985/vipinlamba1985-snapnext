@@ -34,6 +34,8 @@ Smart Import belongs to **(+) Add**.
 
 `/imports` is the active launch surface. `/smart-sync` remains an explanatory/future surface for **Auto Cloud Sync** and must not recreate automatic provider crawling.
 
+The ordinary Add screen must describe all four launch Smart Import providers consistently: Google Photos, Google Drive, Dropbox, and OneDrive.
+
 ## Google Drive
 
 Google Drive uses OAuth plus Google Picker with `https://www.googleapis.com/auth/drive.file`. This is a **per-file scope, not a read-only one**. SnapNext therefore enforces read-only behavior in code: no whole-Drive enumeration, no Drive uploads, no Drive deletes, and no Drive permission changes. Picker imports are bounded and content-deduplicated.
@@ -77,7 +79,11 @@ Auto Cloud Sync may be reconsidered after launch only when meaningful user deman
 9. Plan capacity and duplicate protection apply before storage.
 10. Auto Cloud Sync remains future-only until deliberately re-approved.
 
-Use `docs/SMART_SYNC_PROVIDER_ENV_CHECKLIST.md` for launch configuration and provider-console verification.
+## Current code validation
+
+The four-provider Smart Import branch passed **565 tests with 0 failures**, compiled successfully with the optimized Next.js build, and generated **107/107 pages**, including `/onedrive-picker-redirect`. The validated Vercel preview deployment is `dpl_C83dpVHGNuWFE15eEebeLTaYUErC` on head `338d99692459fab945235a19e08c96497cf45cbe`.
+
+This validates code/build behavior only. Real provider launch readiness still requires the provider-console setup and signed-in selection tests listed in `docs/SMART_SYNC_PROVIDER_ENV_CHECKLIST.md`.
 
 ## Permanent naming rule
 
