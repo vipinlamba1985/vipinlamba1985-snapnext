@@ -1,7 +1,5 @@
-// Smart Import has one provider registry, but launch availability is narrower
-// than technical adapter availability. Google Drive and Google Photos expose
-// user-selected picker paths; Dropbox and OneDrive remain declared for legacy
-// cleanup/future picker work without becoming launch background connections.
+// Smart Import has one provider registry. All four launch web providers are
+// user-selected picker/chooser surfaces; background whole-account sync remains disabled.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -30,7 +28,7 @@ test('every supported source is declared', () => {
   assert.deepEqual(SMART_SYNC_PROVIDER_IDS, ['google_drive', 'google_photos', 'dropbox', 'onedrive', 'ios_photos', 'android_media']);
 });
 
-test('launch web sources have picker paths while deferred providers cannot start a new connection', () => {
+test('all launch web sources are user-selected picker paths', () => {
   const drive = smartSyncProvider('google_drive');
   const photos = smartSyncProvider('google_photos');
   const dropbox = smartSyncProvider('dropbox');
@@ -40,12 +38,11 @@ test('launch web sources have picker paths while deferred providers cannot start
   assert.match(drive.connectPath, /^\/cloud\/google-drive\//);
   assert.equal(photos.syncStrategy, 'user_selected_picker');
   assert.equal(photos.connectPath, '/smart-sync/oauth/google_photos/start');
-
   for (const provider of [dropbox, onedrive]) {
-    assert.equal(provider.syncStrategy, 'deferred_picker');
+    assert.equal(provider.syncStrategy, 'user_selected_picker');
+    assert.equal(provider.auth, 'hosted_picker');
     assert.equal(provider.connectPath, null);
-    assert.ok(provider.env.length, `${provider.id} keeps credential metadata only for compatibility/future work`);
-    assert.match(provider.description, /planned|launch/i);
+    assert.ok(provider.capabilities.includes('documents'));
   }
 });
 
@@ -59,21 +56,23 @@ test('the public provider shape never leaks environment variable names', () => {
   assert.doesNotMatch(serialized, /CLIENT_SECRET|CLIENT_ID|CLOUD_CONNECTOR_SECRET/);
 });
 
-test('credentials do not accidentally make a deferred provider launch-available', () => {
-  const dropbox = smartSyncProvider('dropbox');
-  const saved = dropbox.env.map(key => process.env[key]);
-  try {
-    for (const key of dropbox.env) process.env[key] = 'test-value';
-    const status = publicProviderStatus(dropbox);
-    assert.equal(status.configured, true);
-    assert.equal(status.availability, 'future_picker');
-    assert.equal(status.launchAvailable, false);
-    assert.equal(status.available, false);
-  } finally {
-    dropbox.env.forEach((key, index) => {
-      if (saved[index] === undefined) delete process.env[key];
-      else process.env[key] = saved[index];
-    });
+test('Dropbox and OneDrive become launch-available only when their public picker IDs are configured', () => {
+  for (const id of ['dropbox', 'onedrive']) {
+    const provider = smartSyncProvider(id);
+    const saved = provider.env.map(key => process.env[key]);
+    try {
+      for (const key of provider.env) process.env[key] = 'test-value';
+      const status = publicProviderStatus(provider);
+      assert.equal(status.configured, true);
+      assert.equal(status.availability, 'picker_ready');
+      assert.equal(status.launchAvailable, true);
+      assert.equal(status.available, true);
+    } finally {
+      provider.env.forEach((key, index) => {
+        if (saved[index] === undefined) delete process.env[key];
+        else process.env[key] = saved[index];
+      });
+    }
   }
 });
 
@@ -85,15 +84,16 @@ test('native providers are never gated on server credentials', () => {
   }
 });
 
-test('Smart Import exposes only launch picker actions and never starts Dropbox or OneDrive OAuth', async () => {
+test('Smart Import exposes all four picker actions and never starts Dropbox or OneDrive background OAuth', async () => {
   const page = await read(path.join('app', '(app)', 'imports', 'page.js'));
   assert.doesNotMatch(page, /CLOUD_OPTIONS/);
   assert.match(page, /\/cloud\/google-drive\/start/);
   assert.match(page, /\/smart-sync\/oauth\/google_photos\/start/);
-  assert.match(page, /title="Dropbox"/);
-  assert.match(page, /title="OneDrive"/);
+  assert.match(page, /smart-import-dropbox/);
+  assert.match(page, /smart-import-onedrive/);
+  assert.match(page, /Dropbox\.choose/);
+  assert.match(page, /OneDrive\.open/);
   assert.doesNotMatch(page, /oauth\/dropbox\/start|oauth\/onedrive\/start/);
-  assert.match(page, /href="\/upload\/discover"/);
 });
 
 test('the providers endpoint remains authenticated and returns the safe registry shape', async () => {
