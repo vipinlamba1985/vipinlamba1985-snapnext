@@ -1,14 +1,19 @@
 const MEDIAPIPE_VERSION = '1.0.0';
-const MEDIAPIPE_MODULE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/+esm`;
-const MEDIAPIPE_WASM_ROOT = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
-const FACE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite';
+const ASSET_ROOT = `/vendor/mediapipe/tasks-vision/${MEDIAPIPE_VERSION}`;
+const MEDIAPIPE_MODULE_URL = `${ASSET_ROOT}/vision_bundle.mjs`;
+const MEDIAPIPE_WASM_ROOT = `${ASSET_ROOT}/wasm`;
+const FACE_MODEL_URL = `${ASSET_ROOT}/models/blaze_face_full_range_float16_v1.tflite`;
 
 let detectorPromise = null;
 
 async function getDetector() {
   if (!detectorPromise) {
     detectorPromise = (async () => {
-      const { FaceDetector, FilesetResolver } = await import(MEDIAPIPE_MODULE_URL);
+      const module = await import(MEDIAPIPE_MODULE_URL);
+      const api = module?.default || module;
+      const FaceDetector = module?.FaceDetector || api?.FaceDetector;
+      const FilesetResolver = module?.FilesetResolver || api?.FilesetResolver;
+      if (!FaceDetector || !FilesetResolver) throw new Error('Self-hosted MediaPipe runtime is invalid.');
       const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_ROOT);
       return FaceDetector.createFromOptions(vision, {
         baseOptions: { modelAssetPath: FACE_MODEL_URL },
