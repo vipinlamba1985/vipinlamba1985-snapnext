@@ -30,8 +30,8 @@ early" check now passes on its own, which is the direct proof of the origin fix.
 | ESLint | `npx eslint .` | **FAIL** | 1 error, 138 warnings — the red CI gate |
 | Smoke (local prod server) | `npm run test:smoke` | **FAIL** | 2 checks; a 3rd without `CORS_ORIGINS` |
 | Dependency audit | `npm audit --omit=dev` | **FAIL** | 31 vulns — 1 critical, 6 high |
-| Android policy | `npm run policy:android` | BLOCKED | no `android/` project generated |
-| iOS policy | `npm run policy:ios` | BLOCKED | no `ios/` project generated |
+| Android policy | `npm run policy:android` | n/a locally | needs `native:bootstrap:android` first — runs and passes in CI, see below |
+| iOS policy | `npm run policy:ios` | n/a locally | needs `native:bootstrap:ios` first — runs and passes in CI, see below |
 
 ## P0 — fixed in this branch
 
@@ -111,9 +111,15 @@ The remaining 138 findings are warnings and do not fail the build.
   the real public-launch bar — zero unresolved P0 data-loss, auth, billing or
   privacy issues across a real-device matrix. No evidence in-repo that a pass has
   been run against current `main`. No automation closes this gate.
-- **Native projects do not exist yet.** Neither `android/` nor `ios/` is generated,
-  so both policy checks are unrunnable. If a native release is planned, issue #88's
-  **API 36 by 31 August 2026** deadline is a hard external date.
+- **Native projects are generated on demand, and the policy gates are green.** Neither
+  `android/` nor `ios/` is committed — deliberately, per `docs/NATIVE_LAUNCH_RUNBOOK.md`,
+  so signing credentials and machine-specific files never land in git. The
+  `native-preflight` workflow bootstraps both, runs `policy:android` / `policy:ios`,
+  and compiles an Android debug shell and an unsigned iOS simulator build. Both jobs
+  passed on this PR, so issue #88's **API 36 by 31 August 2026** requirement is already
+  satisfied and enforced in CI. What remains for a store release is the owner-only work
+  in the runbook — Play Console and App Store Connect setup, signing, listings, and
+  real-device testing.
 - **Dormant by design, not blockers.** Chat E2EE (`CHAT_E2EE_ENABLED`), the AI index
   (`AI_INDEX_ENABLED`) and the People/face gate (PR #158, draft) all fail closed and
   are absent from the runtime. Launching without them is a scope decision already
