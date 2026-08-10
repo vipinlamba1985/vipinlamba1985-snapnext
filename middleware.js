@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { distributedRateLimit } from './lib/distributed-rate-limit';
+import { isAllowedOrigin, resolveAllowedOrigins } from './lib/request-origin';
 
 const PROTECTED_PREFIXES = [
   '/dashboard','/upload','/gallery','/memories','/memory-brain','/memory-stories','/life-graph','/journal','/health','/imports','/circles',
@@ -45,14 +46,15 @@ function logSecurityEvent(level, event, details) {
 function previewAuthAllowed() {
   return process.env.NODE_ENV !== 'production' && process.env.VERCEL_ENV !== 'production';
 }
-function configuredOrigins(request) {
-  const allowed = new Set(String(process.env.CORS_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean));
-  allowed.add(request.nextUrl.origin);
-  return allowed;
-}
 function isAllowedBrowserOrigin(request) {
-  const origin = request.headers.get('origin');
-  return !origin || configuredOrigins(request).has(origin);
+  const allowed = resolveAllowedOrigins({
+    configured: process.env.CORS_ORIGINS,
+    forwardedHost: request.headers.get('x-forwarded-host'),
+    host: request.headers.get('host'),
+    forwardedProto: request.headers.get('x-forwarded-proto'),
+    fallbackProtocol: request.nextUrl.protocol,
+  });
+  return isAllowedOrigin(request.headers.get('origin'), allowed);
 }
 function requestClientKey(request) {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
