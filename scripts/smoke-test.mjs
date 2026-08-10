@@ -78,11 +78,21 @@ await check('Legal launch pages are reachable', async () => {
 
 await check('Security headers are present', async () => {
   const response = await fetch(`${baseUrl}/`, { redirect: 'manual' });
-  for (const header of ['content-security-policy', 'strict-transport-security', 'x-content-type-options', 'referrer-policy']) {
+  for (const header of ['strict-transport-security', 'x-content-type-options', 'referrer-policy']) {
     expect(Boolean(response.headers.get(header)), `${header} is missing`);
   }
   const frameOptions = response.headers.get('x-frame-options');
   expect(frameOptions === 'DENY', `x-frame-options was ${frameOptions || 'missing'}`);
+
+  // CSP is mid-rollout. Report-only is a legitimate intermediate state, but it
+  // must not read as done — distinguish absent from observing from enforced.
+  const enforced = response.headers.get('content-security-policy');
+  const reportOnly = response.headers.get('content-security-policy-report-only');
+  expect(Boolean(enforced || reportOnly), 'content-security-policy is missing entirely');
+  expect(
+    Boolean(enforced),
+    'content-security-policy is report-only; verify the provider flows, then enforce before launch',
+  );
 });
 
 await check('Unknown browser origin is rejected', async () => {
