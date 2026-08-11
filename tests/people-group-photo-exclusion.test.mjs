@@ -24,67 +24,56 @@ test('group photo detection tolerates missing or invalid counts', () => {
   assert.equal(isLargeGroupPhoto(Number.NaN), false);
 });
 
-test('the indexer applies the crowd check before any cluster is written', () => {
-  const source = read('lib/people-intelligence.server.js');
-  const guardAt = source.indexOf('isLargeGroupPhoto(usableFaces.length)');
-  const clusterWriteAt = source.indexOf('await upsertCluster(');
-  // Call site, not the helper's definition further up the file.
-  const searchAt = source.indexOf('await findExistingCluster(');
+test('the Favourite indexer applies the crowd check before any identity search or match write', () => {
+  const source = read('lib/favorite-people-recognition.server.js');
+  const start = source.indexOf('export async function indexFavoriteMediaFaces');
+  const automatic = source.slice(start);
+  const guardAt = automatic.indexOf('isLargeGroupPhoto(usableFaces.length)');
+  const searchAt = automatic.indexOf('peopleRekognition.searchUsers');
+  const clusterWriteAt = automatic.indexOf("db.collection('person_clusters').updateOne", searchAt);
 
   assert.ok(guardAt > 0, 'indexer must apply the large-group guard');
-  assert.ok(clusterWriteAt > 0, 'indexer still writes clusters for normal photos');
-  assert.ok(
-    guardAt < clusterWriteAt,
-    'the crowd check must run before clusters are created or strengthened',
-  );
-  assert.ok(
-    guardAt < searchAt,
-    'a crowd photo must not even search for identities to match',
-  );
+  assert.ok(searchAt > guardAt, 'a crowd photo must not search Favourite identities');
+  assert.ok(clusterWriteAt > searchAt, 'normal Favourite matches may update an existing selected person only after search');
 });
 
 test('an excluded group photo records a terminal status and no clusters', () => {
-  const source = read('lib/people-intelligence.server.js');
+  const source = read('lib/favorite-people-recognition.server.js');
   assert.match(source, /status: 'group_photo'/);
   assert.match(source, /reason: 'large_group_photo'/);
-  // No identities attached, so it cannot strengthen a cluster or a photo count.
-  assert.match(source, /clusterIds: \[\]/);
+  assert.match(source, /faceIds: \[\], clusterIds: \[\]/);
   assert.match(source, /return \{ status: 'group_photo'/);
 });
 
 test('group photos are terminal so they are never re-scanned or re-billed', () => {
-  const source = read('lib/people-intelligence.server.js');
-  assert.match(source, /PEOPLE_TERMINAL_SUCCESS_STATUSES = Object\.freeze\(\['completed', 'skipped', 'no_faces', 'group_photo'\]\)/);
-  // Both the "already done" guard and the candidate query use the shared list.
-  assert.ok(source.split('PEOPLE_TERMINAL_SUCCESS_STATUSES').length - 1 >= 4);
+  const source = read('lib/favorite-people-recognition.server.js');
+  assert.match(source, /FAVORITE_TERMINAL_STATUSES = Object\.freeze\(\['completed', 'skipped', 'no_faces', 'group_photo', 'no_favorite_match'\]\)/);
+  assert.match(source, /STABLE_ACROSS_FAVORITES = new Set\(\['skipped', 'no_faces', 'group_photo'\]\)/);
 
   const route = read('app/api/magic-library/people/reindex/route.js');
-  assert.match(route, /PEOPLE_TERMINAL_SUCCESS_STATUSES/);
+  assert.match(route, /FAVORITE_TERMINAL_STATUSES/);
   assert.match(route, /'peopleIntelligence\.status': 'group_photo'/);
 });
 
 test('an excluded group photo still stays fully available in the library', () => {
-  const source = read('lib/people-intelligence.server.js');
-  // The exclusion only writes peopleIntelligence; it must never trash or
-  // otherwise alter the stored original.
+  const source = read('lib/favorite-people-recognition.server.js');
   const block = source.slice(
     source.indexOf('isLargeGroupPhoto(usableFaces.length)'),
     source.indexOf("return { status: 'group_photo'"),
   );
-  assert.doesNotMatch(block, /trashed/);
-  assert.doesNotMatch(block, /deleteOne|deleteMany|remove\(/);
+  assert.doesNotMatch(block, /collection\('media'\)\.delete|collection\('media'\)\.remove/);
   assert.match(block, /\$set: \{ peopleIntelligence:/);
 });
 
-test('read-time rules agree with the index-time boundary', () => {
+test('read-time rules agree with the local/index-time boundary without retained per-photo face ids', () => {
   const crowd = classifyPersonMedia({
-    peopleIntelligence: { faceIds: ['f1', 'f2', 'f3', 'f4', 'f5'], clusterIds: ['a', 'b', 'c', 'd', 'e'] },
+    peopleIntelligence: { detectedFaceCount: 5, faceIds: [], clusterIds: ['a'] },
   }, { selectedClusterId: 'a', activeClusterIds: ['a'] });
   assert.equal(crowd.largeGroupPhoto, true);
   assert.equal(isLargeGroupPhoto(crowd.detectedFaceCount), true);
 
   const family = classifyPersonMedia({
-    peopleIntelligence: { faceIds: ['f1', 'f2', 'f3', 'f4'], clusterIds: ['a', 'b', 'c', 'd'] },
+    peopleIntelligence: { detectedFaceCount: 4, faceIds: [], clusterIds: ['a'] },
   }, { selectedClusterId: 'a' });
   assert.equal(family.largeGroupPhoto, false);
   assert.equal(isLargeGroupPhoto(family.detectedFaceCount), false);
