@@ -13,6 +13,8 @@ if (!supported.has(requested)) {
 const configPath = path.join(root, 'native', 'app-config.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const ANDROID_FACE_DEPENDENCY = "implementation 'com.google.mlkit:face-detection:16.1.7'";
+const IOS_FACE_PLUGIN_MARKER = '// SNAPNEXT_LOCAL_FACE_ANALYSIS_PLUGIN';
 
 function run(args) {
   const result = spawnSync(npx, args, { cwd: root, stdio: 'inherit', env: process.env });
@@ -40,6 +42,28 @@ function replaceNumber(source, expression, value, label) {
   return source.replace(expression, `$1${value}`);
 }
 
+function androidPackagePath() {
+  return String(config.appId || '').split('.').filter(Boolean).join('/');
+}
+
+function injectAndroidLocalFaceAnalysis() {
+  const template = read('native/local-face-analysis/android/MainActivity.java');
+  if (!template.includes('__APP_PACKAGE__')) throw new Error('Android local face template is missing its package placeholder.');
+  const mainActivityPath = `android/app/src/main/java/${androidPackagePath()}/MainActivity.java`;
+  write(mainActivityPath, template.replaceAll('__APP_PACKAGE__', config.appId));
+
+  const appGradlePath = 'android/app/build.gradle';
+  let appGradle = read(appGradlePath);
+  if (!appGradle.includes(ANDROID_FACE_DEPENDENCY)) {
+    const dependenciesMarker = 'dependencies {';
+    const index = appGradle.indexOf(dependenciesMarker);
+    if (index < 0) throw new Error('Could not find Android dependencies block for local face analysis.');
+    const insertAt = index + dependenciesMarker.length;
+    appGradle = `${appGradle.slice(0, insertAt)}\n    ${ANDROID_FACE_DEPENDENCY}${appGradle.slice(insertAt)}`;
+    write(appGradlePath, appGradle);
+  }
+}
+
 function patchAndroid() {
   const variablesPath = 'android/variables.gradle';
   let variables = read(variablesPath);
@@ -57,10 +81,25 @@ function patchAndroid() {
     manifest = `${manifest.slice(0, activityClose)}${filter}\n        ${manifest.slice(activityClose)}`;
   }
   write(manifestPath, manifest);
+  injectAndroidLocalFaceAnalysis();
 }
 
 function plistEntry(key, value) {
   return `\n\t<key>${key}</key>\n\t<string>${value}</string>`;
+}
+
+function injectIosLocalFaceAnalysis() {
+  const appDelegatePath = 'ios/App/App/AppDelegate.swift';
+  let appDelegate = read(appDelegatePath);
+  if (!appDelegate.includes('import Capacitor')) throw new Error('Could not find Capacitor import in iOS AppDelegate.');
+  if (!appDelegate.includes('import Vision')) {
+    appDelegate = appDelegate.replace('import Capacitor', 'import Capacitor\nimport Vision\nimport ImageIO');
+  }
+  if (!appDelegate.includes(IOS_FACE_PLUGIN_MARKER)) {
+    const plugin = read('native/local-face-analysis/ios/LocalFaceAnalysisPlugin.swift').trim();
+    appDelegate = `${appDelegate.trimEnd()}\n\n${IOS_FACE_PLUGIN_MARKER}\n${plugin}\n`;
+  }
+  write(appDelegatePath, appDelegate);
 }
 
 function patchIos() {
@@ -90,6 +129,7 @@ function patchIos() {
   }
   project = project.replace(/IPHONEOS_DEPLOYMENT_TARGET\s*=\s*[^;]+;/g, `IPHONEOS_DEPLOYMENT_TARGET = ${config.ios.deploymentTarget};`);
   write(projectPath, project);
+  injectIosLocalFaceAnalysis();
 }
 
 try {
