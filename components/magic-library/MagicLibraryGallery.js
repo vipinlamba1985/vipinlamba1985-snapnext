@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Camera, FileText, Film, Image as ImageIcon, Loader2, Search, Sparkles, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { toast } from 'sonner';
 import useMagicLibrary from '@/components/magic-library/useMagicLibrary';
+import FavoritePeoplePanel from '@/components/magic-library/FavoritePeoplePanel';
 import PeopleActivation from '@/components/magic-library/PeopleActivation';
 import PeopleRow from '@/components/magic-library/PeopleRow';
 import MediaSection from '@/components/magic-library/MediaSection';
@@ -121,6 +122,7 @@ export default function MagicLibraryGallery() {
         {!!smartSuggestions.length && <div className="mt-2 flex flex-wrap gap-1.5">{smartSuggestions.map((label) => <button key={label} onClick={() => { setDraftQuery(label); runSearch(label); }} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55">{label}</button>)}</div>}
       </header>
 
+      <FavoritePeoplePanel people={magic.people} />
       {magic.people.length > 0 && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} activeCount={magic.activation.active.length} trustedCircleNames={magic.trustedCircleNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setOpenSection(null); setOpenCategoryKey(null); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
       {!magic.activePerson && <div className="grid grid-cols-4 gap-1.5"><CategoryButton icon={Camera} label="Photos" onClick={() => openCategory('photos')} className="text-pink-300" /><CategoryButton icon={Film} label="Videos" onClick={() => openCategory('videos')} className="text-purple-300" /><CategoryButton icon={ImageIcon} label="Screenshots" onClick={() => openCategory('screenshots')} className="text-sky-300" /><CategoryButton icon={FileText} label="Docs" onClick={() => openCategory('docs')} className="text-emerald-300" /></div>}
       {(magic.activePerson || magic.query || openSection || openCategoryKey) && <button onClick={showAll} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[11px] font-bold text-white/65">Show all memories</button>}

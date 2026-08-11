@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { cleanCluster, isGenericIdentityLabel, PEOPLE_INTELLIGENCE_VERSION } from '@/lib/people-intelligence';
-import { indexMediaFaces } from '@/lib/people-intelligence.server';
-import { closestFaceIndex, replaceActiveCluster } from '@/lib/people-recovery';
+import { normalizeFavoritePeople } from '@/lib/favorite-people';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,56 +16,44 @@ function recoveryReason(cluster = {}) {
   return 'Excluded face';
 }
 
-async function faceRowsForMedia(db, userId, mediaId) {
-  return db.collection('face_index').find({
-    userId,
-    mediaId,
-    indexVersion: PEOPLE_INTELLIGENCE_VERSION,
-    clusterId: { $exists: true, $ne: null },
-  }).toArray();
-}
-
-async function resolveV3Cluster(db, userId, existing) {
+async function resolveFavoriteCluster(db, userId, existing) {
   if (Number(existing.indexVersion || 0) === PEOPLE_INTELLIGENCE_VERSION && existing.rekognitionUserId) return existing;
-  const mediaId = String(existing.representativeMediaId || '').trim();
-  if (!mediaId) return null;
 
-  let rows = await faceRowsForMedia(db, userId, mediaId);
-  let match = closestFaceIndex(rows, existing.representativeFaceBox || {});
-
-  if (!match) {
-    const media = await db.collection('media').findOne({ userId, id: mediaId, trashed: { $ne: true }, kind: 'photo' });
-    if (!media) return null;
-    const forcedItem = {
-      ...media,
-      peopleIntelligence: {
-        ...(media.peopleIntelligence || {}),
-        version: PEOPLE_INTELLIGENCE_VERSION,
-        status: 'queued',
-      },
-    };
-    await indexMediaFaces({ db, userId, item: forcedItem });
-    rows = await faceRowsForMedia(db, userId, mediaId);
-    match = closestFaceIndex(rows, existing.representativeFaceBox || {});
-  }
-
-  if (!match?.clusterId) return null;
-  return db.collection('person_clusters').findOne({
-    userId,
-    clusterId: match.clusterId,
-    indexVersion: PEOPLE_INTELLIGENCE_VERSION,
-  });
-}
-
-async function replaceActivationCluster(db, userId, previousClusterId, nextClusterId) {
-  if (!previousClusterId || !nextClusterId || previousClusterId === nextClusterId) return;
+  // Cloud repair is deliberately limited to a person the user explicitly chose
+  // as a Favourite. Older/general People are never re-indexed just to recover a
+  // card, because that would recreate the broad recognition path we retired.
   const activation = await db.collection('magic_library_activation').findOne({ userId });
-  if (!activation) return;
-  const nextActive = replaceActiveCluster(activation.active || [], previousClusterId, nextClusterId);
-  await db.collection('magic_library_activation').updateOne(
-    { userId },
-    { $set: { active: nextActive, updatedAt: new Date() } },
+  const selected = normalizeFavoritePeople(activation?.recognitionFavorites || []);
+  if (!selected.includes(String(existing.clusterId || ''))) return null;
+
+  const enrollment = await db.collection('favorite_people_recognition').findOne({
+    userId,
+    clusterId: existing.clusterId,
+    awsUserId: { $exists: true, $ne: null },
+    'faceIds.0': { $exists: true },
+  });
+  if (!enrollment) return null;
+
+  const now = new Date();
+  await db.collection('person_clusters').updateOne(
+    { userId, clusterId: existing.clusterId },
+    {
+      $set: {
+        indexVersion: PEOPLE_INTELLIGENCE_VERSION,
+        rekognitionUserId: enrollment.awsUserId,
+        representativeMediaId: enrollment.referenceMediaId || existing.representativeMediaId,
+        representativeFaceId: enrollment.faceIds?.[0] || existing.representativeFaceId,
+        representativeFaceBox: enrollment.referenceFaceBox || existing.representativeFaceBox,
+        representativeQuality: Number(enrollment.referenceQuality || existing.representativeQuality || 0),
+        status: 'active',
+        verificationStatus: 'confirmed',
+        identityState: 'person',
+        favoriteRecognition: { version: enrollment.version, enrolled: true, enrolledAt: enrollment.enrolledAt || now },
+        updatedAt: now,
+      },
+    },
   );
+  return db.collection('person_clusters').findOne({ userId, clusterId: existing.clusterId });
 }
 
 export async function GET(request) {
@@ -77,7 +64,6 @@ export async function GET(request) {
   const rows = await db.collection('person_clusters').find({
     userId: user.id,
     representativeMediaId: { $exists: true, $ne: null },
-    representativeFaceBox: { $exists: true, $ne: null },
     $or: [
       { status: { $in: ['hidden', 'rejected', 'legacy'] } },
       { verificationStatus: 'rejected' },
@@ -86,11 +72,7 @@ export async function GET(request) {
     ],
   }).sort({ isSelf: -1, memoryCount: -1, representativeQuality: -1, updatedAt: -1 }).limit(200).toArray();
 
-  const people = rows.map((row) => ({
-    ...cleanCluster(row),
-    recoveryReason: recoveryReason(row),
-  }));
-
+  const people = rows.map((row) => ({ ...cleanCluster(row), recoveryReason: recoveryReason(row) }));
   return NextResponse.json({ people, count: people.length });
 }
 
@@ -111,28 +93,19 @@ export async function POST(request) {
 
   let target = existing;
   if (Number(existing.indexVersion || 0) !== PEOPLE_INTELLIGENCE_VERSION || !existing.rekognitionUserId) {
-    try {
-      target = await resolveV3Cluster(db, user.id, existing);
-    } catch (error) {
-      console.error('[people-recovery] representative reindex failed', error?.name, error?.message);
-      return NextResponse.json({
-        error: 'SnapNext could not reconnect this older face yet. Please retry after the People scan is available.',
-        code: 'people_recovery_reindex_failed',
-      }, { status: 503 });
-    }
+    target = await resolveFavoriteCluster(db, user.id, existing);
     if (!target) {
       return NextResponse.json({
-        error: 'This older face needs a clear source photo before it can be restored.',
-        code: 'people_recovery_face_not_found',
+        error: 'This older face can be cloud-repaired only after you choose it as a Favourite Person and add a clear solo reference photo.',
+        code: 'favorite_reference_required',
       }, { status: 409 });
     }
   }
 
-  const targetClusterId = String(target.clusterId || '');
   const now = new Date();
   if (action === 'self') {
     await db.collection('person_clusters').updateMany(
-      { userId: user.id, clusterId: { $ne: targetClusterId }, isSelf: true },
+      { userId: user.id, clusterId: { $ne: clusterId }, isSelf: true },
       { $unset: { isSelf: '' }, $set: { updatedAt: now } },
     );
   }
@@ -150,35 +123,10 @@ export async function POST(request) {
   else if (existing.displayName && !isGenericIdentityLabel(existing.displayName)) set.displayName = existing.displayName;
 
   const person = await db.collection('person_clusters').findOneAndUpdate(
-    { userId: user.id, clusterId: targetClusterId, indexVersion: PEOPLE_INTELLIGENCE_VERSION },
-    {
-      $set: set,
-      $unset: { hiddenAt: '', rejectedAt: '', legacyAt: '' },
-    },
+    { userId: user.id, clusterId, indexVersion: PEOPLE_INTELLIGENCE_VERSION },
+    { $set: set, $unset: { hiddenAt: '', rejectedAt: '', legacyAt: '' } },
     { returnDocument: 'after' },
   );
 
-  if (targetClusterId !== clusterId) {
-    await db.collection('person_clusters').updateOne(
-      { userId: user.id, clusterId },
-      {
-        $set: {
-          status: 'legacy',
-          isSelf: false,
-          supersededByClusterId: targetClusterId,
-          supersededAt: now,
-          updatedAt: now,
-        },
-      },
-    );
-    await replaceActivationCluster(db, user.id, clusterId, targetClusterId);
-  }
-
-  return NextResponse.json({
-    ok: true,
-    person: cleanCluster(person),
-    action,
-    repairedIdentity: targetClusterId !== clusterId,
-    previousClusterId: targetClusterId !== clusterId ? clusterId : null,
-  });
+  return NextResponse.json({ ok: true, person: cleanCluster(person), action, repairedIdentity: target !== existing });
 }

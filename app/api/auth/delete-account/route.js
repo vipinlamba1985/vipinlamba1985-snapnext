@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { deleteUserAccountData } from '@/lib/account-deletion';
+import { purgeFaceRecognitionBeforeAccountDeletion } from '@/lib/account-face-deletion.server';
 
 function isSameSiteRequest(request) {
   const origin = request.headers.get('origin');
@@ -22,9 +23,16 @@ export async function POST(request) {
 
   const db = await getDb();
   let cleanup;
+  let faceCleanup;
   try {
+    // Face recognition has an independent verified-deletion obligation. Purge
+    // and verify both the retired broad collection and Favourite-only state
+    // before deleting the account record, so no cloud biometric state can be
+    // orphaned by an otherwise-successful account deletion.
+    faceCleanup = await purgeFaceRecognitionBeforeAccountDeletion({ db, userId: user.id });
     cleanup = await deleteUserAccountData({ db, userId: user.id });
   } catch (error) {
+    console.error('[delete-account] cleanup failed', error?.code || error?.name, error?.message);
     return Response.json({ error: error?.message || 'Account cleanup failed. Please retry.' }, { status: 503 });
   }
 
@@ -41,6 +49,10 @@ export async function POST(request) {
   return Response.json({
     ok: true,
     message: 'Account and all data deleted successfully.',
-    cleanup: { aiIndex: cleanup.aiIndex, storageFailures: cleanup.storageFailures.length },
+    cleanup: {
+      aiIndex: cleanup.aiIndex,
+      storageFailures: cleanup.storageFailures.length,
+      faceRecognitionVerified: Boolean(faceCleanup?.snapNext?.ok),
+    },
   });
 }

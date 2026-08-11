@@ -108,13 +108,17 @@ test('local analysis config is gated by independent local consent', () => {
   assert.match(route, /consentReady/);
 });
 
-test('reindex itself still blocks when rollout or cloud consent is unavailable', () => {
+test('Favourite reindex blocks when rollout, plan, selection or cloud consent is unavailable', () => {
   const route = read('app/api/magic-library/people/reindex/route.js');
   assert.match(route, /people_rollout_disabled/);
+  assert.match(route, /favorite_people_plan_required/);
+  assert.match(route, /favorite_people_required/);
+  assert.match(route, /favorite_reference_required/);
   assert.match(route, /face_processing_consent_required/);
   const block = route.indexOf('const blocked = await processingBlock');
-  const rebuild = route.indexOf('await rebuildPeopleIntelligence');
-  assert.ok(block > 0 && rebuild > block, 'server readiness check must run before reindex work');
+  const rebuild = route.indexOf('await rebuildFavoritePeopleRecognition');
+  assert.ok(block > 0 && rebuild > block, 'server readiness check must run before Favourite People work');
+  assert.doesNotMatch(route, /rebuildPeopleIntelligence/);
 });
 
 test('face deletion queue remains unique and recovery-indexed per user', () => {
