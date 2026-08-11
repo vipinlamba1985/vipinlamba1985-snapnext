@@ -1,6 +1,6 @@
 # SnapNext Mobile Launch QA
 
-Automated smoke checks cover routing, PWA assets, security headers, legal pages and mobile user-agent rendering. The following checks require physical devices because browsers cannot remotely reproduce the native Photos picker, background suspension, battery rules or OS share sheet.
+Automated smoke checks cover routing, installable-web assets, security headers, legal pages and mobile user-agent rendering. The following checks require physical devices because browsers cannot remotely reproduce the native Photos picker, background suspension, battery rules or OS share sheet.
 
 ## Required devices
 
@@ -43,7 +43,9 @@ For every batch verify:
 - Media appears in the gallery before optional AI processing completes
 - AI provider failure never removes or blocks the stored file
 
-## PWA and mobile UX
+## Installable web and mobile UX
+
+SnapNext is **online-first for launch**. A service worker and offline content cache are not launch requirements. The app may be added to a home screen, but authenticated media, uploads, billing and cloud-import flows require connectivity. This avoids stale authenticated UI and ambiguous upload state caused by premature offline caching.
 
 - Add SnapNext to the home screen
 - Launch from the installed icon
@@ -52,7 +54,9 @@ For every batch verify:
 - Check text-size accessibility at 100%, 125% and 150%
 - Confirm buttons and upload controls remain tappable with one hand
 - Rotate between portrait and landscape during upload
-- Confirm offline state is understandable and queued actions recover when online
+- Turn connectivity off during an upload and confirm the app shows a clear recoverable network state rather than claiming completion
+- Restore connectivity and confirm incomplete work can resume or retry without duplicating already completed files
+- Do **not** require `/sw.js`, offline browsing, cached authenticated pages or offline upload execution for launch
 - Test the OS Share sheet and any configured share target
 
 ## Billing and Family
