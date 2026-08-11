@@ -92,6 +92,7 @@ test('ordinary-photo cloud face vectors are temporary and deleted after matching
 
 test('enrolment itself requires a trusted solo photo and verifies AWS association success', () => {
   const engine = read('lib/favorite-people-recognition.server.js');
+  const capabilities = read('lib/people-rekognition-capabilities.server.js');
   const start = engine.indexOf('export async function enrollFavoritePerson');
   const end = engine.indexOf('export async function removeFavoriteEnrollment', start);
   const source = engine.slice(start, end);
@@ -100,8 +101,8 @@ test('enrolment itself requires a trusted solo photo and verifies AWS associatio
   const collectionAt = source.indexOf('ensureCollection(userId)');
   assert.ok(gateAt > 0 && soloAt > gateAt && collectionAt > soloAt);
   assert.match(source, /MaxFaces: 1/);
-  assert.match(source, /UnsuccessfulFaceAssociations/);
-  assert.match(source, /favorite_reference_association_failed/);
+  assert.match(capabilities, /UnsuccessfulFaceAssociations/);
+  assert.match(capabilities, /favorite_reference_association_failed/);
 });
 
 test('removing a Favourite deletes the AWS user and its retained enrolment vectors', () => {
@@ -127,7 +128,7 @@ test('full verified deletion covers Favourite selection, enrolments and both AWS
 
 test('Favourite-completed rows are not falsely treated as legacy migration work', () => {
   const route = read('app/api/magic-library/people/route.js');
-  assert.match(route, /'peopleIntelligence\.recognitionScope': \{ \$ne: FAVORITE_RECOGNITION_SCOPE \}/);
+  assert.match(route, /'peopleIntelligence\.recognitionScope': \{ \$ne: 'favorite_people' \}/);
   assert.match(route, /'peopleIntelligence\.status': 'completed'/);
 });
 
