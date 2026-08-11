@@ -130,15 +130,18 @@ export async function GET(request) {
   ]);
   const activeNames = activation?.active || [];
   const deduped = dedupePeople(rows);
-  const selfRepair = deduped.find((row) => row.isSelf && !row.rekognitionUserId) || null;
+  // The old broad engine attempted to auto-repair a legacy "You" identity in
+  // AWS. Favourite People removes that implicit cloud action. Any cloud identity
+  // is now created or repaired only through explicit Favourite enrolment.
+  const selfRepair = null;
   const liveCounts = await liveCountsByCluster(db, user.id, deduped.map((row) => row.clusterId).filter(Boolean));
   const historicalCounts = await historicalCountsByCluster(db, user.id, deduped, liveCounts);
   const people = deduped.map((row) => {
     const live = liveCounts.get(String(row.clusterId)) || { count: 0, photos: 0, videos: 0 };
     const historical = historicalCounts.get(String(row.clusterId)) || null;
     const counts = choosePersonCounts(row, live, historical);
-    const identityRepairRequired = Boolean(row.isSelf && !row.rekognitionUserId);
-    const countPending = remaining > 0 || identityRepairRequired;
+    const identityRepairRequired = false;
+    const countPending = remaining > 0;
     const eligibility = personThumbnailEligibility({
       ...row,
       name: row.clusterId,
@@ -161,7 +164,7 @@ export async function GET(request) {
     };
   });
   const eligiblePeopleCount = people.filter((person) => person.thumbnailEligible).length;
-  const selfRepairRequired = Boolean(selfRepair);
+  const selfRepairRequired = false;
   const config = intelligenceConfig();
   const rolloutEnabled = Boolean(config.magicSorterEnabled && config.localFaceGateEnabled && config.faceProcessingEnabled);
   const consentReady = !config.consentRequired || hasFaceProcessingConsent(account || {});
@@ -173,7 +176,7 @@ export async function GET(request) {
     rolloutEnabled,
     consentReady,
     version: PEOPLE_INTELLIGENCE_VERSION,
-    migrationRequired: remaining > 0 || selfRepairRequired,
+    migrationRequired: remaining > 0,
     migrationRemaining: remaining,
     selfRepairRequired,
     selfRepairClusterId: selfRepair?.clusterId || null,
@@ -185,6 +188,7 @@ export async function GET(request) {
 export async function PATCH(request) {
   const user = await getUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const db = await getDb();
   const body = await request.json().catch(() => ({}));
   const clusterId = String(body.clusterId || '').trim();
   const hasDisplayName = Object.prototype.hasOwnProperty.call(body, 'displayName');
