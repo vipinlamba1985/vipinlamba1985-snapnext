@@ -3,7 +3,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { PEOPLE_INTELLIGENCE_VERSION, cleanCluster, isGenericIdentityLabel, isUsableFaceBox } from '@/lib/people-intelligence';
 import { normalizePeopleIdentityState, PEOPLE_IDENTITY_UNKNOWN } from '@/lib/people-identity';
-import { peopleIntelligenceReady } from '@/lib/people-intelligence.server';
+import { favoritePeopleEngineReady } from '@/lib/favorite-people-recognition.server';
 import { hasFaceProcessingConsent } from '@/lib/intelligence/face-gate';
 import { intelligenceConfig } from '@/lib/intelligence/config';
 import { sanitizeThumbnailCrop } from '@/lib/people-thumbnail';
@@ -117,12 +117,16 @@ export async function GET(request) {
       kind: 'photo',
       $or: [
         { 'peopleIntelligence.version': { $ne: PEOPLE_INTELLIGENCE_VERSION } },
-        { 'peopleIntelligence.status': { $in: ['queued', 'failed', 'awaiting_analysis', 'awaiting_consent', 'face_gate_disabled', 'face_processing_disabled'] } },
-        { 'peopleIntelligence.status': 'completed', 'peopleIntelligence.faceIds.0': { $exists: false } },
+        { 'peopleIntelligence.status': { $in: ['queued', 'failed', 'awaiting_analysis', 'awaiting_consent', 'awaiting_favorites', 'awaiting_favorite_enrollment', 'face_gate_disabled', 'face_processing_disabled'] } },
+        {
+          'peopleIntelligence.status': 'completed',
+          'peopleIntelligence.recognitionScope': { $ne: 'favorite_people' },
+          'peopleIntelligence.faceIds.0': { $exists: false },
+        },
       ],
     }),
     db.collection('magic_library_activation').findOne({ userId: user.id }),
-    db.collection('users').findOne({ id: user.id }, { projection: { faceProcessingConsent: 1 } }),
+    db.collection('users').findOne({ id: user.id }, { projection: { cloudFaceRecognitionConsent: 1, faceProcessingConsent: 1 } }),
   ]);
   const activeNames = activation?.active || [];
   const deduped = dedupePeople(rows);
@@ -165,7 +169,7 @@ export async function GET(request) {
     people,
     eligiblePeopleCount,
     suppressedOneOffCount: Math.max(0, people.length - eligiblePeopleCount),
-    engineReady: Boolean(peopleIntelligenceReady() && rolloutEnabled && consentReady),
+    engineReady: Boolean(favoritePeopleEngineReady() && rolloutEnabled && consentReady),
     rolloutEnabled,
     consentReady,
     version: PEOPLE_INTELLIGENCE_VERSION,
