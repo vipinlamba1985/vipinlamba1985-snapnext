@@ -12,13 +12,17 @@ documentation alone.
 | `npm test` | 509 / 509 | **519 / 519** (10 new origin regression tests) |
 | `npx eslint .` | 1 error, 138 warnings — **CI red** | **0 errors**, 138 warnings — exit 0 |
 | `npm run typecheck` | clean | clean |
-| `npx next build` | pass | pass |
-| `npm run test:smoke` | 3 failures (2 with `CORS_ORIGINS` set) | **2 failures** — the known P1s below, with no `CORS_ORIGINS` needed |
-| `npm audit --omit=dev` | 1 critical, 6 high; `next` directly vulnerable | 1 critical, 6 high; **`next` no longer directly vulnerable** |
+| `npx next build` | pass | pass with strict lint/type build gates restored |
+| `npm run test:smoke` | 3 failures (2 with `CORS_ORIGINS` set) | **1 intentional launch failure remains** — CSP is report-only until signed-in provider validation completes |
+| `npm audit --omit=dev` | 1 critical, 6 high; `next` directly vulnerable | **0 critical, 3 high**; remaining production findings are bundled under Next and require a separate Next 16 migration |
 
-The smoke run above was executed against `.next/standalone/server.js` with static
+The origin smoke run was executed against `.next/standalone/server.js` with static
 assets in place and `CORS_ORIGINS` unset — the "Oversized API write is rejected
-early" check now passes on its own, which is the direct proof of the origin fix.
+early" check passes on its own, which is the direct proof of the origin fix.
+
+The launch policy now explicitly treats SnapNext as **online-first**: a service
+worker is not required. Physical-device QA must still prove that network loss is
+clear and recoverable and that reconnecting never duplicates completed work.
 
 ## Gate results (before the fixes in this branch)
 
@@ -96,13 +100,13 @@ The remaining 138 findings are warnings and do not fail the build.
 **Fix.** Switched to the init-once form the rule expects,
 `if (registryRef.current == null)`.
 
-## P1 — not fixed here, needs a decision
+## P1 — remaining launch validation
 
 | Issue | Detail |
 | --- | --- |
-| **No service worker — open decision, do not default to building one** | `/sw.js` returns 404 and there is no `navigator.serviceWorker` registration. The manifest is valid and installable. `docs/MOBILE_LAUNCH_QA.md` requires "offline state is understandable and queued actions recover when online", so the smoke check fails. **The right response is probably to change the requirement, not to write a service worker.** SnapNext is an online media/storage product; a poorly-scoped service worker introduces stale UI, cached-authentication bugs and upload confusion — strictly worse than having none. If offline web support is not a launch promise, amend `MOBILE_LAUNCH_QA.md` and drop the smoke check. This is an explicit product decision and has deliberately not been made here. |
-| **Content-Security-Policy — now report-only** | CSP was absent. It is now shipped as `Content-Security-Policy-Report-Only`, deliberately not enforced: SnapNext loads Stripe, Supabase, the Google/Dropbox/OneDrive pickers and presigned S3 media, and an enforced policy that misses one host breaks a real user flow silently. **Next step: exercise every provider flow against the report-only policy, tighten the directives from the observed violations, then switch the header to enforced.** The smoke check now distinguishes absent / report-only / enforced, and stays red until it is enforced. |
-| **~~Dependency advisories~~** | **Addressed** — see the security sprint below. Production findings went from 31 (1 critical, 6 high) to **3 (0 critical, 3 high)**. |
+| **~~Service worker launch blocker~~** | **Resolved by product policy.** SnapNext is online-first for launch. `/sw.js`, offline browsing, cached authenticated pages and offline upload execution are not required. `docs/MOBILE_LAUNCH_QA.md` now requires clear network-loss state plus safe resume/retry after connectivity returns. The smoke test no longer treats `/sw.js` as a launch gate. |
+| **Content-Security-Policy — report-only until signed-in validation** | CSP was absent. It is now shipped as `Content-Security-Policy-Report-Only`, deliberately not enforced: SnapNext loads Stripe, Supabase, Google cloud flows, Dropbox/OneDrive integrations and presigned S3 media, and an enforced policy that misses one host breaks a real user flow silently. **Next step: exercise every provider flow against the report-only policy, tighten the directives from observed violations, then switch the header to enforced.** The smoke check distinguishes absent / report-only / enforced and remains red until it is enforced. |
+| **~~Dependency advisories~~** | **Addressed to the safe launch boundary** — see the security sprint below. Production findings went from 31 (1 critical, 6 high) to **3 (0 critical, 3 high)**. |
 | **~~Build cannot catch lint or type regressions~~** | **Addressed** — `eslint.ignoreDuringBuilds` and `typescript.ignoreBuildErrors` are now both `false`, and the production build still passes. A future type error or lint error can no longer reach a green build. |
 
 ## Security sprint — dependency hardening
@@ -113,48 +117,44 @@ Including devDependencies: **32 → 5**.
 | Package | Was | Now | Effect |
 | --- | --- | --- | --- |
 | `@aws-sdk/client-s3`, `client-rekognition`, `s3-request-presigner` | 3.713.0 | 3.1106.0 | clears the **critical** `fast-xml-parser` entity-encoding bypass, which reached the tree through `@aws-sdk/core` |
-| `axios` | 1.16.0 | 1.19.0 | clears both direct high advisories (`formDataToJSON` recursion DoS) |
-| `postcss` (direct) | 8.5.15 | 8.5.26 | clears the XSS / arbitrary-file-read advisories |
-| `nanoid`, `brace-expansion` | transitive | patched | resolved by `npm audit fix` |
+| `axios` | 1.16.0 | 1.19.0 | clears the direct high advisories present in the previous pin |
+| `postcss` (direct) | 8.5.15 | 8.5.26 | clears the direct XSS / arbitrary-file-read advisories |
+| `nanoid`, `brace-expansion` | transitive | patched where reachable without the framework major bump | removes the production-relevant vulnerable paths outside Next's bundle |
 
 ### What deliberately remains, and why it is lower risk than it looks
 
 All three remaining production findings are inside **Next's own bundled
 dependencies**, and npm's only offered fix is `next@16`, a major upgrade:
 
-- `node_modules/next/node_modules/postcss` — build-time only, never shipped to a browser.
+- `node_modules/next/node_modules/postcss` — used inside the framework toolchain rather than as SnapNext's direct PostCSS dependency.
 - `node_modules/next/node_modules/sharp` at 0.34.5 — the advisory covers `<0.35.0`.
-  **This is not the copy SnapNext uses.** The application's own `sharp` is 0.35.3
-  at the top level and is not vulnerable. Next's bundled copy exists to serve the
-  Image Optimization API, which `next.config.js` disables outright with
-  `images.unoptimized: true`. An earlier draft of this report called `sharp` the
-  highest-priority dependency because it "processes untrusted user-uploaded
-  images" — that was wrong, and is corrected here.
-- `next` itself is flagged only transitively via those two.
+  **This is not the copy SnapNext uses directly.** The application's own `sharp`
+  is 0.35.3 at the top level and is outside that advisory range. Next's bundled
+  copy exists for framework image tooling, while SnapNext currently sets
+  `images.unoptimized: true`.
+- `next` is flagged transitively through those bundled copies rather than through
+  the middleware advisory fixed by 15.5.23.
 
 A `next@16` upgrade is worth planning, but it is a major-version change and does
-not belong in a launch-blocker branch.
+not belong in a launch-blocker branch without its own regression pass.
 
 ### Configuration issue found while doing this
 
 `package.json` carries a `resolutions` block pinning `follow-redirects`,
 `form-data`, `picomatch`, `postcss`, `yaml` and `lodash`. **`resolutions` is a
-Yarn field; npm honours `overrides`.** CI and the Dockerfile both use `npm ci`,
-so those pins are inert — proven directly: `resolutions` asks for `postcss@8.5.10`
-while the installed version was `8.5.15`.
+Yarn field; npm honours `overrides`.** CI and Docker use npm, so those pins are
+not the mechanism protecting the installed tree.
 
-Nothing currently vulnerable depends on this, so it was left alone rather than
-restructured inside a hardening PR. Note that porting the block to `overrides`
-verbatim would be actively harmful: it would pin `postcss` *back* to 8.5.10,
-which is inside the vulnerable range. Convert deliberately, with versions
-re-checked.
+Nothing production-critical currently depends on that block for the hardening
+above, so it remains follow-up cleanup rather than being converted blindly.
+Porting it verbatim would be unsafe because the old PostCSS pin is below the
+current direct safe version.
 
 ## P2 — scope and process, not defects
 
 - **Manual device QA has no recorded sign-off.** `docs/MOBILE_LAUNCH_QA.md` defines
   the real public-launch bar — zero unresolved P0 data-loss, auth, billing or
-  privacy issues across a real-device matrix. No evidence in-repo that a pass has
-  been run against current `main`. No automation closes this gate.
+  privacy issues across a real-device matrix. No automation closes this gate.
 - **Native projects are generated on demand, and the policy gates are green.** Neither
   `android/` nor `ios/` is committed — deliberately, per `docs/NATIVE_LAUNCH_RUNBOOK.md`,
   so signing credentials and machine-specific files never land in git. The
@@ -177,15 +177,13 @@ re-checked.
 
 1. Run `npm run test:smoke` against the live URL to settle whether origin resolution
    was breaking production or only latent on the self-hosted path.
-2. Exercise every external provider — Google Picker/Photos, OneDrive, Dropbox,
-   Stripe, Supabase, media previews — against the report-only CSP, tighten the
-   directives from the observed violations, then switch to the enforced header.
-3. Decide explicitly whether offline/PWA support is a SnapNext launch promise. If
-   it is not, amend `docs/MOBILE_LAUNCH_QA.md` and remove the service-worker smoke
-   check rather than building one to satisfy a test.
-4. Plan the `next@16` upgrade separately — it is the only remaining route to the
-   three bundled advisories, and it is a major version.
-5. Run the `docs/MOBILE_LAUNCH_QA.md` device pass on real iPhone and Android
-   hardware and record the sign-off. That is the actual go/no-go gate.
-6. Mark this PR ready and merge, then rebase the larger open feature PRs onto it so
-   they inherit these launch and security fixes.
+2. Exercise every external provider — Google cloud selection, Dropbox, OneDrive,
+   Stripe, Supabase and media previews — against the report-only CSP, tighten the
+   directives from observed violations, then switch to the enforced header.
+3. Run the `docs/MOBILE_LAUNCH_QA.md` real-device pass, including network-loss and
+   reconnect recovery. Offline web execution is explicitly not a launch promise.
+4. Plan the `next@16` migration separately; do not mix a framework major upgrade
+   into the launch-blocker PR.
+5. Once the CSP is enforced and the real-device matrix is signed off, mark this PR
+   ready and merge, then rebase the larger open feature PRs onto it so they inherit
+   these launch and security fixes.
