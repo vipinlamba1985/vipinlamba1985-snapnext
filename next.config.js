@@ -1,15 +1,3 @@
-const { execFileSync } = require('node:child_process');
-const path = require('node:path');
-
-// Vercel currently runs `npm test && next build` directly for this project, so
-// package lifecycle hooks are not a reliable place to stage runtime assets.
-// Prepare pinned MediaPipe files before Next snapshots public/ into the build.
-if (process.env.NODE_ENV === 'production' && process.env.SKIP_MEDIAPIPE_ASSET_PREP !== '1') {
-  execFileSync(process.execPath, [path.join(process.cwd(), 'scripts', 'prepare-mediapipe-assets.mjs')], {
-    stdio: 'inherit',
-  });
-}
-
 // Content-Security-Policy rollout.
 //
 // Launch gets an enforced compatibility-first baseline so SnapNext has a real
@@ -110,3 +98,14 @@ const nextConfig = {
 };
 
 module.exports = nextConfig;
+
+// Vercel currently runs `npm test && next build` directly for this project, so
+// package lifecycle hooks are not a reliable place to stage runtime assets.
+// Prepare pinned MediaPipe files before Next snapshots public/ into the build.
+if (process.env.NODE_ENV === 'production' && process.env.SKIP_MEDIAPIPE_ASSET_PREP !== '1') {
+  const { execFileSync } = require('node:child_process');
+  const path = require('node:path');
+  execFileSync(process.execPath, [path.join(process.cwd(), 'scripts', 'prepare-mediapipe-assets.mjs')], {
+    stdio: 'inherit',
+  });
+}
