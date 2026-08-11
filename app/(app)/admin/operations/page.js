@@ -25,6 +25,10 @@ function Card({ label, value, detail, icon: Icon }) {
   </div>;
 }
 
+function StatePill({ active, children }) {
+  return <span className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] ${active ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100' : 'border-white/10 bg-white/5 text-white/45'}`}>{children}</span>;
+}
+
 export default function AdminOperationsPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -45,6 +49,9 @@ export default function AdminOperationsPage() {
 
   const guard = data.ai?.profitGuard;
   const controls = data.ai?.controls || {};
+  const people = data.people || {};
+  const cloudRecognition = people.cloudRecognition || {};
+
   return <div className="mx-auto max-w-7xl space-y-6 pb-24">
     <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-cyan-500/15 via-violet-500/10 to-rose-500/10 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -59,6 +66,33 @@ export default function AdminOperationsPage() {
       <Card label="AI requests today" value={data.ai.today.requests} detail={`${data.ai.today.credits} credits · ${money(data.ai.today.estimatedCostUsd)} estimated`} icon={Brain} />
       <Card label="AI failures today" value={data.ai.today.failures} detail={`${data.ai.citationFailures} citation failures this month · ${data.ai.incorrectFeedback} incorrect ratings`} icon={ShieldAlert} />
     </div>
+
+    <section className={`rounded-[2rem] border p-5 ${cloudRecognition.ready ? 'border-emerald-300/20 bg-emerald-300/[0.05]' : 'border-amber-300/20 bg-amber-300/[0.05]'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">People activation readiness</p>
+          <h2 className="mt-2 text-xl font-black text-white">Cloud recognition is {cloudRecognition.effective ? 'effective' : 'held closed'}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">{people.guidance}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatePill active={people.localFaceGateEnabled}>Local gate {people.localFaceGateEnabled ? 'on' : 'off'}</StatePill>
+          <StatePill active={cloudRecognition.requested}>Cloud requested {cloudRecognition.requested ? 'yes' : 'no'}</StatePill>
+          <StatePill active={cloudRecognition.effective}>Cloud effective {cloudRecognition.effective ? 'yes' : 'no'}</StatePill>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        {(cloudRecognition.gates || []).map((gate) => <div key={gate.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-bold text-white">{gate.label}</span>
+            <span className={`text-xs font-black ${gate.verified ? 'text-emerald-200' : 'text-amber-200'}`}>{gate.verified ? 'VERIFIED' : 'PENDING'}</span>
+          </div>
+          <p className="mt-2 text-xs text-white/35">Gate: {gate.id}</p>
+        </div>)}
+      </div>
+
+      <p className="mt-4 text-xs leading-5 text-white/40">Read-only status. Complete the real AWS, backup/restore and physical-device checks outside this screen, then update production configuration through the controlled deployment process.</p>
+    </section>
 
     <div className="grid gap-6 lg:grid-cols-2">
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">

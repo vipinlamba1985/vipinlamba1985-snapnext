@@ -4,6 +4,7 @@ import { getUserFromRequest } from '@/lib/auth';
 import { isSuperUser } from '@/lib/entitlements';
 import { PLANS } from '@/lib/plans';
 import { getAiProfitGuardSnapshot } from '@/lib/ai-profit-guard';
+import { peopleOperationsStatus } from '@/lib/people-operations-status';
 
 export const runtime = 'nodejs';
 
@@ -32,6 +33,10 @@ export async function GET(request) {
     if (!user) return json({ error: 'Unauthorized' }, 401);
     if (!isSuperUser(user)) return json({ error: 'Admin access required' }, 403);
 
+    // Build only after real admin auth. This object contains no secret values,
+    // but keeping it behind the same operator boundary prevents rollout state
+    // from becoming an unnecessary public fingerprint.
+    const people = peopleOperationsStatus(process.env);
     const db = await getDb();
     const today = startOfDay();
     const month = startOfMonth();
@@ -99,8 +104,9 @@ export async function GET(request) {
           monthlyCapUsd: Number(process.env.AI_MONTHLY_SPEND_CAP_USD || 500),
         },
       },
+      people,
       operations: { storyDrafts, pendingFamilyInvites: pendingInvites, webhookFailuresToday: webhookFailures },
-      privacy: 'Operational metrics only. This endpoint does not return prompts, media content, face names, signed URLs or private story text.',
+      privacy: 'Operational metrics only. This endpoint does not return prompts, media content, face names, signed URLs, biometric templates, attestation environment names or private story text.',
     });
   } catch (error) {
     console.error('[admin-operations] snapshot failed', error?.message);
