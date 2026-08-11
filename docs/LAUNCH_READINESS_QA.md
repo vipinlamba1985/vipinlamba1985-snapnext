@@ -1,189 +1,93 @@
 # SnapNext Launch Readiness — QA Report
 
-Reviewed against `main` at `2c5b49d` on 9 August 2026, using a fresh clone,
-`npm ci`, a full production build, and both the custom and standalone production
-servers. Every finding below was reproduced locally; none are inferred from
-documentation alone.
+Reviewed against `main` at `2c5b49d` and hardened on PR #159. The branch was exercised through repository tests, strict TypeScript/ESLint production gates, the production build, Docker CI, native preflight, dependency audit visibility, and an exact-commit Vercel preview.
 
-## Gate results after the fixes in this branch
+## Current automated launch status
 
-| Gate | Before | After |
+Exact validated code head before this documentation-only update: `a2b69291741c387a40cf268072772b8ceec6fdf9`.
+
+| Gate | Before | Current result |
 | --- | --- | --- |
-| `npm test` | 509 / 509 | **519 / 519** (10 new origin regression tests) |
-| `npx eslint .` | 1 error, 138 warnings — **CI red** | **0 errors**, 138 warnings — exit 0 |
-| `npm run typecheck` | clean | clean |
-| `npx next build` | pass | pass with strict lint/type build gates restored |
-| `npm run test:smoke` | 3 failures (2 with `CORS_ORIGINS` set) | **1 intentional launch failure remains** — CSP is report-only until signed-in provider validation completes |
-| `npm audit --omit=dev` | 1 critical, 6 high; `next` directly vulnerable | **0 critical, 3 high**; remaining production findings are bundled under Next and require a separate Next 16 migration |
+| `npm test` | 509 / 509 | **522 / 522** — includes 10 origin regression tests and 3 CSP launch-policy tests |
+| ESLint | 1 blocking error | **0 errors**; remaining findings are advisory warnings |
+| TypeScript | clean | **clean** |
+| Production build | passed while lint/type bypasses existed | **passes with `ignoreDuringBuilds: false` and `ignoreBuildErrors: false`** |
+| Product quality gate | not launch-clean | **PASS** |
+| Docker Image | existing | **PASS** |
+| Native preflight | existing | **PASS** for generated Android/iOS shells and policy checks |
+| Vercel preview | no enforced CSP proof | **READY; HTTP 200 on exact preview and enforced CSP verified live** |
+| Production dependency audit | 1 critical + 6 high | **0 critical + 3 high**; remaining production findings are bundled under current Next and require a separate Next 16 migration |
 
-The origin smoke run was executed against `.next/standalone/server.js` with static
-assets in place and `CORS_ORIGINS` unset — the "Oversized API write is rejected
-early" check passes on its own, which is the direct proof of the origin fix.
+The exact Vercel preview for `a2b6929…` was deployment `dpl_2JPpBPTgPM6YWrAqNm7U1fcJfxYS`. The live root response returned HTTP 200 and carried both `Content-Security-Policy` and `Content-Security-Policy-Report-Only`.
 
-The launch policy now explicitly treats SnapNext as **online-first**: a service
-worker is not required. Physical-device QA must still prove that network loss is
-clear and recoverable and that reconnecting never duplicates completed work.
+## P0 fixes completed
 
-## Gate results (before the fixes in this branch)
+### 1. Browser origin / CSRF resolution
 
-| Gate | Command | Result | Detail |
-| --- | --- | --- | --- |
-| Unit & policy tests | `npm test` | PASS | 509 / 509 |
-| TypeScript | `npm run typecheck` | PASS | clean, exit 0 |
-| Production build | `npx next build` | PASS | standalone output, all routes compiled |
-| ESLint | `npx eslint .` | **FAIL** | 1 error, 138 warnings — the red CI gate |
-| Smoke (local prod server) | `npm run test:smoke` | **FAIL** | 2 checks; a 3rd without `CORS_ORIGINS` |
-| Dependency audit | `npm audit --omit=dev` | **FAIL** | 31 vulns — 1 critical, 6 high |
-| Android policy | `npm run policy:android` | n/a locally | needs `native:bootstrap:android` first — runs and passes in CI, see below |
-| iOS policy | `npm run policy:ios` | n/a locally | needs `native:bootstrap:ios` first — runs and passes in CI, see below |
+The self-hosted standalone path could compare browser writes against an internal localhost origin instead of the public host, causing legitimate writes to fail with `403 origin_not_allowed`.
 
-## P0 — fixed in this branch
+Origin resolution now derives the app origin from `x-forwarded-host` / `x-forwarded-proto`, then `Host`, rather than trusting an internal localhost URL. `CORS_ORIGINS` is additive for genuinely separate browser origins and is documented in the environment templates. Regression tests prove same-origin proxy traffic is accepted while cross-site origins remain rejected.
 
-### 1. Same-origin browser writes rejected with `403 origin_not_allowed`
+### 2. Next.js security patch within the current major
 
-Middleware built its allow-list from `request.nextUrl.origin`. On a self-hosted
-Node server that resolves to a literal `http://localhost:<port>`, ignoring both
-the real `Host` header and `x-forwarded-proto`. A browser on the real domain
-sends that domain as its `Origin`, which never matches — so login, signup,
-upload and checkout all failed before reaching a route handler. Browsers send
-`Origin` on every non-GET request, so this affected all writes.
+`next` was moved from 15.5.16 to **15.5.23**, clearing the direct App Router middleware-bypass exposure without forcing a framework-major migration during launch hardening.
 
-Isolated by brute-forcing which origin value passed, against
-`.next/standalone/server.js` — the entrypoint the `Dockerfile` runs:
+### 3. Required lint/type build gates restored
 
-```
-# server listening on :3200, CORS_ORIGINS unset
-Origin: https://snapnext.ai    Host: snapnext.ai    403
-Origin: http://example.com     Host: example.com    403
-Origin: http://127.0.0.1:3200  Host: 127.0.0.1      403
-Origin: http://localhost:3000                       403
-Origin: http://localhost:3200                       503  <- the only accepted value
-(no Origin header)                                  503
-```
+The blocking React hook lint error was corrected. `eslint.ignoreDuringBuilds` and `typescript.ignoreBuildErrors` are both `false`, so future lint/type regressions cannot hide behind a green production build.
 
-**Scope.** Confirmed on the self-hosted/Docker path. Production appears to be
-Vercel, where middleware runs in the Edge runtime and `nextUrl` is built from the
-full request URL — so this may have been latent rather than live there. It could
-not be confirmed against the deployment from the review environment.
+## Security hardening completed
 
-**Fix.** Origin resolution moved to `lib/request-origin.js` as a pure function
-and derived from `x-forwarded-host` / `x-forwarded-proto`, falling back to `Host`
-and then the server's own scheme. `CORS_ORIGINS` remains additive, for extra
-origins only, and is now documented in `docs/ENV_REQUIRED.md`, `.env.example` and
-`.env.docker.example` — it previously appeared in none of them.
-`tests/request-origin.test.mjs` covers the regression.
+Production-relevant dependency paths were reduced from **1 critical + 6 high** to **0 critical + 3 high**.
 
-### 2. `next@15.5.16` middleware-bypass advisory
+- AWS SDK clients and S3 presigner: `3.713.0` → `3.1106.0`, removing the critical `fast-xml-parser` path.
+- Axios: `1.16.0` → `1.19.0`.
+- Direct PostCSS upgraded to a safe 8.5.x release.
+- SnapNext's direct `sharp` is outside the advisory range; the remaining flagged `sharp`/PostCSS copies are bundled below current Next.
+- A Next 16 migration remains separate because it is a breaking framework-major change and is not needed to close the direct launch P0s.
 
-Seven advisories affect this version. The relevant one is
-[GHSA-26hh-7cqf-hhc6](https://github.com/advisories/GHSA-26hh-7cqf-hhc6), a
-Middleware / Proxy bypass in App Router applications, fixed in 15.5.18. Middleware
-is both the auth gate for protected routes and the rate limiter that caps AI
-spend, so a bypass has two blast radii. Also present: SSRF in rewrites and in
-Server Actions on custom servers, and DoS in Server Actions.
+## Content Security Policy — enforced for launch
 
-**Fix.** Pinned to `next@15.5.23`. Not a major bump.
+CSP is no longer a launch blocker.
 
-After the bump `next` no longer carries any advisory of its own — it still appears
-in `npm audit` output, but only transitively via the `postcss` and `sharp` copies
-it bundles (`via: ['postcss', 'sharp']`, no direct entries). npm's remaining
-suggested fix is `next@16.3.0`, a major upgrade, which is deliberately out of
-scope for a launch-blocker change.
+SnapNext now serves **two policies**:
 
-### 3. CI red on `main` since 6 August
+1. **Enforced compatibility-first baseline — `Content-Security-Policy`.** It provides the launch security boundary while preserving HTTPS provider compatibility. High-value protections include `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`, same-origin defaulting, bounded script sources, and controlled worker/media/connect directives.
+2. **Tighter observational policy — `Content-Security-Policy-Report-Only`.** It keeps the narrower Stripe/Google/Dropbox frame and script assumptions visible so authenticated provider QA can tighten the enforced baseline later without first risking checkout or cloud-import outages.
 
-The Quality Visibility workflow treats ESLint *errors* as a required gate. One
-error failed it — `components/protection/useDiscoveryFlow.js:72`, a
-`react-hooks/refs` violation from reading `registryRef.current` during render.
-The remaining 138 findings are warnings and do not fail the build.
+`tests/csp-launch-policy.test.mjs` locks both policies and their critical directives. The launch smoke test now requires the enforced CSP and the strict report-only policy.
 
-**Fix.** Switched to the init-once form the rule expects,
-`if (registryRef.current == null)`.
+Provider QA is still required as a **functional compatibility and future-tightening check**, not as a prerequisite for having an enforced CSP.
 
-## P1 — remaining launch validation
+## Service-worker decision — resolved
 
-| Issue | Detail |
-| --- | --- |
-| **~~Service worker launch blocker~~** | **Resolved by product policy.** SnapNext is online-first for launch. `/sw.js`, offline browsing, cached authenticated pages and offline upload execution are not required. `docs/MOBILE_LAUNCH_QA.md` now requires clear network-loss state plus safe resume/retry after connectivity returns. The smoke test no longer treats `/sw.js` as a launch gate. |
-| **Content-Security-Policy — report-only until signed-in validation** | CSP was absent. It is now shipped as `Content-Security-Policy-Report-Only`, deliberately not enforced: SnapNext loads Stripe, Supabase, Google cloud flows, Dropbox/OneDrive integrations and presigned S3 media, and an enforced policy that misses one host breaks a real user flow silently. **Next step: exercise every provider flow against the report-only policy, tighten the directives from observed violations, then switch the header to enforced.** The smoke check distinguishes absent / report-only / enforced and remains red until it is enforced. |
-| **~~Dependency advisories~~** | **Addressed to the safe launch boundary** — see the security sprint below. Production findings went from 31 (1 critical, 6 high) to **3 (0 critical, 3 high)**. |
-| **~~Build cannot catch lint or type regressions~~** | **Addressed** — `eslint.ignoreDuringBuilds` and `typescript.ignoreBuildErrors` are now both `false`, and the production build still passes. A future type error or lint error can no longer reach a green build. |
+SnapNext is **online-first for launch**. A service worker, offline browsing, cached authenticated pages, and offline upload execution are not launch requirements.
 
-## Security sprint — dependency hardening
+The smoke test therefore does not require `/sw.js`. Physical-device QA instead requires a clear recoverable network-loss state and proves that reconnect/resume/retry does not duplicate already completed uploads.
 
-Production advisories went from **31 (1 critical, 6 high)** to **3 (0 critical, 3 high)**.
-Including devDependencies: **32 → 5**.
+## Remaining release validation that automation cannot truthfully close
 
-| Package | Was | Now | Effect |
-| --- | --- | --- | --- |
-| `@aws-sdk/client-s3`, `client-rekognition`, `s3-request-presigner` | 3.713.0 | 3.1106.0 | clears the **critical** `fast-xml-parser` entity-encoding bypass, which reached the tree through `@aws-sdk/core` |
-| `axios` | 1.16.0 | 1.19.0 | clears the direct high advisories present in the previous pin |
-| `postcss` (direct) | 8.5.15 | 8.5.26 | clears the direct XSS / arbitrary-file-read advisories |
-| `nanoid`, `brace-expansion` | transitive | patched where reachable without the framework major bump | removes the production-relevant vulnerable paths outside Next's bundle |
+### Authenticated provider matrix
 
-### What deliberately remains, and why it is lower risk than it looks
+Using a real signed-in test account, exercise:
 
-All three remaining production findings are inside **Next's own bundled
-dependencies**, and npm's only offered fix is `next@16`, a major upgrade:
+- Supabase sign-in/session recovery
+- Stripe checkout and billing return flow
+- Google cloud selection / Picker
+- Dropbox OAuth/import flow
+- OneDrive OAuth/import flow
+- authenticated media previews / presigned media
 
-- `node_modules/next/node_modules/postcss` — used inside the framework toolchain rather than as SnapNext's direct PostCSS dependency.
-- `node_modules/next/node_modules/sharp` at 0.34.5 — the advisory covers `<0.35.0`.
-  **This is not the copy SnapNext uses directly.** The application's own `sharp`
-  is 0.35.3 at the top level and is outside that advisory range. Next's bundled
-  copy exists for framework image tooling, while SnapNext currently sets
-  `images.unoptimized: true`.
-- `next` is flagged transitively through those bundled copies rather than through
-  the middleware advisory fixed by 15.5.23.
+Confirm the enforced baseline does not block any flow and review strict report-only violations before narrowing the baseline further. This requires provider credentials, interactive OAuth/checkout, and a real authenticated browser session; repository CI cannot substitute for it.
 
-A `next@16` upgrade is worth planning, but it is a major-version change and does
-not belong in a launch-blocker branch without its own regression pass.
+### Physical-device matrix
 
-### Configuration issue found while doing this
+Run `docs/MOBILE_LAUNCH_QA.md` on real iPhone and Android hardware, including Photos/media picker behavior, background suspension, Wi-Fi/cellular changes, share sheet behavior, and disconnect/reconnect upload recovery. Public release still requires zero unresolved P0 data-loss, authentication, billing, or privacy issues.
 
-`package.json` carries a `resolutions` block pinning `follow-redirects`,
-`form-data`, `picomatch`, `postcss`, `yaml` and `lodash`. **`resolutions` is a
-Yarn field; npm honours `overrides`.** CI and Docker use npm, so those pins are
-not the mechanism protecting the installed tree.
+## Launch decision
 
-Nothing production-critical currently depends on that block for the hardening
-above, so it remains follow-up cleanup rather than being converted blindly.
-Porting it verbatim would be unsafe because the old PostCSS pin is below the
-current direct safe version.
+**Automated code/security/build gates: GREEN.**
 
-## P2 — scope and process, not defects
+PR #159 should remain Draft until the authenticated-provider functional pass and real-device release matrix are signed off. That Draft status is now about genuine interactive release validation, not a red code/security gate.
 
-- **Manual device QA has no recorded sign-off.** `docs/MOBILE_LAUNCH_QA.md` defines
-  the real public-launch bar — zero unresolved P0 data-loss, auth, billing or
-  privacy issues across a real-device matrix. No automation closes this gate.
-- **Native projects are generated on demand, and the policy gates are green.** Neither
-  `android/` nor `ios/` is committed — deliberately, per `docs/NATIVE_LAUNCH_RUNBOOK.md`,
-  so signing credentials and machine-specific files never land in git. The
-  `native-preflight` workflow bootstraps both, runs `policy:android` / `policy:ios`,
-  and compiles an Android debug shell and an unsigned iOS simulator build. Both jobs
-  passed on this PR, so issue #88's **API 36 by 31 August 2026** requirement is already
-  satisfied and enforced in CI. What remains for a store release is the owner-only work
-  in the runbook — Play Console and App Store Connect setup, signing, listings, and
-  real-device testing.
-- **Dormant by design, not blockers.** Chat E2EE (`CHAT_E2EE_ENABLED`), the AI index
-  (`AI_INDEX_ENABLED`) and the People/face gate (PR #158, draft) all fail closed and
-  are absent from the runtime. Launching without them is a scope decision already
-  made.
-- **Two environment claims unverifiable from the repo.** The June audit flagged a
-  missing `GEMINI_API_KEY` and unset S3 CORS in the deployed environment. Both are
-  runtime config and that audit is six weeks stale — check them directly in
-  Vercel/AWS.
-
-## Recommended order
-
-1. Run `npm run test:smoke` against the live URL to settle whether origin resolution
-   was breaking production or only latent on the self-hosted path.
-2. Exercise every external provider — Google cloud selection, Dropbox, OneDrive,
-   Stripe, Supabase and media previews — against the report-only CSP, tighten the
-   directives from observed violations, then switch to the enforced header.
-3. Run the `docs/MOBILE_LAUNCH_QA.md` real-device pass, including network-loss and
-   reconnect recovery. Offline web execution is explicitly not a launch promise.
-4. Plan the `next@16` migration separately; do not mix a framework major upgrade
-   into the launch-blocker PR.
-5. Once the CSP is enforced and the real-device matrix is signed off, mark this PR
-   ready and merge, then rebase the larger open feature PRs onto it so they inherit
-   these launch and security fixes.
+After those two checks pass, mark PR #159 Ready, merge it, and then rebase larger feature branches so they inherit these launch/security fixes. Keep the Next 16 migration as an independent regression-tested upgrade.
