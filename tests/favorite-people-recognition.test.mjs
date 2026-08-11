@@ -8,7 +8,6 @@ import {
   isUsableFavoriteLabel,
   normalizeFavoritePeople,
 } from '../lib/favorite-people.js';
-import { peopleCollectionId } from '../lib/people-intelligence.js';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 
@@ -29,11 +28,11 @@ test('Favourite selections are bounded inputs and relationship labels remain usa
 });
 
 test('Favourite People uses a collection separate from the retired broad People collection', () => {
-  const userId = 'user-test-123';
-  const favorite = favoritePeopleCollectionId(userId);
-  const legacy = peopleCollectionId(userId);
-  assert.notEqual(favorite, legacy);
+  const favorite = favoritePeopleCollectionId('user-test-123');
+  const legacySource = read('lib/people-intelligence.js');
   assert.match(favorite, /^snapnext_favorite_people_v1_/);
+  assert.match(legacySource, /snapnext_people_v/);
+  assert.doesNotMatch(legacySource, /snapnext_favorite_people_v/);
 });
 
 test('production reindex route cannot call the retired broad discovery engine', () => {
@@ -91,7 +90,7 @@ test('ordinary-photo cloud face vectors are temporary and deleted after matching
   assert.doesNotMatch(source, /associateFaces/, 'ordinary photo vectors must not be accumulated as Favourite reference vectors');
 });
 
-test('enrolment itself requires a trusted solo photo', () => {
+test('enrolment itself requires a trusted solo photo and verifies AWS association success', () => {
   const engine = read('lib/favorite-people-recognition.server.js');
   const start = engine.indexOf('export async function enrollFavoritePerson');
   const end = engine.indexOf('export async function removeFavoriteEnrollment', start);
@@ -101,6 +100,8 @@ test('enrolment itself requires a trusted solo photo', () => {
   const collectionAt = source.indexOf('ensureCollection(userId)');
   assert.ok(gateAt > 0 && soloAt > gateAt && collectionAt > soloAt);
   assert.match(source, /MaxFaces: 1/);
+  assert.match(source, /UnsuccessfulFaceAssociations/);
+  assert.match(source, /favorite_reference_association_failed/);
 });
 
 test('removing a Favourite deletes the AWS user and its retained enrolment vectors', () => {
@@ -122,6 +123,12 @@ test('full verified deletion covers Favourite selection, enrolments and both AWS
   assert.match(worker, /peopleCollectionId\(userId\)/);
   assert.match(worker, /favoritePeopleCollectionId\(userId\)/);
   assert.match(worker, /verifyRekognitionCollectionsAbsent/);
+});
+
+test('Favourite-completed rows are not falsely treated as legacy migration work', () => {
+  const route = read('app/api/magic-library/people/route.js');
+  assert.match(route, /'peopleIntelligence\.recognitionScope': \{ \$ne: FAVORITE_RECOGNITION_SCOPE \}/);
+  assert.match(route, /'peopleIntelligence\.status': 'completed'/);
 });
 
 test('Magic Library tells users that only chosen Favourite People are matched', () => {
