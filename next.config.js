@@ -1,23 +1,38 @@
-// Content-Security-Policy rollout — REPORT-ONLY for now.
+// Content-Security-Policy rollout.
 //
-// SnapNext loads Stripe, Supabase, the Google/Dropbox/OneDrive pickers and
-// presigned S3 media, so an enforced policy that misses one host breaks a real
-// user flow silently. Report-only lets violations be observed against every
-// provider first. Before launch this must move to the enforced
-// `Content-Security-Policy` header — see docs/LAUNCH_READINESS_QA.md.
-const cspDirectives = [
+// Launch gets an enforced compatibility-first baseline so SnapNext has a real
+// browser security boundary without risking checkout/cloud flows on an untested
+// narrow frame allowlist. A second, tighter policy remains report-only; signed-in
+// provider QA can use its violations to safely narrow the enforced policy later.
+const cspBaselineDirectives = [
   "default-src 'self'",
-  // Next.js injects inline bootstrap scripts; Stripe and the Google picker load
-  // their own SDKs. Tighten to a nonce before enforcing if practical.
+  // Next.js currently needs inline bootstrap code. Google Picker may load helper
+  // scripts from Google/gstatic, while Stripe may load Stripe.js.
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://*.google.com https://*.gstatic.com",
+  "style-src 'self' 'unsafe-inline' https:",
+  "font-src 'self' data: https:",
+  // User media and thumbnails can arrive from presigned HTTPS object URLs.
+  "img-src 'self' data: blob: https:",
+  "media-src 'self' blob: https:",
+  "connect-src 'self' blob: https: wss:",
+  // Provider authorization/selection surfaces are HTTPS. Keep this broad in the
+  // enforced baseline; the report-only policy below records where it can tighten.
+  "frame-src 'self' https:",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self' https:",
+  "frame-ancestors 'none'",
+].join('; ');
+
+const cspStrictReportOnlyDirectives = [
+  "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://apis.google.com https://accounts.google.com",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  // Media and thumbnails arrive from presigned S3 URLs on per-deployment hosts.
   "img-src 'self' data: blob: https:",
   "media-src 'self' blob: https:",
-  [
-    "connect-src 'self' blob: https: wss:",
-  ].join(' '),
+  "connect-src 'self' blob: https: wss:",
   "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://accounts.google.com https://docs.google.com https://content.dropboxapi.com https://www.dropbox.com",
   "worker-src 'self' blob:",
   "object-src 'none'",
@@ -27,7 +42,8 @@ const cspDirectives = [
 ].join('; ');
 
 const securityHeaders = [
-  { key: 'Content-Security-Policy-Report-Only', value: cspDirectives },
+  { key: 'Content-Security-Policy', value: cspBaselineDirectives },
+  { key: 'Content-Security-Policy-Report-Only', value: cspStrictReportOnlyDirectives },
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
