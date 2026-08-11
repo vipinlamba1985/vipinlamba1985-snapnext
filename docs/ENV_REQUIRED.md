@@ -21,8 +21,27 @@ for local development. Names only — no values are documented here.
 | `NEXT_PUBLIC_APP_URL` | OPTIONAL (falls back to BASE_URL) | Same as above, legacy alias | Hosting env |
 | `JWT_SECRET` | REQUIRED FOR PRODUCTION | Legacy session validation. MUST be a random string of 32+ chars. In production, a missing/weak value disables the legacy token path entirely. | Hosting env |
 | `CRON_SECRET` | REQUIRED FOR PRODUCTION | Authorizes Google Drive continuation and automatic Trash purge jobs. | Hosting env |
+| `CORS_ORIGINS` | OPTIONAL (additive) | Comma-separated *extra* browser origins permitted to send writes — for example a separate admin or studio domain. The app's own origin is derived from the request's forwarding headers, so it must **not** be listed here. See "Browser origin checks" below. | Hosting env |
 | `TRASH_RETENTION_DAYS` | OPTIONAL (default `30`) | Days before trashed media is permanently removed. Bounded to 1–365 and shown in the Trash UI. | Hosting env |
 | `TRASH_PURGE_BATCH_SIZE` | OPTIONAL (default `100`) | Maximum expired Trash records processed per cron run. Bounded to 1–500. | Hosting env |
+
+### Browser origin checks
+
+Middleware rejects any write whose `Origin` header is not recognised. The app's
+own origin is resolved per request from `x-forwarded-host` / `x-forwarded-proto`,
+falling back to the `Host` header, so a correctly configured reverse proxy needs
+no origin configuration at all.
+
+Two deployment requirements follow:
+
+- **The proxy or load balancer must forward the original host and scheme.** If it
+  rewrites `Host` to an internal name and sets no `x-forwarded-host`, the derived
+  origin will not match what the browser sends and every write returns
+  `403 origin_not_allowed`. Verify with `npm run test:smoke` against the deployed
+  URL — its oversized-write check sends a real `Origin` and expects `413`; a `403`
+  means origin resolution is misconfigured.
+- **`CORS_ORIGINS` is for additional origins only.** It is never required to make
+  the app's own domain work.
 
 ## Authentication (Supabase) — LAUNCH-BLOCKING
 

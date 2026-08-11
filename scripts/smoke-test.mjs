@@ -62,12 +62,10 @@ await check('PWA manifest is reachable and valid', async () => {
   expect(['standalone', 'fullscreen', 'minimal-ui'].includes(manifest.display), `unexpected display mode ${manifest.display}`);
 });
 
-await check('Service worker is reachable', async () => {
-  const response = await fetch(`${baseUrl}/sw.js`);
-  expect(response.ok, `received HTTP ${response.status}`);
-  const body = await response.text();
-  expect(body.length > 20, 'service worker is empty');
-});
+// Launch policy: SnapNext is an online media/storage product. A service worker is
+// not required for launch because offline caching of authenticated/media flows can
+// create stale UI and upload confusion. Network-loss and recovery behavior remains
+// a required physical-device QA check in docs/MOBILE_LAUNCH_QA.md.
 
 await check('Legal launch pages are reachable', async () => {
   for (const path of ['/privacy', '/terms', '/ai-policy', '/family-safety']) {
@@ -78,11 +76,21 @@ await check('Legal launch pages are reachable', async () => {
 
 await check('Security headers are present', async () => {
   const response = await fetch(`${baseUrl}/`, { redirect: 'manual' });
-  for (const header of ['content-security-policy', 'strict-transport-security', 'x-content-type-options', 'referrer-policy']) {
+  for (const header of ['strict-transport-security', 'x-content-type-options', 'referrer-policy']) {
     expect(Boolean(response.headers.get(header)), `${header} is missing`);
   }
   const frameOptions = response.headers.get('x-frame-options');
   expect(frameOptions === 'DENY', `x-frame-options was ${frameOptions || 'missing'}`);
+
+  // Launch requires an enforced compatibility-first CSP. The stricter policy
+  // stays report-only so provider QA can tighten the baseline without risking a
+  // checkout or cloud-import outage.
+  const enforced = response.headers.get('content-security-policy') || '';
+  const reportOnly = response.headers.get('content-security-policy-report-only') || '';
+  expect(Boolean(enforced), 'content-security-policy is not enforced');
+  expect(enforced.includes("object-src 'none'"), 'enforced CSP does not block object embeds');
+  expect(enforced.includes("frame-ancestors 'none'"), 'enforced CSP does not block framing');
+  expect(Boolean(reportOnly), 'strict content-security-policy-report-only is missing');
 });
 
 await check('Unknown browser origin is rejected', async () => {

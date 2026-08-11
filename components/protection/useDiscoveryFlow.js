@@ -69,7 +69,7 @@ export default function useDiscoveryFlow() {
   const [organizationError, setOrganizationError] = useState('');
   const registryRef = useRef(null);
   const mountedRef = useRef(true);
-  if (!registryRef.current) registryRef.current = new ProtectionPreparationRegistry();
+  if (registryRef.current == null) registryRef.current = new ProtectionPreparationRegistry();
 
   useEffect(() => {
     let cancelled = false;
