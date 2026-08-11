@@ -90,7 +90,20 @@ async function processingBlock(db, user, request) {
     return { status: 403, code: 'favorite_people_plan_required', error: 'Automatic Favourite People recognition is available on paid plans.' };
   }
   const activation = await db.collection('magic_library_activation').findOne({ userId: user.id });
-  const selected = normalizeFavoritePeople(activation?.recognitionFavorites || []).slice(0, favoriteLimit);
+  const allSelected = normalizeFavoritePeople(activation?.recognitionFavorites || []);
+  const selected = allSelected.slice(0, favoriteLimit);
+  if (allSelected.length > selected.length) {
+    await db.collection('magic_library_activation').updateOne(
+      { userId: user.id },
+      {
+        $set: {
+          recognitionFavorites: selected,
+          recognitionFavoritesGeneration: favoriteGeneration(activation || {}) + 1,
+          updatedAt: new Date(),
+        },
+      },
+    );
+  }
   if (!selected.length) {
     return { status: 409, code: 'favorite_people_required', error: 'Choose at least one Favourite Person before cloud matching starts.' };
   }
