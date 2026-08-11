@@ -62,12 +62,10 @@ await check('PWA manifest is reachable and valid', async () => {
   expect(['standalone', 'fullscreen', 'minimal-ui'].includes(manifest.display), `unexpected display mode ${manifest.display}`);
 });
 
-await check('Service worker is reachable', async () => {
-  const response = await fetch(`${baseUrl}/sw.js`);
-  expect(response.ok, `received HTTP ${response.status}`);
-  const body = await response.text();
-  expect(body.length > 20, 'service worker is empty');
-});
+// Launch policy: SnapNext is an online media/storage product. A service worker is
+// not required for launch because offline caching of authenticated/media flows can
+// create stale UI and upload confusion. Network-loss and recovery behavior remains
+// a required physical-device QA check in docs/MOBILE_LAUNCH_QA.md.
 
 await check('Legal launch pages are reachable', async () => {
   for (const path of ['/privacy', '/terms', '/ai-policy', '/family-safety']) {
