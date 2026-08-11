@@ -82,15 +82,15 @@ await check('Security headers are present', async () => {
   const frameOptions = response.headers.get('x-frame-options');
   expect(frameOptions === 'DENY', `x-frame-options was ${frameOptions || 'missing'}`);
 
-  // CSP is mid-rollout. Report-only is a legitimate intermediate state, but it
-  // must not read as done — distinguish absent from observing from enforced.
-  const enforced = response.headers.get('content-security-policy');
-  const reportOnly = response.headers.get('content-security-policy-report-only');
-  expect(Boolean(enforced || reportOnly), 'content-security-policy is missing entirely');
-  expect(
-    Boolean(enforced),
-    'content-security-policy is report-only; verify the provider flows, then enforce before launch',
-  );
+  // Launch requires an enforced compatibility-first CSP. The stricter policy
+  // stays report-only so provider QA can tighten the baseline without risking a
+  // checkout or cloud-import outage.
+  const enforced = response.headers.get('content-security-policy') || '';
+  const reportOnly = response.headers.get('content-security-policy-report-only') || '';
+  expect(Boolean(enforced), 'content-security-policy is not enforced');
+  expect(enforced.includes("object-src 'none'"), 'enforced CSP does not block object embeds');
+  expect(enforced.includes("frame-ancestors 'none'"), 'enforced CSP does not block framing');
+  expect(Boolean(reportOnly), 'strict content-security-policy-report-only is missing');
 });
 
 await check('Unknown browser origin is rejected', async () => {
