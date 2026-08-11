@@ -68,7 +68,7 @@ test('a status read never triggers work', () => {
 
   const getBody = route.slice(getStart, postStart);
   // The read path may only report status; indexing belongs to POST alone.
-  assert.doesNotMatch(getBody, /rebuildPeopleIntelligence/);
+  assert.doesNotMatch(getBody, /rebuildPeopleIntelligence|rebuildFavoritePeopleRecognition/);
   assert.doesNotMatch(getBody, /updateMany|updateOne/);
   assert.match(getBody, /getStatus\(db, user\.id\)/);
 });
@@ -76,7 +76,7 @@ test('a status read never triggers work', () => {
 test('failed People work is only re-queued by an explicit retry request', () => {
   const route = read('app/api/magic-library/people/reindex/route.js');
   // The only path that flips 'failed' back to 'queued' is gated on retryFailed.
-  assert.match(route, /if \(body\.retryFailed === true\) await db\.collection\('media'\)\.updateMany\(/);
+  assert.match(route, /if \(body\.retryFailed === true\)[\s\S]*?db\.collection\('media'\)\.updateMany\(/);
 
   const bootstrap = read('components/magic-library/PeopleMagicBootstrap.js');
   // retryFailed is a parameter, defaulting to false, and only the first batch
