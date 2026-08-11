@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/trash-purge",
       "schedule": "30 5 * * *"
+    },
+    {
+      "path": "/api/cron/face-deletion-recovery",
+      "schedule": "45 5 * * *"
+    },
+    {
+      "path": "/api/cron/smart-import-recovery",
+      "schedule": "0 6 * * *"
     }
   ]
 }

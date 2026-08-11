@@ -1,6 +1,5 @@
-// Import from Cloud must remain reachable from the first Add screen. The local
-// upload flow is now deliberately shorter, but simplifying it must not bury the
-// provider entry point again.
+// Import from Cloud remains reachable from the first Add screen. Frozen
+// Navigation v1 deliberately keeps it out of primary navigation and More.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -22,8 +21,7 @@ test('Add lands on the discovery screen, not /upload', async () => {
 
 test('the screen Add actually lands on links to Import from Cloud', async () => {
   const landing = await addLandingPage();
-  assert.equal(landing, '/upload/discover', 'update this test if the landing page moves');
-
+  assert.equal(landing, '/upload/discover');
   const page = await read(path.join('app', '(app)', 'upload', 'discover', 'DiscoveryFlow.js'));
   assert.match(page, /data-testid="upload-cloud-sync"/);
   assert.match(page, /href="\/imports"/);
@@ -38,26 +36,25 @@ test('the cloud card stays on the first screen before local upload review', asyn
   const welcome = page.indexOf("flow.stage === 'welcome'");
   const review = page.indexOf('const readyCount');
   const card = page.indexOf('data-testid="upload-cloud-sync"');
-
   assert.ok(welcome !== -1 && review !== -1 && card !== -1);
-  assert.ok(card > welcome && card < review, 'the card must render in the welcome stage');
+  assert.ok(card > welcome && card < review);
 });
 
-test('Import from Cloud is no longer buried in the More menu', async () => {
+test('Import from Cloud is owned by Add and is not a primary or More destination', async () => {
   const shell = await read(path.join('components', 'AppShell.js'));
-
   const moreMatch = shell.match(/const MORE_HREFS = \[([\s\S]*?)\]/);
-  assert.ok(moreMatch, 'MORE_HREFS could not be found');
-  assert.doesNotMatch(moreMatch[1], /'\/imports'/, 'Import from Cloud should live under Add, not More');
-  assert.match(shell, /\{ href: '\/imports', label: 'Import from Cloud'/);
+  const primaryMatch = shell.match(/const PRIMARY_HREFS = \[([^\]]*)\]/);
+  assert.ok(moreMatch && primaryMatch);
+  assert.doesNotMatch(moreMatch[1], /'\/imports'/);
+  assert.doesNotMatch(primaryMatch[1], /'\/imports'/);
 });
 
-test('primary navigation is still exactly five items', async () => {
+test('primary navigation remains exactly five items with Add as the intake owner', async () => {
   const shell = await read(path.join('components', 'AppShell.js'));
   const match = shell.match(/const PRIMARY_HREFS = \[([^\]]*)\]/);
-  assert.ok(match, 'PRIMARY_HREFS could not be found');
+  assert.ok(match);
   const hrefs = match[1].split(',').map(value => value.trim().replace(/'/g, '')).filter(Boolean);
-  assert.equal(hrefs.length, 5, 'moving Import from Cloud must not add a sixth nav item');
-  assert.ok(hrefs.includes('/upload'), 'Add must remain primary — it now hosts Import from Cloud');
-  assert.ok(!hrefs.includes('/imports'), 'Import from Cloud is reached through Add, not its own nav item');
+  assert.equal(hrefs.length, 5);
+  assert.ok(hrefs.includes('/upload'));
+  assert.ok(!hrefs.includes('/imports'));
 });

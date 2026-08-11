@@ -1,5 +1,7 @@
 import MagicLibraryGalleryMagic from '@/components/magic-library/MagicLibraryGalleryMagic';
 import PeopleMagicBootstrap from '@/components/magic-library/PeopleMagicBootstrap';
+import PeopleLocalAnalysisBackfill from '@/components/magic-library/PeopleLocalAnalysisBackfill';
+import PeopleFaceConsent from '@/components/magic-library/PeopleFaceConsent';
 import LibraryTabs from '@/components/LibraryTabs';
 
 export const metadata = { title: 'Magic Library · SnapNext' };
@@ -11,6 +13,8 @@ export default function GalleryMagicPage() {
   return (
     <div className="mx-auto max-w-6xl pb-32 md:pb-12">
       <div className="mb-5"><LibraryTabs /></div>
+      <PeopleFaceConsent />
+      <PeopleLocalAnalysisBackfill />
       <PeopleMagicBootstrap />
       <MagicLibraryGalleryMagic />
     </div>

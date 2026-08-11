@@ -1,19 +1,21 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Check, CheckCheck, Heart, Image as ImageIcon, FolderOpen, Mail, CreditCard, Download, Sparkles } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Bell, CheckCheck, Heart, Image as ImageIcon, FolderOpen, Mail, CreditCard, Download, Sparkles, ShieldAlert } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 const TYPE_META = {
-  favorite_request:   { icon: Heart,      color: 'text-pink-300' },
-  favorite_accepted:  { icon: Heart,      color: 'text-emerald-300' },
-  photos_shared:      { icon: ImageIcon,  color: 'text-fuchsia-300' },
-  album_shared:       { icon: FolderOpen, color: 'text-violet-300' },
-  memory_shared:      { icon: Sparkles,   color: 'text-amber-300' },
-  memory_reaction:    { icon: Heart,      color: 'text-rose-300' },
-  email_verification: { icon: Mail,       color: 'text-amber-300' },
-  billing:            { icon: CreditCard, color: 'text-emerald-300' },
-  download_ready:     { icon: Download,   color: 'text-sky-300' },
+  favorite_request:        { icon: Heart,       color: 'text-pink-300' },
+  favorite_accepted:       { icon: Heart,       color: 'text-emerald-300' },
+  photos_shared:           { icon: ImageIcon,   color: 'text-fuchsia-300' },
+  album_shared:            { icon: FolderOpen,  color: 'text-violet-300' },
+  memory_shared:           { icon: Sparkles,    color: 'text-amber-300' },
+  memory_reaction:         { icon: Heart,       color: 'text-rose-300' },
+  email_verification:      { icon: Mail,        color: 'text-amber-300' },
+  billing:                 { icon: CreditCard,  color: 'text-emerald-300' },
+  download_ready:          { icon: Download,    color: 'text-sky-300' },
+  privacy_action_required: { icon: ShieldAlert, color: 'text-amber-300' },
 };
 
 function timeAgo(iso) {
@@ -26,6 +28,7 @@ function timeAgo(iso) {
 }
 
 export default function NotificationBell() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
@@ -41,7 +44,7 @@ export default function NotificationBell() {
   }
   useEffect(() => {
     load();
-    const t = setInterval(load, 45000);   // poll every 45s
+    const t = setInterval(load, 45000);
     return () => clearInterval(t);
   }, []);
   useEffect(() => {
@@ -54,9 +57,16 @@ export default function NotificationBell() {
     try { await apiFetch('/notifications/read', { method: 'POST', body: JSON.stringify({}) }); setUnread(0); setItems(items.map((i) => ({ ...i, read: true }))); }
     catch (e) { toast.error(e.message); }
   }
-  async function markOne(id) {
-    try { await apiFetch('/notifications/read', { method: 'POST', body: JSON.stringify({ ids: [id] }) }); setItems(items.map((i) => i.id === id ? { ...i, read: true } : i)); setUnread((u) => Math.max(0, u - 1)); }
-    catch {}
+  async function markOne(id, href = '') {
+    try {
+      await apiFetch('/notifications/read', { method: 'POST', body: JSON.stringify({ ids: [id] }) });
+      setItems(items.map((i) => i.id === id ? { ...i, read: true } : i));
+      setUnread((u) => Math.max(0, u - 1));
+    } catch {}
+    if (href && href.startsWith('/')) {
+      setOpen(false);
+      router.push(href);
+    }
   }
 
   function toggle() {
@@ -94,7 +104,7 @@ export default function NotificationBell() {
               const meta = TYPE_META[n.type] || { icon: Bell, color: 'text-white/70' };
               const Icon = meta.icon;
               return (
-                <button key={n.id} onClick={() => markOne(n.id)} className={`w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-white/[0.04] transition ${!n.read ? 'bg-pink-500/5' : ''}`}>
+                <button key={n.id} onClick={() => markOne(n.id, n.payload?.href || '')} className={`w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-white/[0.04] transition ${!n.read ? 'bg-pink-500/5' : ''}`}>
                   <div className={`h-8 w-8 grid place-items-center rounded-lg bg-white/5 ${meta.color}`}><Icon className="h-4 w-4"/></div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm leading-snug">{n.title}</div>

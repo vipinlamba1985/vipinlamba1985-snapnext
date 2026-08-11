@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -9,6 +9,7 @@ import {
   Film,
   Images,
   Image as ImageIcon,
+  Laptop,
   Loader2,
   LockKeyhole,
   RefreshCcw,
@@ -16,12 +17,26 @@ import {
 } from 'lucide-react';
 import { formatBytes } from '@/lib/utils';
 import { classifyLocalFile } from '@/lib/discovery-classify';
+import { apiFetch } from '@/lib/api-client';
 import useDiscoveryFlow from '@/components/protection/useDiscoveryFlow';
 import ProtectionStages from './ProtectionStages';
+
+const LARGE_MOBILE_BATCH_FILES = 100;
+const LARGE_MOBILE_BATCH_BYTES = 1024 ** 3;
 
 export default function DiscoveryFlow() {
   const inputRef = useRef(null);
   const flow = useDiscoveryFlow();
+  const [localFaceConsent, setLocalFaceConsent] = useState(null);
+  const [localConsentPrompt, setLocalConsentPrompt] = useState(false);
+  const [localConsentBusy, setLocalConsentBusy] = useState(false);
+  const [skipLocalFaceDetection, setSkipLocalFaceDetection] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/settings/local-face-detection-consent')
+      .then(setLocalFaceConsent)
+      .catch(() => setLocalFaceConsent(null));
+  }, []);
 
   useEffect(() => {
     if (flow.stage !== 'protecting') return undefined;
@@ -41,10 +56,12 @@ export default function DiscoveryFlow() {
       flow.setError('Choose at least one supported photo or video.');
       return;
     }
+    setLocalConsentPrompt(false);
+    setSkipLocalFaceDetection(false);
     await flow.checkItems(items);
   }
 
-  async function startProtection() {
+  async function runProtection() {
     let handoff = null;
     try {
       flow.setError('');
@@ -68,6 +85,38 @@ export default function DiscoveryFlow() {
     } finally {
       if (handoff) await flow.finalizeProtection(handoff).catch(() => null);
     }
+  }
+
+  async function startProtection() {
+    const localChoiceNeeded = flow.report.photos > 0
+      && localFaceConsent?.available
+      && !localFaceConsent?.granted
+      && !skipLocalFaceDetection;
+    if (localChoiceNeeded) {
+      setLocalConsentPrompt(true);
+      return;
+    }
+    await runProtection();
+  }
+
+  async function enableLocalDetectionAndProtect() {
+    setLocalConsentBusy(true);
+    try {
+      const next = await apiFetch('/settings/local-face-detection-consent', { method: 'POST' });
+      setLocalFaceConsent(next);
+      setLocalConsentPrompt(false);
+      await runProtection();
+    } catch (error) {
+      flow.setError(error?.message || 'On-device face detection could not be enabled. You can still back up without it.');
+    } finally {
+      setLocalConsentBusy(false);
+    }
+  }
+
+  async function protectWithoutLocalDetection() {
+    setSkipLocalFaceDetection(true);
+    setLocalConsentPrompt(false);
+    await runProtection();
   }
 
   if (flow.stage === 'protecting' || flow.stage === 'results') {
@@ -113,6 +162,17 @@ export default function DiscoveryFlow() {
             className="hidden"
           />
 
+          <div data-testid="mobile-large-backup-tip" className="mx-auto mt-5 max-w-xl rounded-2xl border border-sky-300/15 bg-sky-400/[0.06] px-4 py-4 text-left md:hidden">
+            <div className="flex items-start gap-3">
+              <Laptop className="mt-0.5 h-5 w-5 shrink-0 text-sky-100" />
+              <div>
+                <div className="text-sm font-black text-sky-50">Planning a big first backup?</div>
+                <p className="mt-1 text-sm leading-6 text-sky-50/60">For hundreds or thousands of photos, SnapNext is easier on a computer. A larger screen makes big selections, drag and drop, and backup progress easier to manage.</p>
+                <p className="mt-1 text-xs font-bold text-sky-100/70">Your phone is perfect for quick everyday backups.</p>
+              </div>
+            </div>
+          </div>
+
           <div className="mx-auto mt-6 flex max-w-xl items-center justify-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
             <LockKeyhole className="h-4 w-4 shrink-0" /> Nothing uploads until you press Back up.
           </div>
@@ -126,7 +186,7 @@ export default function DiscoveryFlow() {
           <div data-testid="upload-cloud-sync" className="mx-auto mt-6 flex max-w-xl flex-col items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 sm:flex-row sm:text-left">
             <CloudDownload className="h-5 w-5 shrink-0 text-cyan-200" />
             <p className="flex-1 text-sm leading-6 text-white/55">
-              Already stored in a cloud? Import selected files from Google Drive, Google Photos, Dropbox or OneDrive. SnapNext does not change the originals.
+              Already stored in the cloud? Smart Import lets you choose files directly from Google Photos, Google Drive, Dropbox, or OneDrive. SnapNext copies only what you select and leaves the originals unchanged.
             </p>
             <Link data-testid="upload-cloud-sync-link" href="/imports" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.07] px-5 py-2.5 text-sm font-black text-white">
               Import from Cloud
@@ -174,6 +234,7 @@ export default function DiscoveryFlow() {
   const primaryLabel = readyCount > 0
     ? `Back up ${readyCount} ${readyLabel}`
     : `Add ${duplicateActionCount} existing ${duplicateActionCount === 1 ? 'memory' : 'memories'}`;
+  const isLargeMobileBatch = flow.report.total >= LARGE_MOBILE_BATCH_FILES || flow.report.bytes >= LARGE_MOBILE_BATCH_BYTES;
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-36 md:pb-12">
@@ -190,6 +251,18 @@ export default function DiscoveryFlow() {
             </p>
           </div>
         </div>
+
+        {isLargeMobileBatch && (
+          <div data-testid="mobile-large-batch-coach" className="mt-5 rounded-2xl border border-sky-300/15 bg-sky-400/[0.06] p-4 md:hidden">
+            <div className="flex items-start gap-3">
+              <Laptop className="mt-0.5 h-5 w-5 shrink-0 text-sky-100" />
+              <div>
+                <div className="text-sm font-black text-sky-50">Large batch selected</div>
+                <p className="mt-1 text-sm leading-6 text-sky-50/60">You can continue this backup here. For future large library moves, a computer gives you more room to select files and follow long backup progress.</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
           <SummaryCard icon={CheckCircle2} label="Ready" value={readyCount} />
@@ -239,6 +312,28 @@ export default function DiscoveryFlow() {
           </div>
         )}
 
+        {localConsentPrompt && (
+          <div data-testid="upload-local-face-consent" className="mt-5 rounded-2xl border border-cyan-300/20 bg-cyan-400/[0.07] p-5">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-cyan-100" />
+              <div>
+                <h2 className="font-black text-cyan-50">Organize faces on this device?</h2>
+                <p className="mt-2 text-sm leading-6 text-cyan-50/65">
+                  After you press Back up, SnapNext can use MediaPipe on this device to count faces for Library organization. This local step does not send face images, crops, embeddings, or identifiers to AWS and does not enable cloud face recognition.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button disabled={localConsentBusy} onClick={() => { void enableLocalDetectionAndProtect(); }} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-xs font-black text-black disabled:opacity-50">
+                {localConsentBusy && <Loader2 className="h-4 w-4 animate-spin" />}Enable on-device detection & back up
+              </button>
+              <button disabled={localConsentBusy} onClick={() => { void protectWithoutLocalDetection(); }} className="min-h-11 rounded-full border border-white/10 px-5 text-xs font-black text-white/70 disabled:opacity-50">
+                Back up without face detection
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
           {canConfirm
             ? 'Nothing has uploaded yet. Press the single button below to begin.'
@@ -250,8 +345,8 @@ export default function DiscoveryFlow() {
         <div className="mt-7 flex flex-wrap gap-3">
           {canConfirm ? (
             <button
-              onClick={startProtection}
-              disabled={flow.protecting}
+              onClick={() => { void startProtection(); }}
+              disabled={flow.protecting || localConsentBusy}
               className="inline-flex min-h-14 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-7 py-4 text-base font-black text-white disabled:opacity-40"
             >
               {primaryLabel} <ArrowRight className="h-4 w-4" />
@@ -261,7 +356,7 @@ export default function DiscoveryFlow() {
               <Images className="h-5 w-5" /> View in Library
             </Link>
           )}
-          <button onClick={() => { void flow.resetFlow(); }} className="min-h-14 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">
+          <button onClick={() => { setLocalConsentPrompt(false); setSkipLocalFaceDetection(false); void flow.resetFlow(); }} className="min-h-14 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white/65">
             Choose different files
           </button>
         </div>
