@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, isPreviewDemo, mediaSrc } from '@/lib/api-client';
 import { galleryThumbnailSrc } from '@/lib/gallery-media-client';
 import {
@@ -69,6 +69,7 @@ export default function GalleryPage() {
   const [meaningBusy, setMeaningBusy] = useState(false);
   const [meaningTried, setMeaningTried] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState(null);
+  const loadedCountRef = useRef(0);
 
   async function load({ append = false, cursor = '' } = {}) {
     append ? setLoadingMore(true) : setLoading(true);
@@ -150,6 +151,10 @@ export default function GalleryPage() {
   }, [collection, search]);
 
   useEffect(() => {
+    loadedCountRef.current = items.length;
+  }, [items.length]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const key = gallerySessionKey({ filter: collection, search });
     let frame = 0;
@@ -157,7 +162,7 @@ export default function GalleryPage() {
     const save = () => {
       frame = 0;
       try {
-        const snapshot = normalizeGallerySessionState({ scrollY: window.scrollY, loadedCount: items.length });
+        const snapshot = normalizeGallerySessionState({ scrollY: window.scrollY, loadedCount: loadedCountRef.current });
         window.sessionStorage.setItem(key, JSON.stringify(snapshot));
       } catch {
         // Session restoration is a convenience only. Library browsing must never
@@ -177,7 +182,7 @@ export default function GalleryPage() {
       if (frame) window.cancelAnimationFrame(frame);
       save();
     };
-  }, [collection, search, items.length]);
+  }, [collection, search]);
 
   useEffect(() => {
     if (!restoreTarget || typeof window === 'undefined') return undefined;
