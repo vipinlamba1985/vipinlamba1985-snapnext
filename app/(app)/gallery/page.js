@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { apiFetch, mediaSrc } from '@/lib/api-client';
+import { apiFetch, isPreviewDemo, mediaSrc } from '@/lib/api-client';
+import { galleryThumbnailSrc } from '@/lib/gallery-media-client';
 import { useAccessibleDialog } from '@/hooks/use-escape-close';
 import { groupByDay } from '@/lib/media-day-groups';
 import LibraryTabs from '@/components/LibraryTabs';
@@ -22,8 +23,6 @@ const CHIPS = [
   ['places', 'Places'],
   ['events', 'Events'],
 ];
-
-const SERVER_FILTERS = new Set(['photo', 'video', 'favorite']);
 
 function safe(value) { return value && typeof value === 'object' ? value : {}; }
 function dateLabel(value) {
@@ -57,22 +56,49 @@ export default function GalleryPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [viewer, setViewer] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [nextCursor, setNextCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
   const [meaningBusy, setMeaningBusy] = useState(false);
   const [meaningTried, setMeaningTried] = useState(false);
-  const serverFilter = SERVER_FILTERS.has(collection) ? collection : 'all';
 
-  async function load() {
-    setLoading(true);
-    setMeaningTried(false);
-    const params = new URLSearchParams({ filter: serverFilter });
+  async function load({ append = false, cursor = '' } = {}) {
+    append ? setLoadingMore(true) : setLoading(true);
+    setLoadError('');
+    if (!append) {
+      setItems([]);
+      setNextCursor(null);
+      setHasMore(false);
+      setMeaningTried(false);
+    }
+
+    const params = new URLSearchParams({
+      view: 'gallery',
+      filter: collection,
+      limit: '60',
+    });
     if (search) params.set('q', search);
+    if (cursor) params.set('cursor', cursor);
+
     try {
-      const mediaData = safe(await apiFetch(`/media?${params}`).catch(() => null));
-      setItems(Array.isArray(mediaData.items) ? mediaData.items : []);
+      // Preview mode has three local sample memories and deliberately skips the
+      // server cursor contract because there is no real account library behind it.
+      const mediaData = safe(await apiFetch(isPreviewDemo() ? '/media' : `/media?${params}`));
+      const incoming = Array.isArray(mediaData.items) ? mediaData.items : [];
+      setItems(current => {
+        if (!append) return incoming;
+        const existing = new Set(current.map(item => item.id));
+        return [...current, ...incoming.filter(item => !existing.has(item.id))];
+      });
+      setNextCursor(mediaData.nextCursor || null);
+      setHasMore(Boolean(mediaData.hasMore && mediaData.nextCursor));
     } catch (error) {
-      toast.error(error.message || 'Library could not load.');
+      const message = error.message || 'Library could not load.';
+      setLoadError(message);
+      if (!append) toast.error(message);
     } finally {
-      setLoading(false);
+      append ? setLoadingMore(false) : setLoading(false);
     }
   }
 
@@ -85,7 +111,11 @@ export default function GalleryPage() {
       const found = await apiFetch(`/ai-index/search?smart=true&q=${encodeURIComponent(search)}`);
       const results = Array.isArray(found?.results) ? found.results : [];
       setMeaningTried(true);
+      setLoadError('');
+      setHasMore(false);
+      setNextCursor(null);
       if (!results.length) {
+        setItems([]);
         toast.message('Still nothing close. Try different words.');
         return;
       }
@@ -98,7 +128,7 @@ export default function GalleryPage() {
     }
   }
 
-  useEffect(() => { load(); }, [serverFilter, search]);
+  useEffect(() => { load(); }, [collection, search]);
 
   const visibleItems = useMemo(() => items.filter(item => matchesCollection(item, collection)), [items, collection]);
   const dayGroups = useMemo(() => groupByDay(visibleItems), [visibleItems]);
@@ -114,11 +144,29 @@ export default function GalleryPage() {
     if (current) setSelected(new Set());
     return !current;
   });
-  const star = async id => { await apiFetch(`/media/${id}/favorite`, { method: 'POST' }); await load(); };
+  const star = async id => {
+    await apiFetch(`/media/${id}/favorite`, { method: 'POST' });
+    setItems(current => current.flatMap(item => {
+      if (item.id !== id) return [item];
+      const favorite = !(item.favorite || item.isFavorite);
+      if (collection === 'favorite' && !favorite) return [];
+      return [{ ...item, favorite, isFavorite: favorite }];
+    }));
+    setViewer(current => {
+      if (current?.id !== id) return current;
+      const favorite = !(current.favorite || current.isFavorite);
+      return { ...current, favorite, isFavorite: favorite };
+    });
+  };
   const trash = async id => {
     await apiFetch(`/media/${id}/trash`, { method: 'POST' });
+    setItems(current => current.filter(item => item.id !== id));
+    setSelected(current => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
     setViewer(null);
-    await load();
     toast.success('Moved to trash.');
   };
   const download = async item => {
@@ -133,9 +181,14 @@ export default function GalleryPage() {
   };
   const bulk = async action => {
     if (!selected.size) return;
-    await apiFetch('/media/bulk', { method: 'POST', body: JSON.stringify({ ids: [...selected], action }) });
+    const ids = new Set(selected);
+    await apiFetch('/media/bulk', { method: 'POST', body: JSON.stringify({ ids: [...ids], action }) });
+    if (action === 'trash') {
+      setItems(current => current.filter(item => !ids.has(item.id)));
+    } else if (action === 'favorite') {
+      setItems(current => current.map(item => ids.has(item.id) ? { ...item, favorite: true, isFavorite: true } : item));
+    }
     setSelected(new Set());
-    await load();
     toast.success('Library updated.');
   };
 
@@ -186,13 +239,13 @@ export default function GalleryPage() {
         </div>
       </header>
 
-      <p className="sr-only" aria-live="polite">{loading ? 'Loading library.' : `${visibleItems.length} memories shown.`}</p>
-      <main data-testid="library-grid-region" aria-busy={loading}>
+      <p className="sr-only" aria-live="polite">{loading ? 'Loading library.' : `${visibleItems.length} memories loaded.`}</p>
+      <main data-testid="library-grid-region" aria-busy={loading || loadingMore}>
         {loading ? <div className="grid grid-cols-2 gap-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" aria-hidden="true">{Array.from({ length: 12 }).map((_, index) => <div key={index} className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" />)}</div>
-          : visibleItems.length === 0 ? <Empty filtered={collection !== 'all' || !!search} onClear={clearAll} />
+          : visibleItems.length === 0 && !loadError ? <Empty filtered={collection !== 'all' || !!search} onClear={clearAll} />
             : <div data-testid="library-grid" className="space-y-6" aria-label="Memory library">
               {dayGroups.map(group => (
-                <section key={group.key} data-testid={`library-day-${group.key}`}>
+                <section key={group.key} data-testid={`library-day-${group.key}`} style={{ contentVisibility: 'auto', containIntrinsicSize: '420px' }}>
                   <h2 className="mb-2 text-sm font-black text-white/70">{group.title}<span className="ml-2 text-xs font-bold text-white/30">{group.items.length}</span></h2>
                   <div className="grid grid-cols-2 gap-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
                     {group.items.map(item => <MemoryCard key={item.id} item={item} selectMode={selectMode} selected={selected.has(item.id)} onSelect={() => toggle(item.id)} onOpen={() => setViewer(item)} />)}
@@ -200,6 +253,10 @@ export default function GalleryPage() {
                 </section>
               ))}
             </div>}
+
+        {loadError && <div data-testid="library-load-error" className="mt-5 rounded-2xl border border-rose-300/20 bg-rose-400/10 p-4 text-center"><p className="text-sm text-rose-100">{loadError}</p><button onClick={() => load({ append: items.length > 0, cursor: items.length > 0 ? nextCursor || '' : '' })} className="mt-3 min-h-11 rounded-full bg-white px-5 text-sm font-black text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Try again</button></div>}
+        {!loading && !loadError && hasMore && <button data-testid="library-load-more" onClick={() => load({ append: true, cursor: nextCursor })} disabled={loadingMore} className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.045] text-sm font-black text-white/75 disabled:opacity-45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">{loadingMore ? <><Loader2 className="h-4 w-4 animate-spin" />Loading more…</> : 'Load more memories'}</button>}
+        {!loading && !loadError && !hasMore && visibleItems.length > 0 && <p data-testid="library-end" className="mt-6 text-center text-xs font-bold text-white/30">All loaded.</p>}
       </main>
 
       {viewer && <Viewer item={viewer} onClose={() => setViewer(null)} onStar={() => star(viewer.id)} onDownload={() => download(viewer)} onTrash={() => trash(viewer.id)} />}
@@ -207,16 +264,22 @@ export default function GalleryPage() {
   );
 }
 
-function Media({ item, className = '' }) {
-  if (item.kind === 'photo') return <img src={mediaSrc(item.id)} className={`${className} object-cover`} alt={item.name || 'Memory'} loading="lazy" decoding="async" />;
-  if (item.kind === 'video') return <div className={`relative ${className}`}><video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline preload="metadata" aria-label={item.name || 'Memory video'} /><div className="absolute inset-0 grid place-items-center bg-black/15" aria-hidden="true"><Play className="h-7 w-7 fill-white" /></div></div>;
+function Media({ item, className = '', preview = false }) {
+  if (item.kind === 'photo') {
+    const src = preview ? galleryThumbnailSrc(item.id, 480) : mediaSrc(item.id);
+    return <img src={src} className={`${className} object-cover`} alt={item.name || 'Memory'} loading={preview ? 'lazy' : 'eager'} decoding="async" sizes={preview ? '(max-width: 767px) 50vw, (max-width: 1023px) 33vw, (max-width: 1279px) 25vw, 17vw' : undefined} />;
+  }
+  if (item.kind === 'video') {
+    if (preview) return <div className={`relative grid place-items-center bg-gradient-to-br from-white/[0.06] to-white/[0.02] ${className}`} aria-label={item.name || 'Memory video'}><div className="grid h-12 w-12 place-items-center rounded-full bg-black/55"><Play className="h-6 w-6 fill-white" aria-hidden="true" /></div></div>;
+    return <div className={`relative ${className}`}><video src={mediaSrc(item.id)} className="h-full w-full object-cover" muted playsInline controls preload="metadata" aria-label={item.name || 'Memory video'} /><div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/5" aria-hidden="true" /></div>;
+  }
   return <div className={`grid place-items-center bg-white/5 p-4 text-center ${className}`} aria-label={item.name || 'Text memory'}><FileText className="h-8 w-8 text-white/45" /></div>;
 }
 
 function MemoryCard({ item, selectMode, selected, onSelect, onOpen }) {
   const open = () => selectMode ? onSelect() : onOpen();
   const label = selectMode ? `${selected ? 'Deselect' : 'Select'} ${item.name || 'memory'}` : `Open ${item.name || 'memory'}`;
-  return <button aria-label={label} aria-pressed={selectMode ? selected : undefined} data-testid={`library-media-${item.id}`} onClick={open} className={`relative aspect-square overflow-hidden rounded-xl bg-white/[0.035] text-left ring-inset focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${selected ? 'ring-2 ring-pink-400' : 'ring-0'}`}><Media item={item} className="h-full w-full" />{(item.favorite || item.isFavorite) && <Star className="absolute right-2 top-2 h-4 w-4 fill-pink-400 text-pink-400 drop-shadow" aria-label="Starred" />}{item.kind === 'video' && <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-1 text-[10px] font-black"><Play className="h-3 w-3 fill-white" aria-hidden="true" />Video</span>}{selectMode && <span aria-hidden="true" className={`absolute left-2 top-2 grid h-[22px] w-[22px] place-items-center rounded-full border-2 ${selected ? 'border-pink-400 bg-pink-500' : 'border-white bg-black/30'}`}>{selected && <Check className="h-3.5 w-3.5 stroke-[3]" />}</span>}</button>;
+  return <button aria-label={label} aria-pressed={selectMode ? selected : undefined} data-testid={`library-media-${item.id}`} onClick={open} className={`relative aspect-square overflow-hidden rounded-xl bg-white/[0.035] text-left ring-inset focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300 ${selected ? 'ring-2 ring-pink-400' : 'ring-0'}`}><Media item={item} className="h-full w-full" preview />{(item.favorite || item.isFavorite) && <Star className="absolute right-2 top-2 h-4 w-4 fill-pink-400 text-pink-400 drop-shadow" aria-label="Starred" />}{item.kind === 'video' && <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-1 text-[10px] font-black"><Play className="h-3 w-3 fill-white" aria-hidden="true" />Video</span>}{selectMode && <span aria-hidden="true" className={`absolute left-2 top-2 grid h-[22px] w-[22px] place-items-center rounded-full border-2 ${selected ? 'border-pink-400 bg-pink-500' : 'border-white bg-black/30'}`}>{selected && <Check className="h-3.5 w-3.5 stroke-[3]" />}</span>}</button>;
 }
 
 function Viewer({ item, onClose, onStar, onDownload, onTrash }) {
