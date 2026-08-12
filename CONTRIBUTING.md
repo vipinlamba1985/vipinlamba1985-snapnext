@@ -27,8 +27,10 @@ The pull-request quality workflow also runs the repository test suite and produc
 
 - Home remains memory-first rather than storage-dashboard-first.
 - Use human language in user-facing screens.
-- Keep primary navigation to five items. The shipped set is Home, Library, Add,
-  Create and You (`PRIMARY_HREFS` in `components/AppShell.js`).
+- Keep primary navigation to five items, in this order: **Home, Library, Add, Create,
+  Circle** (`PRIMARY_HREFS` in `components/AppShell.js`). Create follows Add because
+  SnapNext's common flow is bring something in → make something with it; Circle still
+  exclusively owns people, relationships and sharing.
 - Do not duplicate features across pages without a clear user need.
 - The Library has exactly two views: **All** (`/gallery`, everything you own, never
   plan-gated) and **Magic** (`/gallery/magic`, the same photos organised by person).
