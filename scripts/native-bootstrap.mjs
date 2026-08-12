@@ -14,7 +14,10 @@ const configPath = path.join(root, 'native', 'app-config.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const ANDROID_FACE_DEPENDENCY = "implementation 'com.google.mlkit:face-detection:16.1.7'";
+const ANDROID_CAST_DEPENDENCY = "implementation 'com.google.android.gms:play-services-cast-framework:22.3.1'";
+const ANDROID_CAST_OPTIONS_META = 'com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME';
 const IOS_FACE_PLUGIN_MARKER = '// SNAPNEXT_LOCAL_FACE_ANALYSIS_PLUGIN';
+const IOS_FAMILY_CAST_PLUGIN_MARKER = '// SNAPNEXT_FAMILY_CAST_PLUGIN';
 
 function run(args) {
   const result = spawnSync(npx, args, { cwd: root, stdio: 'inherit', env: process.env });
@@ -46,6 +49,15 @@ function androidPackagePath() {
   return String(config.appId || '').split('.').filter(Boolean).join('/');
 }
 
+function addAndroidDependency(source, dependency, label) {
+  if (source.includes(dependency)) return source;
+  const dependenciesMarker = 'dependencies {';
+  const index = source.indexOf(dependenciesMarker);
+  if (index < 0) throw new Error(`Could not find Android dependencies block for ${label}.`);
+  const insertAt = index + dependenciesMarker.length;
+  return `${source.slice(0, insertAt)}\n    ${dependency}${source.slice(insertAt)}`;
+}
+
 function injectAndroidLocalFaceAnalysis() {
   const template = read('native/local-face-analysis/android/MainActivity.java');
   if (!template.includes('__APP_PACKAGE__')) throw new Error('Android local face template is missing its package placeholder.');
@@ -54,14 +66,24 @@ function injectAndroidLocalFaceAnalysis() {
 
   const appGradlePath = 'android/app/build.gradle';
   let appGradle = read(appGradlePath);
-  if (!appGradle.includes(ANDROID_FACE_DEPENDENCY)) {
-    const dependenciesMarker = 'dependencies {';
-    const index = appGradle.indexOf(dependenciesMarker);
-    if (index < 0) throw new Error('Could not find Android dependencies block for local face analysis.');
-    const insertAt = index + dependenciesMarker.length;
-    appGradle = `${appGradle.slice(0, insertAt)}\n    ${ANDROID_FACE_DEPENDENCY}${appGradle.slice(insertAt)}`;
-    write(appGradlePath, appGradle);
+  appGradle = addAndroidDependency(appGradle, ANDROID_FACE_DEPENDENCY, 'local face analysis');
+  write(appGradlePath, appGradle);
+}
+
+function injectAndroidFamilyCast() {
+  const packagePath = androidPackagePath();
+  const plugin = read('native/family-cast/android/FamilyCastPlugin.java');
+  const provider = read('native/family-cast/android/SnapNextCastOptionsProvider.java');
+  if (!plugin.includes('__APP_PACKAGE__') || !provider.includes('__APP_PACKAGE__')) {
+    throw new Error('Android Family Cast templates are missing their package placeholder.');
   }
+  write(`android/app/src/main/java/${packagePath}/FamilyCastPlugin.java`, plugin.replaceAll('__APP_PACKAGE__', config.appId));
+  write(`android/app/src/main/java/${packagePath}/SnapNextCastOptionsProvider.java`, provider.replaceAll('__APP_PACKAGE__', config.appId));
+
+  const appGradlePath = 'android/app/build.gradle';
+  let appGradle = read(appGradlePath);
+  appGradle = addAndroidDependency(appGradle, ANDROID_CAST_DEPENDENCY, 'Google Cast');
+  write(appGradlePath, appGradle);
 }
 
 function patchAndroid() {
@@ -80,8 +102,15 @@ function patchAndroid() {
     if (activityClose < 0) throw new Error('Could not find MainActivity in AndroidManifest.xml.');
     manifest = `${manifest.slice(0, activityClose)}${filter}\n        ${manifest.slice(activityClose)}`;
   }
+  if (!manifest.includes(ANDROID_CAST_OPTIONS_META)) {
+    const applicationClose = manifest.lastIndexOf('</application>');
+    if (applicationClose < 0) throw new Error('Could not find Android application node for Google Cast.');
+    const metadata = `\n        <meta-data\n            android:name="${ANDROID_CAST_OPTIONS_META}"\n            android:value="${config.appId}.SnapNextCastOptionsProvider" />\n    `;
+    manifest = `${manifest.slice(0, applicationClose)}${metadata}${manifest.slice(applicationClose)}`;
+  }
   write(manifestPath, manifest);
   injectAndroidLocalFaceAnalysis();
+  injectAndroidFamilyCast();
 }
 
 function plistEntry(key, value) {
@@ -98,6 +127,23 @@ function injectIosLocalFaceAnalysis() {
   if (!appDelegate.includes(IOS_FACE_PLUGIN_MARKER)) {
     const plugin = read('native/local-face-analysis/ios/LocalFaceAnalysisPlugin.swift').trim();
     appDelegate = `${appDelegate.trimEnd()}\n\n${IOS_FACE_PLUGIN_MARKER}\n${plugin}\n`;
+  }
+  write(appDelegatePath, appDelegate);
+}
+
+function injectIosFamilyCast() {
+  const appDelegatePath = 'ios/App/App/AppDelegate.swift';
+  let appDelegate = read(appDelegatePath);
+  if (!appDelegate.includes('import Capacitor')) throw new Error('Could not find Capacitor import in iOS AppDelegate.');
+  const additions = [];
+  if (!appDelegate.includes('import AVKit')) additions.push('import AVKit');
+  if (!appDelegate.includes('import AVFoundation')) additions.push('import AVFoundation');
+  if (additions.length) {
+    appDelegate = appDelegate.replace('import Capacitor', `import Capacitor\n${additions.join('\n')}`);
+  }
+  if (!appDelegate.includes(IOS_FAMILY_CAST_PLUGIN_MARKER)) {
+    const plugin = read('native/family-cast/ios/FamilyCastPlugin.swift').trim();
+    appDelegate = `${appDelegate.trimEnd()}\n\n${IOS_FAMILY_CAST_PLUGIN_MARKER}\n${plugin}\n`;
   }
   write(appDelegatePath, appDelegate);
 }
@@ -130,6 +176,7 @@ function patchIos() {
   project = project.replace(/IPHONEOS_DEPLOYMENT_TARGET\s*=\s*[^;]+;/g, `IPHONEOS_DEPLOYMENT_TARGET = ${config.ios.deploymentTarget};`);
   write(projectPath, project);
   injectIosLocalFaceAnalysis();
+  injectIosFamilyCast();
 }
 
 try {

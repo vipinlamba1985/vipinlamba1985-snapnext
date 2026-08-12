@@ -76,7 +76,7 @@ test('Family Story is surfaced on Home and grounded Memory Stories without chang
   assert.match(dashboardLayout, /FamilyWatchLauncher mode="home"/);
   assert.match(storyLayout, /FamilyWatchLauncher mode="story"/);
   assert.match(launcher, /Watch together/);
-  assert.match(launcher, /TV browser, computer, or another large screen/);
+  assert.match(launcher, /Watch together works with any TV browser or computer/);
   assert.match(launcher, /apiFetch\('\/memories'\)|const path = mode === 'story' \? '\/memory-stories' : '\/memories'/);
   assert.match(launcher, /story\?\.sources/);
 });

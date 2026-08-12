@@ -20,6 +20,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(LocalFaceAnalysisPlugin.class);
+        registerPlugin(FamilyCastPlugin.class);
         super.onCreate(savedInstanceState);
     }
 

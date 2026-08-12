@@ -21,6 +21,7 @@ export const dynamic = 'force-dynamic';
 
 const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' };
 const ID_PATTERN = /^[A-Za-z0-9_-]{32}$/;
+const NATIVE_TRANSPORTS = new Set(['google-cast', 'airplay']);
 let indexPromise;
 
 function json(payload, status = 200, headers = {}) {
@@ -29,6 +30,11 @@ function json(payload, status = 200, headers = {}) {
 
 function validId(value) {
   return ID_PATTERN.test(String(value || '')) ? String(value) : null;
+}
+
+function nativeTransport(value) {
+  const normalized = String(value || '').toLowerCase();
+  return NATIVE_TRANSPORTS.has(normalized) ? normalized : null;
 }
 
 async function ensureIndexes(db) {
@@ -87,15 +93,19 @@ async function expireSession(collection, session, now = new Date()) {
   return { ...session, status: 'expired', expiredAt: now, updatedAt: now };
 }
 
+async function supersedeActiveSessions(collection, userId, now) {
+  await collection.updateMany(
+    { userId, status: { $in: ['pending', 'claimed', 'approved'] } },
+    { $set: { status: 'ended', endedAt: now, updatedAt: now }, $push: { events: { type: 'superseded', at: now } } },
+  );
+}
+
 async function createSession(collection, userId, mediaIds, title, now) {
   const creatorSecret = createFamilyWatchSecret();
   const claimExpiresAt = familyWatchPairExpiresAt(now);
   const cleanupAt = new Date(familyWatchSessionExpiresAt(now).getTime() + 5 * 60 * 1000);
 
-  await collection.updateMany(
-    { userId, status: { $in: ['pending', 'claimed', 'approved'] } },
-    { $set: { status: 'ended', endedAt: now, updatedAt: now }, $push: { events: { type: 'superseded', at: now } } },
-  );
+  await supersedeActiveSessions(collection, userId, now);
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const session = {
@@ -106,6 +116,7 @@ async function createSession(collection, userId, mediaIds, title, now) {
       userId,
       title,
       mediaIds,
+      transport: 'browser',
       status: 'pending',
       playback: { index: 0, playing: true, revision: 0 },
       createdAt: now,
@@ -123,6 +134,66 @@ async function createSession(collection, userId, mediaIds, title, now) {
     }
   }
   throw new Error('Could not allocate a unique family watch code.');
+}
+
+async function createNativeSession(collection, userId, mediaIds, title, transport, now) {
+  const creatorSecret = createFamilyWatchSecret();
+  const accessTokens = mediaIds.map(() => createFamilyWatchSecret());
+  const nativeAccessHashes = accessTokens.map(hashFamilyWatchSecret);
+  const expiresAt = familyWatchSessionExpiresAt(now);
+  const cleanupAt = new Date(expiresAt.getTime() + 5 * 60 * 1000);
+
+  await supersedeActiveSessions(collection, userId, now);
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    // pairCode remains internally unique because the existing Mongo index is
+    // intentionally shared with browser sessions. It is never exposed for a
+    // native transport and is not part of the native trust model.
+    const session = {
+      id: createFamilyWatchId(),
+      pairCode: createFamilyWatchPairCode(),
+      verificationCode: createFamilyWatchVerificationCode(),
+      creatorSecretHash: hashFamilyWatchSecret(creatorSecret),
+      nativeAccessHashes,
+      userId,
+      title,
+      mediaIds,
+      transport,
+      status: 'approved',
+      playback: { index: 0, playing: true, revision: 0 },
+      createdAt: now,
+      updatedAt: now,
+      approvedAt: now,
+      expiresAt,
+      cleanupAt,
+      events: [{ type: 'native_created', transport, at: now }],
+    };
+    try {
+      await collection.insertOne(session);
+      return { session, creatorSecret, accessTokens };
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+    }
+  }
+  throw new Error('Could not allocate a unique native family watch session.');
+}
+
+function nativeItems(owned, session, accessTokens, appUrl) {
+  return owned.map((doc, slot) => {
+    const params = new URLSearchParams({
+      session: session.id,
+      slot: String(slot),
+      token: accessTokens[slot],
+    });
+    return {
+      slot,
+      kind: doc.kind,
+      name: String(doc.name || 'Family memory').slice(0, 160),
+      mime: String(doc.mime || doc.contentType || (doc.kind === 'video' ? 'video/mp4' : 'image/jpeg')).slice(0, 120),
+      createdAt: doc.createdAt || null,
+      url: `${appUrl}/api/family-watch/native-media?${params.toString()}`,
+    };
+  });
 }
 
 export async function GET(request) {
@@ -153,13 +224,31 @@ export async function POST(request) {
   await ensureIndexes(db);
   const collection = db.collection('family_watch_sessions');
 
-  if (action === 'create') {
+  if (action === 'create' || action === 'create-native') {
     const requestedIds = normalizeFamilyWatchMediaIds(body?.mediaIds);
     if (!requestedIds.length) return json({ error: { code: 'no_media', message: 'Choose at least one photo or video to watch.' } }, 400);
     const owned = await loadOwnedMedia(db, user.id, requestedIds);
+    if (!owned.length) return json({ error: { code: 'no_owned_media', message: 'No available photos or videos were found for this story.' } }, 404);
+    const title = safeFamilyWatchTitle(body?.title);
+
+    if (action === 'create-native') {
+      const transport = nativeTransport(body?.transport);
+      if (!transport) return json({ error: { code: 'invalid_transport', message: 'This native viewing option is not supported.' } }, 400);
+      if (transport === 'airplay' && owned.some((doc) => doc.kind !== 'video')) {
+        return json({ error: { code: 'airplay_video_only', message: 'Direct AirPlay supports video memories. Use Watch together for the complete photo/video story.' } }, 400);
+      }
+      const mediaIds = owned.map((doc) => doc.id);
+      const { session, creatorSecret, accessTokens } = await createNativeSession(collection, user.id, mediaIds, title, transport, now);
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, '');
+      return json({
+        session: publicFamilyWatchControllerState(session),
+        creatorSecret,
+        items: nativeItems(owned, session, accessTokens, appUrl),
+      }, 201);
+    }
+
     const mediaIds = owned.map((doc) => doc.id);
-    if (!mediaIds.length) return json({ error: { code: 'no_owned_media', message: 'No available photos or videos were found for this story.' } }, 404);
-    const { session, creatorSecret } = await createSession(collection, user.id, mediaIds, safeFamilyWatchTitle(body?.title), now);
+    const { session, creatorSecret } = await createSession(collection, user.id, mediaIds, title, now);
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/$/, '');
     return json({ session: publicFamilyWatchControllerState(session), creatorSecret, watchUrl: `${appUrl}/watch` }, 201);
   }

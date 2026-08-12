@@ -26,6 +26,7 @@ The bootstrap performs `cap add` when a platform is absent, runs `cap sync`, and
 - iOS minimum deployment target 15.0
 - `snapnext://oauth` return scheme on both platforms
 - clear photo-library permission explanations on iOS
+- native Family Story output: Google Cast on Android and AirPlay video routing on iOS
 - no contacts, location, microphone, call-log, SMS, or all-files permissions
 
 ## Local build checks
@@ -48,6 +49,19 @@ npm run native:open:ios
 
 Use Xcode to select your Apple team and run on a real iPhone. The GitHub native-preflight workflow compiles an unsigned simulator build; it does not create an App Store archive.
 
+## Family Story casting
+
+The detailed transport/privacy contract is in `docs/FAMILY_STORY_CASTING.md`.
+
+Before a native store release, physical receiver QA is required even when CI compiles both projects successfully:
+
+- Android + Chromecast/Google TV: discover/select receiver, photo and video playback, auto-advance, phone controls, route change, disconnect, receiver loss, background/foreground.
+- iPhone/iPad + Apple TV/AirPlay TV: discover/select AirPlay route, video playback, phone controls, route change, disconnect, receiver loss, background/foreground.
+- Mixed photo/video iOS story: direct AirPlay remains video-only and universal **Watch together** still presents the complete story through `snapnext.ai/watch`.
+- End or expire a session and verify its temporary receiver media URLs no longer work.
+
+CI may prove the bridge compiles, but it must never auto-attest real receiver discovery or playback on physical devices.
+
 ## Permissions policy
 
 Manual selection should use the operating-system picker and request access only to user-selected memories. Automatic full-library Smart Sync remains disabled until the native PhotoKit/MediaStore bridge and resumable background uploader are implemented and reviewed.
@@ -63,5 +77,6 @@ Do not add contacts, location, microphone, call-log, SMS, or Android `MANAGE_EXT
 - production OAuth credentials and `snapnext://oauth` callback registration where supported
 - final legal review of Privacy Policy and Terms
 - real-device TestFlight and Play internal testing approval
+- physical Cast/AirPlay receiver validation described above
 
 Never commit `.env` files, private keys, provisioning profiles, keystores, service-account JSON, or OAuth client secrets.
