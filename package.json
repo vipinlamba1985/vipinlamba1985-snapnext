@@ -118,9 +118,9 @@
     "typescript": "5.8.2"
   },
   "overrides": {
+    "sharp": "$sharp",
     "next": {
-      "postcss": "8.5.23",
-      "sharp": "$sharp"
+      "postcss": "8.5.23"
     }
   },
   "resolutions": {
