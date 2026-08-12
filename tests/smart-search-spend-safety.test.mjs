@@ -36,10 +36,10 @@ test('the meaning search is behind a deliberate tap, not automatic', async () =>
   assert.match(page, /data-testid="library-search-by-meaning"/);
   assert.match(page, /onClick=\{searchByMeaning\}/, 'it must be driven by a click');
   // The plain, free search and server-backed collection filter are what run on
-  // load. Places/Events now use the same free paged endpoint, so collection is
-  // deliberately the effect dependency instead of the retired serverFilter alias.
-  assert.match(page, /useEffect\(\(\) => \{ load\(\); \}, \[collection, search\]\)/);
-  assert.doesNotMatch(page, /useEffect[^;]*searchByMeaning/, 'meaning search must never run from an effect');
+  // load. Scroll restoration may add setup inside this effect, but it must still
+  // end by loading the free paged endpoint and remain scoped to collection/search.
+  assert.match(page, /useEffect\(\(\) => \{[\s\S]*?\bload\(\);[\s\S]*?\}, \[collection, search\]\)/);
+  assert.doesNotMatch(page, /useEffect[\s\S]*?searchByMeaning\(\)[\s\S]*?\}, \[[^\]]*\]\)/, 'meaning search must never run from an effect');
 
   const loadStart = page.indexOf('async function load(');
   const meaningStart = page.indexOf('async function searchByMeaning()');
