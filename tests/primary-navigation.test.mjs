@@ -11,8 +11,8 @@ const PRIMARY_NAV = [
   { href: '/dashboard', label: 'Home' },
   { href: '/gallery', label: 'Library' },
   { href: '/upload', label: 'Add' },
-  { href: '/circles', label: 'Circle' },
   { href: '/ai-studio', label: 'Create' },
+  { href: '/circles', label: 'Circle' },
 ];
 
 const MORE_NAV = [
@@ -39,7 +39,7 @@ function labelForHref(source, href) {
   return route ? route[1] : null;
 }
 
-test('frozen v1 ships exactly Home Library Add Circle Create in that order', async () => {
+test('frozen v1 ships exactly Home Library Add Create Circle in that order', async () => {
   const source = await appShell();
   const hrefs = hrefsFromConst(source, 'PRIMARY_HREFS');
   assert.equal(hrefs.length, 5, 'primary navigation must always contain exactly five destinations');
@@ -49,10 +49,11 @@ test('frozen v1 ships exactly Home Library Add Circle Create in that order', asy
   }
 });
 
-test('You/Profile is secondary and Circle owns the fourth primary slot', async () => {
+test('You/Profile is secondary, Create owns the fourth slot and Circle the fifth', async () => {
   const source = await appShell();
   const primary = hrefsFromConst(source, 'PRIMARY_HREFS');
-  assert.ok(primary.includes('/circles'));
+  assert.equal(primary[3], '/ai-studio');
+  assert.equal(primary[4], '/circles');
   assert.ok(!primary.includes('/settings'));
   assert.ok(!primary.includes('/profile'));
   assert.ok(!primary.includes('/support'));
@@ -87,7 +88,8 @@ test('primary destinations do not disappear because a feature flag is off', asyn
 test('the frozen navigation document is the authoritative contract', async () => {
   const doc = await read('docs/SNAPNEXT_NAVIGATION_V1_FROZEN.md');
   assert.match(doc, /SnapNext Navigation Architecture v1 — FROZEN/);
-  assert.match(doc, /Discover → Find → Add → Connect → Make/);
+  assert.match(doc, /Discover → Find → Add → Make → Connect/);
+  assert.match(doc, /Home, Library, \(\+\), Create, Circle/);
   assert.match(doc, /People is reserved for Circle/);
   assert.match(doc, /Service \/ authorization \/ infrastructure → More → Integrations/);
   assert.match(doc, /Exactly five primary destinations/);

@@ -21,8 +21,8 @@ const ROUTES = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/gallery', label: 'Library', icon: ImageIcon },
   { href: '/upload', label: 'Add', icon: Plus },
-  { href: '/circles', label: 'Circle', icon: Users },
   { href: '/ai-studio', label: 'Create', icon: Sparkles, aiCapability: 'studio' },
+  { href: '/circles', label: 'Circle', icon: Users },
 
   { href: '/profile', label: 'You / Profile', icon: UserRound },
   { href: '/settings', label: 'Settings', icon: Settings2 },
@@ -52,8 +52,8 @@ const ROUTES = [
 ];
 
 // SnapNext Navigation Architecture v1 — FROZEN.
-// Discover → Find → Add → Connect → Make.
-const PRIMARY_HREFS = ['/dashboard', '/gallery', '/upload', '/circles', '/ai-studio'];
+// Discover → Find → Add → Make → Connect.
+const PRIMARY_HREFS = ['/dashboard', '/gallery', '/upload', '/ai-studio', '/circles'];
 
 // Secondary controls only. Social relationships stay in Circle; cloud/service
 // authorization belongs in Integrations.
@@ -206,7 +206,7 @@ export default function AppShell({ children }) {
       </Link>
 
       <nav aria-label="Primary navigation" data-testid="sidebar-nav" className="flex-1 overflow-y-auto overscroll-contain px-2 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
-        <div className="mb-2 px-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/30">Discover · Find · Add · Connect · Make</div>
+        <div className="mb-2 px-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/30">Discover · Find · Add · Make · Connect</div>
         <div className="space-y-1">{primaryNav.map(item => <NavItem key={item.href} item={item} pathname={pathname} onClick={() => setOpen(false)} />)}</div>
 
         <details className="mt-3 group" open={moreActive || undefined}>
