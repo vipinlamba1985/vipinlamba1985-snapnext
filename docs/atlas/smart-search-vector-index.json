@@ -1,0 +1,18 @@
+{
+  "fields": [
+    {
+      "type": "vector",
+      "path": "vector",
+      "numDimensions": 256,
+      "similarity": "cosine"
+    },
+    {
+      "type": "filter",
+      "path": "userId"
+    },
+    {
+      "type": "filter",
+      "path": "version"
+    }
+  ]
+}
