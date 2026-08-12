@@ -34,7 +34,7 @@ export default function ProfilePage() {
     </section>
 
     <section className="rounded-3xl border border-white/8 bg-white/[0.03] p-5">
-      <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/5"><UserRound className="h-5 w-5 text-pink-200" /></div><div><h2 className="font-black">Profile is not a primary destination</h2><p className="mt-1 text-sm leading-6 text-white/45">SnapNext keeps the bottom navigation focused on Discover, Find, Add, Connect and Make. Profile remains available from More.</p></div></div>
+      <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/5"><UserRound className="h-5 w-5 text-pink-200" /></div><div><h2 className="font-black">Profile is not a primary destination</h2><p className="mt-1 text-sm leading-6 text-white/45">SnapNext keeps the bottom navigation focused on Home, Library, Add, Create and Circle. Profile remains available from More.</p></div></div>
     </section>
   </div>;
 }
