@@ -35,9 +35,18 @@ test('the meaning search is behind a deliberate tap, not automatic', async () =>
 
   assert.match(page, /data-testid="library-search-by-meaning"/);
   assert.match(page, /onClick=\{searchByMeaning\}/, 'it must be driven by a click');
-  // The plain, free search is what runs on load and on submit.
-  assert.match(page, /useEffect\(\(\) => \{ load\(\); \}, \[serverFilter, search\]\)/);
+  // The plain, free search and server-backed collection filter are what run on
+  // load. Places/Events now use the same free paged endpoint, so collection is
+  // deliberately the effect dependency instead of the retired serverFilter alias.
+  assert.match(page, /useEffect\(\(\) => \{ load\(\); \}, \[collection, search\]\)/);
   assert.doesNotMatch(page, /useEffect[^;]*searchByMeaning/, 'meaning search must never run from an effect');
+
+  const loadStart = page.indexOf('async function load(');
+  const meaningStart = page.indexOf('async function searchByMeaning()');
+  assert.ok(loadStart >= 0 && meaningStart > loadStart, 'the free load path must remain separate from meaning search');
+  const freeLoadPath = page.slice(loadStart, meaningStart);
+  assert.doesNotMatch(freeLoadPath, /smart=true|ai-index\/search/, 'ordinary Library loading must never trigger paid meaning search');
+
   // Offered only when the free search already came up short.
   assert.match(page, /visibleItems\.length < 5/);
 });
