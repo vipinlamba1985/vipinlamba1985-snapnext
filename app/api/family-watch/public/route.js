@@ -34,7 +34,7 @@ function clientKey(request) {
 }
 
 async function limitViewer(request) {
-  const result = await distributedRateLimit({ key: `family-watch-viewer:${clientKey(request)}`, limit: 45, windowMs: 60_000 });
+  const result = await distributedRateLimit({ key: `family-watch-viewer:${clientKey(request)}`, limit: 120, windowMs: 60_000 });
   if (result.allowed) return null;
   return json(
     { error: { code: 'rate_limited', message: 'Too many TV pairing attempts. Please try again shortly.' } },
