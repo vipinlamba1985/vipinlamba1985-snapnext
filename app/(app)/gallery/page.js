@@ -181,6 +181,12 @@ export default function GalleryPage() {
 
   useEffect(() => {
     if (!restoreTarget || typeof window === 'undefined') return undefined;
+    // A failed restore page must stop automatic replay. The normal retry button
+    // remains available, but return-position convenience can never loop requests.
+    if (loadError) {
+      setRestoreTarget(null);
+      return undefined;
+    }
     if (galleryRestoreNeedsMore({
       target: restoreTarget,
       loadedCount: items.length,
@@ -199,7 +205,7 @@ export default function GalleryPage() {
       setRestoreTarget(null);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [restoreTarget, items.length, hasMore, nextCursor, loading, loadingMore]);
+  }, [restoreTarget, items.length, hasMore, nextCursor, loading, loadingMore, loadError]);
 
   const visibleItems = useMemo(() => items.filter(item => matchesCollection(item, collection)), [items, collection]);
   const dayGroups = useMemo(() => groupByDay(visibleItems), [visibleItems]);
