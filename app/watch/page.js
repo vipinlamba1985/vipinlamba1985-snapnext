@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Loader2, Play, ShieldCheck, Tv } from 'lucide-react';
+import { Loader2, Play, ShieldCheck, Tv } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 
 function normalizeCode(value) {
