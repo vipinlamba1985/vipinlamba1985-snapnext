@@ -55,14 +55,10 @@ const securityHeaders = [
 
 const nextConfig = {
   output: 'standalone',
-  eslint: {
-    // ESLint reports zero errors, so the build enforces it again. Advisory
-    // warnings still surface in the quality workflow without failing anything.
-    ignoreDuringBuilds: false,
-  },
+  // Next 16 no longer accepts nextConfig.eslint and no longer runs ESLint from
+  // `next build`. package.json keeps lint and typecheck as explicit blocking
+  // build steps so production cannot bypass the quality gate.
   typescript: {
-    // `npm run typecheck` is clean, so a type error must not be able to reach a
-    // production build looking green.
     ignoreBuildErrors: false,
   },
   images: {
@@ -72,6 +68,9 @@ const nextConfig = {
     ],
   },
   serverExternalPackages: ['mongodb'],
+  // Keep Webpack during the framework-major migration. This block only exists
+  // for development watch behaviour, and package scripts pass --webpack
+  // explicitly so Next 16's Turbopack default cannot silently ignore it.
   webpack(config, { dev }) {
     if (dev) {
       config.watchOptions = {
@@ -99,7 +98,7 @@ const nextConfig = {
 
 module.exports = nextConfig;
 
-// Vercel currently runs `npm test && next build` directly for this project, so
+// Vercel currently runs the repository build script for this project, so
 // package lifecycle hooks are not a reliable place to stage runtime assets.
 // Prepare pinned MediaPipe files before Next snapshots public/ into the build.
 if (process.env.NODE_ENV === 'production' && process.env.SKIP_MEDIAPIPE_ASSET_PREP !== '1') {
