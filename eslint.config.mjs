@@ -53,7 +53,7 @@ export default [
     // Server-side modules contain no React. The hook rules misfire here: any
     // plain helper named use* (e.g. useGatewayV2, a server feature-flag read)
     // is mistaken for a React hook.
-    files: ['lib/**', 'app/api/**', 'scripts/**', 'server.js', 'middleware.js'],
+    files: ['lib/**', 'app/api/**', 'scripts/**', 'server.js', 'proxy.js'],
     rules: {
       'react-hooks/rules-of-hooks': 'off',
       'react-hooks/react-compiler': 'off',

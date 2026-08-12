@@ -5,7 +5,7 @@
 // one that matters.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -22,7 +22,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
  */
 function referencedInCode() {
   const out = execFileSync('grep', [
-    '-rhoE', '\\b[A-Z][A-Z0-9_]{4,}\\b', 'lib', 'app', 'scripts', 'middleware.js',
+    '-rhoE', '\\b[A-Z][A-Z0-9_]{4,}\\b', 'lib', 'app', 'scripts', 'proxy.js',
   ], { cwd: repoRoot, encoding: 'utf8' });
   return new Set(out.split('\n').map((line) => line.trim()).filter(Boolean));
 }

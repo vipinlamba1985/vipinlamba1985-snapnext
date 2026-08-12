@@ -12,9 +12,9 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Rebuilds the middleware's rule list so the test checks the real patterns. */
+/** Rebuilds the request proxy's rule list so the test checks the real patterns. */
 async function rateRules() {
-  const source = await readFile(path.join(repoRoot, 'middleware.js'), 'utf8');
+  const source = await readFile(path.join(repoRoot, 'proxy.js'), 'utf8');
   const block = source.slice(source.indexOf('const RATE_RULES = ['), source.indexOf('];', source.indexOf('const RATE_RULES = [')));
   const rules = [...block.matchAll(/match:\s*(\/.*?\/i),\s*limit:\s*(\d+),\s*windowMs:\s*([\d_]+)/g)];
   assert.ok(rules.length >= 5, 'could not parse the rate rules');
