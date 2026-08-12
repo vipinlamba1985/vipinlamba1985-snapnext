@@ -1,12 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, isPreviewDemo, mediaSrc } from '@/lib/api-client';
 import { galleryThumbnailSrc } from '@/lib/gallery-media-client';
+import {
+  galleryRestoreNeedsMore,
+  gallerySessionKey,
+  normalizeGallerySessionState,
+} from '@/lib/gallery-window';
 import { useAccessibleDialog } from '@/hooks/use-escape-close';
 import { groupByDay } from '@/lib/media-day-groups';
 import LibraryTabs from '@/components/LibraryTabs';
+import VirtualizedDayGrid from '@/components/gallery/VirtualizedDayGrid';
 import { toast } from 'sonner';
 import {
   Check, Download, FileText, HardDrive, Images, Loader2, Play, Search,
@@ -62,6 +68,8 @@ export default function GalleryPage() {
   const [hasMore, setHasMore] = useState(false);
   const [meaningBusy, setMeaningBusy] = useState(false);
   const [meaningTried, setMeaningTried] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState(null);
+  const loadedCountRef = useRef(0);
 
   async function load({ append = false, cursor = '' } = {}) {
     append ? setLoadingMore(true) : setLoading(true);
@@ -128,7 +136,81 @@ export default function GalleryPage() {
     }
   }
 
-  useEffect(() => { load(); }, [collection, search]);
+  useEffect(() => {
+    let saved = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.sessionStorage.getItem(gallerySessionKey({ filter: collection, search }));
+        if (raw) saved = normalizeGallerySessionState(JSON.parse(raw));
+      } catch {
+        saved = null;
+      }
+    }
+    setRestoreTarget(saved && (saved.scrollY > 0 || saved.loadedCount > 60) ? saved : null);
+    load();
+  }, [collection, search]);
+
+  useEffect(() => {
+    loadedCountRef.current = items.length;
+  }, [items.length]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const key = gallerySessionKey({ filter: collection, search });
+    let frame = 0;
+
+    const save = () => {
+      frame = 0;
+      try {
+        const snapshot = normalizeGallerySessionState({ scrollY: window.scrollY, loadedCount: loadedCountRef.current });
+        window.sessionStorage.setItem(key, JSON.stringify(snapshot));
+      } catch {
+        // Session restoration is a convenience only. Library browsing must never
+        // fail because storage is blocked or full.
+      }
+    };
+    const scheduleSave = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(save);
+    };
+
+    window.addEventListener('scroll', scheduleSave, { passive: true });
+    window.addEventListener('pagehide', save);
+    return () => {
+      window.removeEventListener('scroll', scheduleSave);
+      window.removeEventListener('pagehide', save);
+      if (frame) window.cancelAnimationFrame(frame);
+      save();
+    };
+  }, [collection, search]);
+
+  useEffect(() => {
+    if (!restoreTarget || typeof window === 'undefined') return undefined;
+    // A failed restore page must stop automatic replay. The normal retry button
+    // remains available, but return-position convenience can never loop requests.
+    if (loadError) {
+      setRestoreTarget(null);
+      return undefined;
+    }
+    if (galleryRestoreNeedsMore({
+      target: restoreTarget,
+      loadedCount: items.length,
+      hasMore,
+      nextCursor,
+      loading,
+      loadingMore,
+    })) {
+      load({ append: true, cursor: nextCursor });
+      return undefined;
+    }
+    if (loading || loadingMore) return undefined;
+
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: restoreTarget.scrollY, behavior: 'auto' });
+      setRestoreTarget(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [restoreTarget, items.length, hasMore, nextCursor, loading, loadingMore, loadError]);
 
   const visibleItems = useMemo(() => items.filter(item => matchesCollection(item, collection)), [items, collection]);
   const dayGroups = useMemo(() => groupByDay(visibleItems), [visibleItems]);
@@ -243,15 +325,11 @@ export default function GalleryPage() {
       <main data-testid="library-grid-region" aria-busy={loading || loadingMore}>
         {loading ? <div className="grid grid-cols-2 gap-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6" aria-hidden="true">{Array.from({ length: 12 }).map((_, index) => <div key={index} className="aspect-square animate-pulse rounded-xl bg-white/[0.04]" />)}</div>
           : visibleItems.length === 0 && !loadError ? <Empty filtered={collection !== 'all' || !!search} onClear={clearAll} />
-            : <div data-testid="library-grid" className="space-y-6" aria-label="Memory library">
-              {dayGroups.map(group => (
-                <section key={group.key} data-testid={`library-day-${group.key}`} style={{ contentVisibility: 'auto', containIntrinsicSize: '420px' }}>
-                  <h2 className="mb-2 text-sm font-black text-white/70">{group.title}<span className="ml-2 text-xs font-bold text-white/30">{group.items.length}</span></h2>
-                  <div className="grid grid-cols-2 gap-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-                    {group.items.map(item => <MemoryCard key={item.id} item={item} selectMode={selectMode} selected={selected.has(item.id)} onSelect={() => toggle(item.id)} onOpen={() => setViewer(item)} />)}
-                  </div>
-                </section>
-              ))}
+            : <div data-testid="library-grid" aria-label="Memory library">
+              <VirtualizedDayGrid
+                groups={dayGroups}
+                renderItem={item => <MemoryCard key={item.id} item={item} selectMode={selectMode} selected={selected.has(item.id)} onSelect={() => toggle(item.id)} onOpen={() => setViewer(item)} />}
+              />
             </div>}
 
         {loadError && <div data-testid="library-load-error" className="mt-5 rounded-2xl border border-rose-300/20 bg-rose-400/10 p-4 text-center"><p className="text-sm text-rose-100">{loadError}</p><button onClick={() => load({ append: items.length > 0, cursor: items.length > 0 ? nextCursor || '' : '' })} className="mt-3 min-h-11 rounded-full bg-white px-5 text-sm font-black text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-300">Try again</button></div>}
