@@ -5,9 +5,24 @@ import {
   buildGalleryVirtualLayout,
   selectGalleryVirtualRows,
 } from '@/lib/gallery-virtualization';
+import { galleryThumbnailSrc } from '@/lib/gallery-media-client';
 
 function sameMetrics(a, b) {
   return a.width === b.width && a.scrollTop === b.scrollTop && a.viewportHeight === b.viewportHeight;
+}
+
+function renderGridItem(item, renderItem) {
+  if (item?.kind !== 'video') return renderItem(item);
+  return (
+    <div
+      key={item.id}
+      data-video-poster="true"
+      className="h-full min-w-0 overflow-hidden rounded-xl bg-cover bg-center"
+      style={{ backgroundImage: `url(${JSON.stringify(galleryThumbnailSrc(item.id, 480))})` }}
+    >
+      {renderItem(item)}
+    </div>
+  );
 }
 
 export default function VirtualizedDayGrid({ groups, renderItem }) {
@@ -102,7 +117,7 @@ export default function VirtualizedDayGrid({ groups, renderItem }) {
               gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
             }}
           >
-            {row.items.map(item => renderItem(item))}
+            {row.items.map(item => renderGridItem(item, renderItem))}
           </div>
         );
       })}

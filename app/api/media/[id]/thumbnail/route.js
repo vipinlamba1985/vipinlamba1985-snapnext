@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { storage } from '@/lib/storage';
 import { DEFAULT_THUMBNAIL_SIZE } from '@/lib/thumbnails';
-import { getOrCreateThumbnail } from '@/lib/thumbnails.server';
+import { getOrCreateThumbnail, getVideoPoster } from '@/lib/thumbnails.server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,10 +53,31 @@ export async function GET(request, context) {
     trashed: { $ne: true },
   });
 
-  if (!doc) return NextResponse.json({ error: 'Image not found' }, { status: 404 });
-  if (doc.kind !== 'photo') return NextResponse.json({ error: 'Thumbnail source is not a photo' }, { status: 415 });
+  if (!doc) return NextResponse.json({ error: 'Media not found' }, { status: 404 });
 
   try {
+    // Videos never fall through to original storage here. A grid request may
+    // read only a pre-generated poster derivative; if none exists the client
+    // keeps its lightweight fallback tile.
+    if (doc.kind === 'video') {
+      const poster = await getVideoPoster({ doc, userId: user.id });
+      if (!poster) {
+        return NextResponse.json(
+          { error: 'Video poster not available' },
+          { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
+        );
+      }
+      return new Response(poster.buffer, {
+        status: 200,
+        headers: imageHeaders({
+          contentType: 'image/jpeg',
+          contentLength: poster.buffer.length,
+          cached: true,
+        }),
+      });
+    }
+
+    if (doc.kind !== 'photo') return NextResponse.json({ error: 'Thumbnail source is not a photo' }, { status: 415 });
     const size = new URL(request.url).searchParams.get('w');
 
     // Read-through cache. The original is fetched only on a miss, so a warm
@@ -80,8 +101,8 @@ export async function GET(request, context) {
       });
     }
 
-    // Anything a thumbnail cannot be generated from still renders, by streaming
-    // the stored file as before rather than showing a broken tile.
+    // Anything a photo thumbnail cannot be generated from still renders, by
+    // streaming the stored image as before rather than showing a broken tile.
     if ((doc.provider || 'local') === 's3') {
       const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
       const client = new S3Client({
@@ -116,7 +137,7 @@ export async function GET(request, context) {
       headers: imageHeaders({ contentType: inferImageType(doc), contentLength: buffer.length }),
     });
   } catch (error) {
-    console.error('[people-thumbnail] stream failed', doc.id, doc.provider, error?.name, error?.message);
+    console.error('[media-thumbnail] stream failed', doc.id, doc.provider, error?.name, error?.message);
     return NextResponse.json({ error: 'Thumbnail unavailable' }, { status: 502 });
   }
 }
