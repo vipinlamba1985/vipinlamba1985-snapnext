@@ -58,7 +58,7 @@ test('TV pairing is approval-gated and never receives the SnapNext login session
   assert.match(viewer, /viewerSecretHash/);
   assert.match(viewer, /mediaAccessHashes/);
   assert.match(viewer, /session\.status !== 'approved'/);
-  assert.doesNotMatch(watchPage, /getToken\(|setToken\(|password/);
+  assert.doesNotMatch(watchPage, /getToken\(|setToken\(|sb-access-token|snapnext_token|refreshToken/);
   assert.match(watchPage, /Match this code|verificationCode/);
 });
 
