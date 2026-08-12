@@ -25,8 +25,17 @@ test('gallery batch size is bounded for mobile memory safety', () => {
   assert.equal(nextGalleryVisibleCount(980, 1000, 60), 1000);
 });
 
-test('gallery session state is scoped to filters and search', () => {
-  assert.equal(gallerySessionKey({ filter: 'photo', search: 'Paris' }), 'snapnext:gallery:v3:photo:paris');
+test('gallery session state is scoped without persisting raw search text', () => {
+  const paris = gallerySessionKey({ filter: 'photo', search: 'Paris' });
+  const parisAgain = gallerySessionKey({ filter: 'photo', search: '  PARIS  ' });
+  const london = gallerySessionKey({ filter: 'photo', search: 'London' });
+  const all = gallerySessionKey({ filter: 'all', search: '' });
+
+  assert.equal(paris, parisAgain, 'normalized repeats must restore the same search session');
+  assert.notEqual(paris, london, 'different searches need independent return positions');
+  assert.notEqual(paris, all, 'search and normal browsing must not share state');
+  assert.doesNotMatch(paris, /paris/i, 'typed search text must not be persisted in the storage key');
+  assert.match(all, /:all:browse$/);
 });
 
 test('Gallery scroll restoration is bounded instead of replaying an unbounded library', () => {
