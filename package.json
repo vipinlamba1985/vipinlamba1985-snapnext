@@ -117,6 +117,12 @@
     "tailwindcss": "3.4.1",
     "typescript": "5.8.2"
   },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.23",
+      "sharp": "0.35.3"
+    }
+  },
   "resolutions": {
     "follow-redirects": "1.16.0",
     "form-data": "4.0.4",
