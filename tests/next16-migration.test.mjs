@@ -18,10 +18,10 @@ async function exists(relative) {
 
 test('framework packages stay on the approved Next 16 / React 19 line', async () => {
   const pkg = JSON.parse(await read('package.json'));
-  assert.equal(pkg.dependencies.next, '16.2.11');
+  assert.equal(pkg.dependencies.next, '16.2.12');
   assert.equal(pkg.dependencies.react, '19.2.7');
   assert.equal(pkg.dependencies['react-dom'], '19.2.7');
-  assert.equal(pkg.devDependencies['eslint-config-next'], '16.2.11');
+  assert.equal(pkg.devDependencies['eslint-config-next'], '16.2.12');
 });
 
 test('the production build keeps repository tests, typecheck and lint as hard gates', async () => {
