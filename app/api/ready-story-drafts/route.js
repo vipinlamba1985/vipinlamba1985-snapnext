@@ -11,6 +11,9 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const COLLECTION = 'creative_projects';
+const PROJECT_KIND = 'ready-story';
+
 function json(data, status = 200) {
   return NextResponse.json(data, {
     status,
@@ -76,13 +79,14 @@ async function loadInputs(db, userId) {
 async function refreshDrafts(db, userId) {
   const [media, memoryEvents, lifeEvents, profiles, stories] = await loadInputs(db, userId);
   const candidates = buildReadyStoryCandidates({ media, memoryEvents, lifeEvents, profiles, stories, limit: READY_STORY_LIMIT });
+  const collection = db.collection(COLLECTION);
   const dismissed = candidates.length
-    ? await db.collection('ready_story_drafts').find({ userId, id: { $in: candidates.map(item => item.id) }, status: 'dismissed' }).project({ _id: 0, id: 1 }).toArray()
+    ? await collection.find({ userId, kind: PROJECT_KIND, id: { $in: candidates.map(item => item.id) }, status: 'dismissed' }).project({ _id: 0, id: 1 }).toArray()
     : [];
   const dismissedIds = new Set(dismissed.map(item => item.id));
   const visible = candidates.filter(item => !dismissedIds.has(item.id));
   const existing = visible.length
-    ? await db.collection('ready_story_drafts').find({ userId, id: { $in: visible.map(item => item.id) } }).toArray()
+    ? await collection.find({ userId, kind: PROJECT_KIND, id: { $in: visible.map(item => item.id) } }).toArray()
     : [];
   const existingById = new Map(existing.map(item => [item.id, item]));
   const now = new Date();
@@ -91,11 +95,12 @@ async function refreshDrafts(db, userId) {
     const nextFingerprint = fingerprint(item);
     const current = existingById.get(item.id);
     if (current?.fingerprint === nextFingerprint && current?.status === 'ready') continue;
-    await db.collection('ready_story_drafts').updateOne(
-      { userId, id: item.id },
+    await collection.updateOne(
+      { userId, kind: PROJECT_KIND, id: item.id },
       {
         $set: {
           ...item,
+          kind: PROJECT_KIND,
           userId,
           fingerprint: nextFingerprint,
           status: 'ready',
@@ -108,9 +113,10 @@ async function refreshDrafts(db, userId) {
   }
 
   const activeIds = visible.map(item => item.id);
-  await db.collection('ready_story_drafts').updateMany(
+  await collection.updateMany(
     {
       userId,
+      kind: PROJECT_KIND,
       generator: READY_STORY_GENERATOR,
       status: 'ready',
       ...(activeIds.length ? { id: { $nin: activeIds } } : {}),
@@ -118,8 +124,8 @@ async function refreshDrafts(db, userId) {
     { $set: { status: 'stale', updatedAt: now } },
   );
 
-  return db.collection('ready_story_drafts')
-    .find({ userId, status: 'ready' })
+  return collection
+    .find({ userId, kind: PROJECT_KIND, status: 'ready' })
     .sort({ score: -1, happenedAt: -1, updatedAt: -1 })
     .limit(READY_STORY_LIMIT)
     .toArray();
@@ -129,14 +135,15 @@ export async function GET(request) {
   try {
     const ctx = await context(request);
     if (ctx.error) return ctx.error;
+    const collection = ctx.db.collection(COLLECTION);
     const id = clean(new URL(request.url).searchParams.get('id'), 160);
     if (id) {
-      const story = await ctx.db.collection('ready_story_drafts').findOne({ userId: ctx.user.id, id, status: { $in: ['ready', 'reviewed'] } });
+      const story = await collection.findOne({ userId: ctx.user.id, kind: PROJECT_KIND, id, status: 'ready' });
       if (!story) return json({ error: 'Ready story not found.' }, 404);
       return json({ story: publicDraft(story) });
     }
-    const items = await ctx.db.collection('ready_story_drafts')
-      .find({ userId: ctx.user.id, status: 'ready' })
+    const items = await collection
+      .find({ userId: ctx.user.id, kind: PROJECT_KIND, status: 'ready' })
       .sort({ score: -1, happenedAt: -1, updatedAt: -1 })
       .limit(READY_STORY_LIMIT)
       .toArray();
@@ -167,10 +174,11 @@ export async function POST(request) {
 
     const id = clean(body.id, 160);
     if (!id) return json({ error: 'Story ID is required.' }, 400);
+    const collection = ctx.db.collection(COLLECTION);
 
     if (action === 'dismiss') {
-      const result = await ctx.db.collection('ready_story_drafts').updateOne(
-        { userId: ctx.user.id, id },
+      const result = await collection.updateOne(
+        { userId: ctx.user.id, kind: PROJECT_KIND, id },
         { $set: { status: 'dismissed', dismissedAt: new Date(), updatedAt: new Date() } },
       );
       if (!result.matchedCount) return json({ error: 'Ready story not found.' }, 404);
@@ -178,9 +186,9 @@ export async function POST(request) {
     }
 
     if (action === 'mark-reviewed') {
-      const result = await ctx.db.collection('ready_story_drafts').updateOne(
-        { userId: ctx.user.id, id, status: 'ready' },
-        { $set: { status: 'reviewed', reviewedAt: new Date(), updatedAt: new Date() } },
+      const result = await collection.updateOne(
+        { userId: ctx.user.id, kind: PROJECT_KIND, id, status: 'ready' },
+        { $set: { reviewedAt: new Date(), updatedAt: new Date() } },
       );
       if (!result.matchedCount) return json({ error: 'Ready story not found.' }, 404);
       return json({ ok: true, reviewed: id });
