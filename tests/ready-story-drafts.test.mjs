@@ -53,7 +53,7 @@ test('birthday stories use person-linked historical photos and never auto-post',
 });
 
 test('old travel runs become cost-free trip collage drafts', () => {
-  const media = [0, 1, 2, 3, 4].map(index => photo(`t${index}`, `2024-06-0${index + 1}T12:00:00Z`, 'Montreal'));
+  const media = [8, 10, 12, 14, 16].map((hour, index) => photo(`t${index}`, `2024-06-01T${hour}:00:00Z`, 'Montreal'));
   const stories = buildReadyStoryCandidates({ media, now: new Date('2026-08-13T12:00:00Z') });
   const trip = stories.find(item => item.type === 'trip');
   assert.ok(trip);
@@ -100,6 +100,8 @@ test('ready story API is user-scoped, bounded and contains no automatic AI execu
   assert.doesNotMatch(route, /runAiTask|generateContent|openai|gemini/i);
   assert.match(route, /autoPost: false/);
   assert.match(route, /approvalRequired: true/);
+  assert.match(route, /COLLECTION = 'creative_projects'/);
+  assert.match(route, /PROJECT_KIND = 'ready-story'/);
 });
 
 test('Home presents ready collages before secondary prompts and review remains explicit', async () => {
@@ -124,7 +126,9 @@ test('ready story review exports the collage locally and uses explicit Web Share
   assert.doesNotMatch(editor, /runAiTask|generateContent/);
 });
 
-test('account deletion inventory includes private ready story manifests', async () => {
+test('ready story manifests inherit existing creative project account deletion', async () => {
   const plan = await read(path.join('lib', 'account-deletion-plan.js'));
-  assert.match(plan, /readyStoryDrafts: \{ userId \}/);
+  const deletion = await read(path.join('lib', 'account-deletion.js'));
+  assert.match(plan, /creativeProjects: \{ userId \}/);
+  assert.match(deletion, /collection\('creative_projects'\)\.deleteMany\(filters\.creativeProjects\)/);
 });
