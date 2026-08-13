@@ -97,7 +97,7 @@ test('Home weather welcome is compact and replaces the hourly strip with a daily
   assert.match(component, /Good morning|greeting\(\)/);
   assert.match(component, /home-weather-daily-brief/);
   assert.match(component, /dailyBrief/);
-  assert.match(component, /weather\.today/);
+  assert.match(component, /weather\?\.today/);
   assert.doesNotMatch(component, /home-weather-hourly/);
   assert.doesNotMatch(component, /text-\[72px\]/);
   assert.match(component, /MET Norway|weather\.attribution/);
