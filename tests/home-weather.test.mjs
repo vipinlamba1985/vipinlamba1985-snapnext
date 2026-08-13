@@ -46,13 +46,13 @@ test('weather hour formatting respects the supplied timezone', () => {
   assert.equal(formatWeatherHour('2026-08-13T13:00:00Z', 'UTC'), '1PM');
 });
 
-test('Home weather normalizes current conditions, next hours and an honest 24-hour range', () => {
+test('Home weather builds a whole-day brief instead of an hourly forecast strip', () => {
   const temperatures = [19, 18, 18, 18, 17, 17, 18, 20, 22, 24, 25, 24, 23, 22, 21, 20, 19, 18, 18, 17, 17, 18, 18, 19];
   const timeseries = temperatures.map((temperature, index) => point(
     index,
     temperature,
-    index === 5 ? 'lightrain' : 'partlycloudy_day',
-    index === 5 ? 0.8 : 0,
+    index === 9 ? 'lightrain' : 'partlycloudy_day',
+    index === 9 ? 0.8 : 0,
   ));
   const weather = normalizeMetForecast(
     { properties: { timeseries } },
@@ -63,11 +63,18 @@ test('Home weather normalizes current conditions, next hours and an honest 24-ho
   assert.equal(weather.city, 'Montreal');
   assert.equal(weather.current.temperature, 19);
   assert.equal(weather.current.wind, 12);
+  assert.equal(weather.today.high, 25);
+  assert.equal(weather.today.low, 17);
   assert.equal(weather.range24h.high, 25);
   assert.equal(weather.range24h.low, 17);
-  assert.equal(weather.hourly.length, 6);
-  assert.equal(weather.hourly[5].kind, 'rain');
-  assert.match(weather.summary, /Wet weather is possible around 5AM/);
+  assert.equal(weather.dailyBrief.kind, 'partly-cloudy');
+  assert.equal(weather.dailyBrief.precipitationTotal, 0.8);
+  assert.match(weather.dailyBrief.text, /Partly cloudy\./);
+  assert.match(weather.dailyBrief.text, /High 25°, low 17°\./);
+  assert.match(weather.dailyBrief.text, /Rain possible this morning\./);
+  assert.match(weather.dailyBrief.text, /Winds up to 12 km\/h\./);
+  assert.equal(weather.summary, weather.dailyBrief.text);
+  assert.equal(weather.hourly, undefined);
   assert.equal(weather.attribution.provider, 'MET Norway');
 });
 
@@ -83,13 +90,16 @@ test('weather route uses coarse Vercel IP location through a server-side MET Nor
   assert.doesNotMatch(route, /open-meteo|navigator\.geolocation|apikey/i);
 });
 
-test('Home weather welcome replaces the duplicate header without changing Home navigation', async () => {
+test('Home weather welcome is compact and replaces the hourly strip with a daily brief', async () => {
   const component = await read(path.join('components', 'home', 'HomeWeatherWelcome.js'));
   const layout = await read(path.join('app', '(app)', 'dashboard', 'layout.js'));
   assert.match(component, /data-testid="home-weather-welcome"/);
   assert.match(component, /Good morning|greeting\(\)/);
-  assert.match(component, /range24h/);
-  assert.match(component, /home-weather-hourly/);
+  assert.match(component, /home-weather-daily-brief/);
+  assert.match(component, /dailyBrief/);
+  assert.match(component, /weather\.today/);
+  assert.doesNotMatch(component, /home-weather-hourly/);
+  assert.doesNotMatch(component, /text-\[72px\]/);
   assert.match(component, /MET Norway|weather\.attribution/);
   assert.doesNotMatch(component, /navigator\.geolocation/);
   assert.match(layout, /HomeWeatherWelcome/);
