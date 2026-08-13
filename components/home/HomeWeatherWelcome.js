@@ -168,9 +168,10 @@ export default function HomeWeatherWelcome() {
                   <p className="text-lg font-black">{weather.current.condition}</p>
                 </div>
                 <p className="mt-1 text-sm font-bold text-white/70">
-                  {weather.today?.high !== null ? `H:${weather.today.high}°` : ''}
-                  {weather.today?.high !== null && weather.today?.low !== null ? '  ' : ''}
-                  {weather.today?.low !== null ? `L:${weather.today.low}°` : ''}
+                  <span className="mr-2 text-[10px] uppercase tracking-wide text-white/40">Next 24h</span>
+                  {weather.range24h?.high !== null ? `H:${weather.range24h.high}°` : ''}
+                  {weather.range24h?.high !== null && weather.range24h?.low !== null ? '  ' : ''}
+                  {weather.range24h?.low !== null ? `L:${weather.range24h.low}°` : ''}
                 </p>
               </div>
 
