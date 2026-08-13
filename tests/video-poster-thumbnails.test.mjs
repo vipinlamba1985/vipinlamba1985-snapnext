@@ -64,7 +64,7 @@ test('thumbnail GET serves a poster without falling through to original video st
   const videoBranch = route.slice(route.indexOf("if (doc.kind === 'video')"), route.indexOf("if (doc.kind !== 'photo')"));
   assert.match(videoBranch, /getVideoPoster/);
   assert.match(videoBranch, /Video poster not available/);
-  assert.doesNotMatch(videoBranch, /storage\.read|GetObjectCommand/, 'video grid reads must never touch the original');
+  assert.doesNotMatch(videoBranch, /storage\.read|GetObjectCommand/, 'video grid reads must never touch the original through the thumbnail route');
 });
 
 test('device extraction uploads only a small JPEG derivative and has no provider calls', async () => {
@@ -84,9 +84,20 @@ test('backup completion never waits on poster success', async () => {
   assert.match(upload, /persistLocalVideoPoster\(mediaId, poster\)\.catch\(\(\) => null\)/);
 });
 
-test('virtualized Library requests posters only for visible video rows', async () => {
+test('virtualized Library requests stored posters only for rendered video rows', async () => {
   const grid = await read(path.join('components', 'gallery', 'VirtualizedDayGrid.js'));
   assert.match(grid, /item\?\.kind !== 'video'/);
   assert.match(grid, /galleryThumbnailSrc\(item\.id, 480\)/);
   assert.match(grid, /visibleRows\.map/);
+});
+
+test('legacy videos with no stored poster use a bounded live-frame fallback instead of a black tile', async () => {
+  const grid = await read(path.join('components', 'gallery', 'VirtualizedDayGrid.js'));
+  assert.match(grid, /onError=\{\(\) => setPosterMissing\(true\)\}/);
+  assert.match(grid, /originalSrc = mediaSrc\(item\.id\)/);
+  assert.match(grid, /preload="metadata"/);
+  assert.match(grid, /onLoadedMetadata=\{seekLegacyVideoPreview\}/);
+  assert.match(grid, /video\.currentTime = frameTime/);
+  assert.match(grid, /Math\.min\(Math\.max\(duration \* 0\.02, 0\.05\), 0\.5\)/);
+  assert.doesNotMatch(grid, /OpenAI|Gemini|Rekognition|MediaConvert|ffmpeg|apiFetch\(/i);
 });

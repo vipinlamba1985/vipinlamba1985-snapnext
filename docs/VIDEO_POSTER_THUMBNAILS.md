@@ -1,6 +1,6 @@
 # Video poster thumbnails
 
-SnapNext Library video tiles may display a small poster JPEG without loading the original video into the browsing grid.
+SnapNext Library video tiles prefer a small poster JPEG so ordinary browsing does not need to decode original videos.
 
 ## Launch contract
 
@@ -15,18 +15,22 @@ SnapNext Library video tiles may display a small poster JPEG without loading the
 
 ## Existing and cloud-imported videos
 
-This launch implementation does **not** perform an unattended backfill over existing videos and does not download cloud-imported video originals merely to create browsing posters. Those videos keep the existing lightweight play-card fallback until a trusted local/device poster source exists.
+SnapNext still does **not** run an unattended historical backfill and does not introduce server-side video transcoding.
 
-That limitation is intentional: generating a prettier grid must not silently create video-transcoding infrastructure, cloud egress, cold-storage retrieval, or per-video processing cost.
+When a currently rendered Library tile belongs to an older video with no stored poster, the client may use the authenticated original media URL with `preload="metadata"` and a bounded seek near the beginning of the video to display a real frame instead of a black placeholder. This fallback exists only for the virtualized rows currently on screen; it does not scan or decode the whole library in the background.
+
+This is a deliberate tradeoff: historical videos may incur a small on-demand media read when their missing poster is actually visible, but SnapNext avoids a bulk video-processing job, AI call, Rekognition call, MediaConvert job, or ffmpeg service. Newly backed-up videos continue to use the small persisted JPEG poster path.
 
 ## Privacy and ownership
 
 Poster upload requires an authenticated user and the target video must belong to that user and not be trashed. The server validates the small image derivative with Sharp and stores only the normalized JPEG derivative. It does not decode the source video.
 
+The legacy live-frame fallback also uses the user's authenticated media endpoint and does not send the video to a third-party processing provider.
+
 ## Gallery behavior
 
-Row virtualization remains authoritative. Only currently rendered video rows request poster URLs. A missing poster returns a non-cacheable 404 and the existing video fallback remains visible; the Library does not fetch the original video as a substitute.
+Row virtualization remains authoritative. Only currently rendered video rows request poster URLs. A missing poster returns a non-cacheable 404; the visible tile then falls back to the browser's native video decoder with metadata-only preload and a bounded seek so the user sees an actual video frame where the device/browser codec permits it. If the codec cannot decode the video, the lightweight play-card fallback remains available.
 
 ## Future work
 
-If poster coverage for historical or cloud-imported videos becomes necessary, add it only through an explicitly costed and measured path (for example, trusted native extraction when the original is already local). Do not introduce bulk server transcoding as an implicit Gallery dependency.
+If persistent poster coverage for all historical or cloud-imported videos becomes necessary, add it only through an explicitly costed and measured path, preferably trusted native extraction when the original is already local. Do not introduce bulk server transcoding as an implicit Gallery dependency.

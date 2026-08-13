@@ -5,24 +5,74 @@ import {
   buildGalleryVirtualLayout,
   selectGalleryVirtualRows,
 } from '@/lib/gallery-virtualization';
+import { mediaSrc } from '@/lib/api-client';
 import { galleryThumbnailSrc } from '@/lib/gallery-media-client';
 
 function sameMetrics(a, b) {
   return a.width === b.width && a.scrollTop === b.scrollTop && a.viewportHeight === b.viewportHeight;
 }
 
-function renderGridItem(item, renderItem) {
-  if (item?.kind !== 'video') return renderItem(item);
+function seekLegacyVideoPreview(event) {
+  const video = event.currentTarget;
+  const duration = Number(video.duration);
+  const frameTime = Number.isFinite(duration) && duration > 0
+    ? Math.min(Math.max(duration * 0.02, 0.05), 0.5)
+    : 0.05;
+
+  try {
+    if (Math.abs(Number(video.currentTime || 0) - frameTime) > 0.01) {
+      video.currentTime = frameTime;
+    }
+  } catch {
+    // Some codecs/webviews reject programmatic seeking before enough metadata
+    // has arrived. The video element can still display its first decoded frame.
+  }
+}
+
+function VideoGridItem({ item, renderItem }) {
+  const posterSrc = galleryThumbnailSrc(item.id, 480);
+  const originalSrc = mediaSrc(item.id);
+  const [posterMissing, setPosterMissing] = useState(!posterSrc);
+  const [videoFailed, setVideoFailed] = useState(false);
+
   return (
     <div
-      key={item.id}
       data-video-poster="true"
-      className="h-full min-w-0 overflow-hidden rounded-xl bg-cover bg-center"
-      style={{ backgroundImage: `url(${JSON.stringify(galleryThumbnailSrc(item.id, 480))})` }}
+      data-video-live-fallback={posterMissing && !videoFailed ? 'true' : 'false'}
+      className="relative h-full min-w-0 overflow-hidden rounded-xl"
     >
-      {renderItem(item)}
+      {!posterMissing && posterSrc ? (
+        <img
+          src={posterSrc}
+          alt=""
+          aria-hidden="true"
+          decoding="async"
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          onError={() => setPosterMissing(true)}
+        />
+      ) : originalSrc && !videoFailed ? (
+        <video
+          src={originalSrc}
+          aria-hidden="true"
+          tabIndex={-1}
+          muted
+          playsInline
+          preload="metadata"
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          onLoadedMetadata={seekLegacyVideoPreview}
+          onError={() => setVideoFailed(true)}
+        />
+      ) : null}
+      <div className="relative z-10 h-full min-w-0">
+        {renderItem(item)}
+      </div>
     </div>
   );
+}
+
+function renderGridItem(item, renderItem) {
+  if (item?.kind !== 'video') return renderItem(item);
+  return <VideoGridItem key={item.id} item={item} renderItem={renderItem} />;
 }
 
 export default function VirtualizedDayGrid({ groups, renderItem }) {
