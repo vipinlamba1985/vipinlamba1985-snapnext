@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
-import { StoryCollage, StoryMotionReel } from '@/components/ready-stories/StoryVisuals';
+import { StoryCollage } from '@/components/ready-stories/StoryVisuals';
+import StoryReelAudio from '@/components/ready-stories/StoryReelAudio';
 
 export default function ReadyStorySmartShowcase({ storyId }) {
   const [story, setStory] = useState(null);
@@ -28,8 +29,8 @@ export default function ReadyStorySmartShowcase({ storyId }) {
 
     <div className="grid items-start gap-5 lg:grid-cols-[0.8fr_1.2fr]">
       <section>
-        <div className="mb-2 flex items-center justify-between"><p className="text-xs font-black uppercase tracking-wider text-white/45">Auto story preview</p><span className="text-[11px] text-white/35">Muted by default</span></div>
-        <StoryMotionReel story={story} className="mx-auto aspect-[9/14] w-full max-w-[390px] rounded-[2rem] border border-white/10" />
+        <div className="mb-2 flex items-center justify-between"><p className="text-xs font-black uppercase tracking-wider text-white/45">Auto story preview</p><span className="text-[11px] text-white/35">Muted by default · free CC0 soundtrack</span></div>
+        <StoryReelAudio story={story} className="mx-auto aspect-[9/14] w-full max-w-[390px] rounded-[2rem] border border-white/10" />
       </section>
       <section>
         <div className="mb-2 flex items-center justify-between"><p className="text-xs font-black uppercase tracking-wider text-white/45">Smart collage</p><span className="text-[11px] text-white/35">{story.collageLayout || 'editorial'} layout · up to 6 photos</span></div>
