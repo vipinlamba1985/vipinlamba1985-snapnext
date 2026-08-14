@@ -38,7 +38,7 @@ export function StoryCollage({ ids = [], layout = 'editorial', className = '', l
   })}</div>;
 }
 
-export function StoryMotionReel({ story, className = '', compact = false, showTitle = true }) {
+export function StoryMotionReel({ story, className = '', compact = false, showTitle = true, showMutedBadge = true }) {
   const frames = useMemo(() => {
     if (Array.isArray(story?.reelFrames) && story.reelFrames.length) return story.reelFrames.filter(frame => frame?.mediaId).slice(0, 8);
     const ids = Array.isArray(story?.reelMediaIds) ? story.reelMediaIds : story?.mediaIds || [];
@@ -60,16 +60,16 @@ export function StoryMotionReel({ story, className = '', compact = false, showTi
 
   useEffect(() => {
     if (!rootRef.current || typeof IntersectionObserver === 'undefined') return undefined;
-    const observer = new IntersectionObserver(entries => setInView(entries[0]?.isIntersecting !== false), { threshold: 0.25 });
+    const observer = new IntersectionObserver(entries => setInView(entries[0]?.isIntersecting !== false), { threshold: 0.2 });
     observer.observe(rootRef.current);
     return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
-    if (!playing || !inView || reducedMotion || frames.length <= 1) return undefined;
+    if (!playing || !inView || frames.length <= 1) return undefined;
     const timer = window.setInterval(() => setActive(index => (index + 1) % frames.length), compact ? 3000 : 3600);
     return () => window.clearInterval(timer);
-  }, [compact, frames.length, inView, playing, reducedMotion]);
+  }, [compact, frames.length, inView, playing]);
 
   useEffect(() => {
     if (!frames.length) return;
@@ -83,11 +83,11 @@ export function StoryMotionReel({ story, className = '', compact = false, showTi
   const frame = frames[active % frames.length];
 
   return <div ref={rootRef} className={`relative overflow-hidden bg-black ${className}`} data-testid="smart-story-reel">
-    <img key={`${frame.mediaId}:${active}`} src={mediaSrc(frame.mediaId)} alt="" decoding="async" className="absolute inset-0 h-full w-full object-cover motion-reduce:animate-none" style={{ animation: reducedMotion ? 'none' : 'snapnextStoryMotion 3.6s ease-out both' }} />
+    <img key={`${frame.mediaId}:${active}`} src={mediaSrc(frame.mediaId)} alt="" decoding="async" className="absolute inset-0 h-full w-full object-cover" style={{ animation: reducedMotion ? 'none' : 'snapnextStoryMotion 3.6s ease-out both' }} />
     <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-black/25" />
-    <div className="absolute inset-x-3 top-3 flex gap-1" aria-hidden="true">{frames.map((entry, index) => <span key={`${entry.mediaId}:${index}`} className={`h-1 flex-1 rounded-full ${index < active ? 'bg-white/75' : index === active ? 'bg-white' : 'bg-white/25'}`} />)}</div>
-    <div className="absolute left-3 top-7 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white/85 backdrop-blur"><VolumeX className="h-3 w-3" />Memory reel · muted</div>
-    <button type="button" onClick={() => setPlaying(value => !value)} aria-label={playing ? 'Pause memory reel' : 'Play memory reel'} className="absolute right-3 top-7 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/40 text-white backdrop-blur">{playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}</button>
+    <div className="absolute inset-x-3 top-3 z-10 flex gap-1" aria-hidden="true">{frames.map((entry, index) => <span key={`${entry.mediaId}:${index}`} className={`h-1 flex-1 rounded-full ${index < active ? 'bg-white/75' : index === active ? 'bg-white' : 'bg-white/25'}`} />)}</div>
+    {showMutedBadge && <div className="absolute left-3 top-7 z-20 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white/85 backdrop-blur"><VolumeX className="h-3 w-3" />Memory reel · muted</div>}
+    <button type="button" onClick={() => setPlaying(value => !value)} aria-label={playing ? 'Pause memory reel' : 'Play memory reel'} className="absolute right-3 top-7 z-20 grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-black/50 text-white backdrop-blur">{playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}</button>
     <div className={`absolute inset-x-0 bottom-0 ${compact ? 'p-3' : 'p-5'}`}>
       {showTitle && <><p className={`${compact ? 'text-[10px]' : 'text-xs'} font-black text-pink-100/80`}>{story?.kicker}</p><h3 className={`${compact ? 'mt-0.5 text-lg' : 'mt-1 text-2xl'} font-black leading-tight`}>{story?.title}</h3></>}
       {frame.caption && <p className={`${showTitle ? 'mt-1' : ''} line-clamp-2 ${compact ? 'text-[11px] leading-4' : 'text-sm leading-5'} text-white/72`}>{frame.caption}</p>}
