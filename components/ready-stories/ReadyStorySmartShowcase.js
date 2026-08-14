@@ -34,7 +34,7 @@ export default function ReadyStorySmartShowcase({ storyId }) {
       <section>
         <div className="mb-2 flex items-center justify-between"><p className="text-xs font-black uppercase tracking-wider text-white/45">Smart collage</p><span className="text-[11px] text-white/35">{story.collageLayout || 'editorial'} layout · up to 6 photos</span></div>
         <StoryCollage ids={collageIds} layout={story.collageLayout} className="aspect-square w-full rounded-[2rem] border border-white/10" loading="eager" />
-        <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs leading-5 text-white/42">SnapNext uses the memory's timing, people, places and existing photo-analysis signals to choose stronger, more varied frames instead of simply taking the first four photos.</div>
+        <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs leading-5 text-white/42">SnapNext uses the memory&apos;s timing, people, places and existing photo-analysis signals to choose stronger, more varied frames instead of simply taking the first four photos.</div>
       </section>
     </div>
   </div>;
