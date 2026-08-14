@@ -43,7 +43,7 @@ export default function StoryReelAudio({ story, className = '', compact = false,
     }
     setAudioError(false);
     audio.muted = false;
-    audio.volume = 0.34;
+    audio.volume = 0.28;
     try {
       if (audio.readyState === 0) audio.load();
       await audio.play();
@@ -61,7 +61,7 @@ export default function StoryReelAudio({ story, className = '', compact = false,
         {soundtrack.mp3Url && <source src={soundtrack.mp3Url} type="audio/mpeg" />}
         {soundtrack.audioUrl && <source src={soundtrack.audioUrl} type="audio/ogg" />}
       </audio>
-      <button type="button" onClick={toggleSound} aria-label={soundOn ? 'Mute story soundtrack' : 'Play story soundtrack'} title={`${soundtrack.title} · ${soundtrack.license}`} className="absolute left-3 top-7 z-30 inline-flex min-h-9 items-center gap-2 rounded-full border border-white/20 bg-black/60 px-3 text-[11px] font-black text-white backdrop-blur">
+      <button type="button" onClick={toggleSound} aria-label={soundOn ? 'Mute free story soundtrack' : 'Play free story soundtrack'} title={`${soundtrack.title} · ${soundtrack.license}`} className="absolute left-3 top-7 z-30 inline-flex min-h-9 items-center gap-2 rounded-full border border-white/20 bg-black/60 px-3 text-[11px] font-black text-white backdrop-blur">
         {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
         <span>{soundOn ? 'Sound on' : audioError ? 'Retry sound' : 'Tap for sound'}</span>
       </button>
