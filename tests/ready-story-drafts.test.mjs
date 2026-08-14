@@ -4,7 +4,15 @@ import { readFile } from 'node:fs/promises';
 import { buildReadyStoryCandidates, describeAnnualEventTiming, READY_STORY_MEDIA_LIMIT } from '../lib/ready-story-drafts.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-const photo = (id, at, place = '', people = []) => ({ id, kind: 'photo', capturedAt: at, createdAt: at, people, aiAnalysis: { locations: place ? [place] : [] } });
+const photo = (id, at, place = '', people = [], tags = [], extras = {}) => ({
+  id,
+  kind: 'photo',
+  capturedAt: at,
+  createdAt: at,
+  people,
+  ...extras,
+  aiAnalysis: { locations: place ? [place] : [], tags, ...(extras.aiAnalysis || {}) },
+});
 
 test('celebrations prioritize upcoming and just-passed dates', () => {
   const now = new Date('2026-08-13T12:00:00Z');
@@ -30,12 +38,22 @@ test('birthday drafts use linked photos and require approval', () => {
   assert.equal(story.approvalRequired, true);
 });
 
-test('old trip becomes a bounded collage draft', () => {
-  const media = [8, 10, 12, 14, 16].map((hour, i) => photo(`t${i}`, `2024-06-01T${String(hour).padStart(2, '0')}:00:00Z`, 'Montreal'));
+test('old trip becomes a richer smart story with reel frames', () => {
+  const media = [8, 10, 12, 14, 16, 17, 18, 19].map((hour, i) => photo(`t${i}`, `2024-06-01T${String(hour).padStart(2, '0')}:00:00Z`, 'Montreal', [], ['travel', 'vacation']));
   const story = buildReadyStoryCandidates({ media, now: new Date('2026-08-13T12:00:00Z') }).find(item => item.type === 'trip');
   assert.ok(story);
-  assert.equal(story.sourceCount, 5);
-  assert.equal(story.collageMediaIds.length, 4);
+  assert.equal(story.sourceCount, 8);
+  assert.equal(story.collageMediaIds.length, 6);
+  assert.equal(story.reelMediaIds.length, 8);
+  assert.equal(story.reelFrames.length, 8);
+  assert.ok(['editorial', 'cinema', 'magazine'].includes(story.collageLayout));
+});
+
+test('event semantics stop a wedding from being mislabeled as a trip', () => {
+  const media = [8, 10, 12, 14, 16, 18].map((hour, i) => photo(`w${i}`, `2026-06-30T${String(hour).padStart(2, '0')}:00:00Z`, 'Wedding Hall', [], ['wedding', i % 2 ? 'bride' : 'groom']));
+  const items = buildReadyStoryCandidates({ media, now: new Date('2026-08-13T12:00:00Z') });
+  assert.ok(items.find(item => item.type === 'wedding'));
+  assert.equal(items.some(item => item.type === 'trip'), false);
 });
 
 test('ready-story API is bounded, scoped and contains no AI provider call', async () => {
@@ -47,12 +65,17 @@ test('ready-story API is bounded, scoped and contains no AI provider call', asyn
   assert.doesNotMatch(route, /runAiTask|generateContent|openai|gemini/i);
 });
 
-test('Home review is explicit and collage export is local', async () => {
+test('Home auto-plays a muted motion story and keeps review explicit', async () => {
   const home = await read('components/home/HomeReadyStories.js');
-  const layout = await read('app/(app)/dashboard/layout.js');
+  const visuals = await read('components/ready-stories/StoryVisuals.js');
+  const page = await read('app/(app)/ready-story/[id]/page.js');
   const editor = await read('components/ready-stories/ReadyStoryEditor.js');
-  assert.match(home, /Nothing is sent anywhere until you approve it/);
-  assert.ok(layout.indexOf('<HomeReadyStories />') < layout.indexOf('{children}'));
+  assert.match(home, /Private until you choose to share/);
+  assert.match(home, /StoryMotionReel/);
+  assert.match(visuals, /Memory reel · muted/);
+  assert.match(visuals, /setInterval/);
+  assert.match(visuals, /prefers-reduced-motion/);
+  assert.match(page, /ReadyStorySmartShowcase/);
   assert.match(editor, /document\.createElement\('canvas'\)/);
   assert.match(editor, /navigator\.share/);
 });
