@@ -65,16 +65,24 @@ test('ready-story API is bounded, scoped and contains no AI provider call', asyn
   assert.doesNotMatch(route, /runAiTask|generateContent|openai|gemini/i);
 });
 
-test('Home auto-plays a muted motion story and keeps review explicit', async () => {
+test('Home auto-plays a muted motion story, offers free CC0 audio and keeps review explicit', async () => {
   const home = await read('components/home/HomeReadyStories.js');
   const visuals = await read('components/ready-stories/StoryVisuals.js');
+  const reelAudio = await read('components/ready-stories/StoryReelAudio.js');
+  const audioCatalog = await read('lib/ready-story-audio.js');
   const page = await read('app/(app)/ready-story/[id]/page.js');
   const editor = await read('components/ready-stories/ReadyStoryEditor.js');
   assert.match(home, /Private until you choose to share/);
-  assert.match(home, /StoryMotionReel/);
+  assert.match(home, /StoryReelAudio/);
   assert.match(visuals, /Memory reel · muted/);
   assert.match(visuals, /setInterval/);
   assert.match(visuals, /prefers-reduced-motion/);
+  assert.match(reelAudio, /preload="none"/);
+  assert.match(reelAudio, /Play free story soundtrack/);
+  assert.match(reelAudio, /audio\.volume = 0\.28/);
+  assert.match(audioCatalog, /CC0-1\.0/);
+  assert.match(audioCatalog, /Wikimedia Commons/);
+  assert.match(audioCatalog, /Chill Beat/);
   assert.match(page, /ReadyStorySmartShowcase/);
   assert.match(editor, /document\.createElement\('canvas'\)/);
   assert.match(editor, /navigator\.share/);
