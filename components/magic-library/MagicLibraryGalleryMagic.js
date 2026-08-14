@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import useMagicLibrary from '@/components/magic-library/useMagicLibrary';
 import PeopleActivation from '@/components/magic-library/PeopleActivation';
 import PeopleRow from '@/components/magic-library/PeopleRow';
+import SelfPersonPicker from '@/components/magic-library/SelfPersonPicker';
 import PersonUploadShortcuts from '@/components/magic-library/PersonUploadShortcuts';
 import MediaSection from '@/components/magic-library/MediaSection';
 import MediaViewer from '@/components/magic-library/MediaViewer';
@@ -84,8 +85,8 @@ export default function MagicLibraryGalleryMagic() {
       !isUnknownPerson(person) && displayName(person.name).toLowerCase() === next.toLowerCase()
     ));
     if (personMatch) {
-      if (magic.activation.enabled?.includes?.(personMatch.name)) {
-        setDraftQuery(displayName(personMatch.name));
+      if (magic.activation.enabled?.includes?.(personMatch.name) || personMatch.isSelf) {
+        setDraftQuery(personMatch.isSelf ? 'You' : displayName(personMatch.name));
         magic.setQuery('');
         magic.setActivePerson(personMatch.name);
       } else {
@@ -119,7 +120,7 @@ export default function MagicLibraryGalleryMagic() {
   const activatablePeople = useMemo(() => magic.people.filter((person) => !isUnknownPerson(person)), [magic.people]);
   const selfLabel = useMemo(() => findConfirmedSelfLabel(magic.people), [magic.people]);
   const sections = useMemo(() => {
-    if (magic.activePerson) return buildPersonSections({ items: magic.visibleItems, personName: magic.activePerson, displayName });
+    if (magic.activePerson) return buildPersonSections({ items: magic.visibleItems, personName: magic.activePerson, selfLabel, displayName });
     return buildLibrarySections({ items: magic.query ? magic.visibleItems : magic.items, selfLabel, displayName });
   }, [magic.activePerson, magic.visibleItems, magic.query, magic.items, selfLabel, personNames]);
 
@@ -142,7 +143,7 @@ export default function MagicLibraryGalleryMagic() {
     const values = new Set(magic.suggestions.filter((value) => !UUID_PATTERN.test(String(value || '').trim())));
     magic.people.forEach((person) => {
       if (isUnknownPerson(person)) return;
-      const label = displayName(person.name);
+      const label = person.isSelf ? 'You' : displayName(person.name);
       if (label !== 'Add name') values.add(label);
     });
     return Array.from(values).filter((value) => value.toLowerCase().includes(typed)).slice(0, 6);
@@ -174,6 +175,8 @@ export default function MagicLibraryGalleryMagic() {
         {!!suggestions.length && <div className="mt-2 flex flex-wrap gap-1.5">{suggestions.map((label) => <button key={label} onClick={() => { setDraftQuery(label); runSearch(label); }} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-white/55">{label}</button>)}</div>}
         {magic.query && <div className="mt-2 text-xs text-white/45" role="status" aria-live="polite">{magic.searchBusy ? 'Searching your full library…' : magic.searchError ? <span className="text-rose-300">{magic.searchError}</span> : `${magic.visibleTotal} ${magic.visibleTotal === 1 ? 'memory' : 'memories'} found for “${magic.query}”`}</div>}
       </header>
+
+      <SelfPersonPicker people={magic.people} items={magic.items} onConfirmed={magic.reload} />
 
       {!!magic.people.length && <PeopleRow people={magic.people} enabledNames={magic.activation.enabled || []} activeCount={magic.activation.active.length} trustedCircleNames={magic.trustedCircleNames} activePerson={magic.activePerson} displayName={displayName} onRename={renamePerson} onOpen={(name) => { setSectionKey(null); setCategory(null); setDraftQuery(''); magic.setQuery(''); magic.setActivePerson(name); }} onLocked={setLockedPerson} />}
       <PersonUploadShortcuts people={magic.people} enabledClusterIds={magic.activation.enabled || []} />
