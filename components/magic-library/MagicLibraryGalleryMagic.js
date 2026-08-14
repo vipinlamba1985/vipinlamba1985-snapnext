@@ -151,7 +151,10 @@ export default function MagicLibraryGalleryMagic() {
 
   if (magic.busy) return <div className="grid min-h-[50vh] place-items-center"><Loader2 className="h-8 w-8 animate-spin text-pink-300" /></div>;
   if (activatablePeople.length > 0 && magic.activation.active.length === 0) {
-    return <PeopleActivation people={activatablePeople} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirmPeople} busy={magic.activating} />;
+    return <>
+      <SelfPersonPicker people={magic.people} items={magic.items} onConfirmed={magic.reload} />
+      <PeopleActivation people={activatablePeople} limit={magic.activation.limit} activeNames={magic.activation.active} draftNames={magic.draftNames} onToggle={magic.toggleDraft} onConfirm={confirmPeople} busy={magic.activating} />
+    </>;
   }
 
   return (
