@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ArrowRight, Sparkles, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
-import { StoryCollage, StoryMotionReel } from '@/components/ready-stories/StoryVisuals';
+import { StoryCollage } from '@/components/ready-stories/StoryVisuals';
+import StoryReelAudio from '@/components/ready-stories/StoryReelAudio';
 
 function StoryBadge({ story }) {
   const labels = {
@@ -67,12 +68,12 @@ export default function HomeReadyStories() {
     <div>
       <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.16em] text-pink-200/75"><Sparkles className="h-3.5 w-3.5" />Ready for you</div>
       <h2 className="mt-1 text-[24px] font-black tracking-tight">SnapNext made these from your memories</h2>
-      <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">Auto-playing memory stories and richer collages, smart-selected from people, dates, places and existing photo intelligence. Private until you choose to share.</p>
+      <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">Auto-playing memory stories and richer collages, smart-selected from people, dates, places and existing photo intelligence. A free CC0 soundtrack is ready when you tap sound. Private until you choose to share.</p>
     </div>
 
     <article data-testid={`home-ready-story-${featured.id}`} className="overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.035]">
       <div className="relative h-[310px] sm:h-[340px]">
-        <StoryMotionReel story={featured} className="h-full w-full" />
+        <StoryReelAudio story={featured} className="h-full w-full" />
         <div className="absolute right-14 top-7"><StoryBadge story={featured} /></div>
         <button onClick={() => dismiss(featured.id)} aria-label="Dismiss this story" className="absolute right-4 top-[4.6rem] grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-black/45 backdrop-blur"><X className="h-4 w-4" /></button>
       </div>
