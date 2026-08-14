@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, ChevronDown, Loader2, ShieldCheck, UserRound, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import PeopleFaceThumbnail from '@/components/magic-library/PeopleFaceThumbnail';
@@ -9,7 +9,6 @@ import { mediaCategory } from '@/lib/media-category';
 import { publishLibraryRefresh } from '@/lib/library-refresh';
 import { toast } from 'sonner';
 
-const DISMISSED_KEY = 'snapnext.selfPersonPicker.dismissed.session.v1';
 const INITIAL_CANDIDATES = 5;
 const MAX_CANDIDATES = 20;
 
@@ -38,26 +37,15 @@ function eligibleCandidates(people = [], items = []) {
 
 export default function SelfPersonPicker({ people = [], items = [], onConfirmed }) {
   const [dismissed, setDismissed] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState('');
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    try { setDismissed(sessionStorage.getItem(DISMISSED_KEY) === '1'); } catch {}
-    setHydrated(true);
-  }, []);
 
   const alreadyConfirmed = people.some((person) => Boolean(person?.isSelf));
   const candidates = useMemo(() => eligibleCandidates(people, items), [people, items]);
   const visible = candidates.slice(0, expanded ? MAX_CANDIDATES : INITIAL_CANDIDATES);
 
-  if (!hydrated || alreadyConfirmed || dismissed || !candidates.length) return null;
-
-  function dismiss() {
-    setDismissed(true);
-    try { sessionStorage.setItem(DISMISSED_KEY, '1'); } catch {}
-  }
+  if (alreadyConfirmed || dismissed || !candidates.length) return null;
 
   async function confirmSelf() {
     if (!selected || busy) return;
@@ -80,7 +68,7 @@ export default function SelfPersonPicker({ people = [], items = [], onConfirmed 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 px-0 backdrop-blur-sm sm:items-center sm:p-5" data-testid="self-person-picker" role="dialog" aria-modal="true" aria-labelledby="self-person-picker-title">
       <section className="relative max-h-[88vh] w-full overflow-y-auto rounded-t-[2.25rem] border border-white/10 bg-[#100918] px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-6 shadow-2xl shadow-black/60 sm:max-w-xl sm:rounded-[2rem] sm:p-7">
-        <button type="button" onClick={dismiss} aria-label="Not now" className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-white/[0.07] text-white/55"><X className="h-5 w-5" /></button>
+        <button type="button" onClick={() => setDismissed(true)} aria-label="Not now" className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full bg-white/[0.07] text-white/55"><X className="h-5 w-5" /></button>
 
         <div className="pr-12 text-center">
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-pink-500/25 to-purple-500/20 text-pink-100"><UserRound className="h-6 w-6" /></span>
@@ -114,7 +102,7 @@ export default function SelfPersonPicker({ people = [], items = [], onConfirmed 
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {busy ? 'Confirming…' : "Yes, that's me"}
           </button>
-          <button type="button" onClick={dismiss} className="min-h-12 rounded-full border border-white/10 bg-white/[0.04] px-6 text-sm font-black text-white/60">None of these / later</button>
+          <button type="button" onClick={() => setDismissed(true)} className="min-h-12 rounded-full border border-white/10 bg-white/[0.04] px-6 text-sm font-black text-white/60">None of these / later</button>
         </div>
 
         <div className="mt-5 flex items-start gap-2 rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.06] p-3 text-xs leading-5 text-emerald-100/70">
