@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, Loader2, ShieldCheck, UserRound, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import PeopleFaceThumbnail from '@/components/magic-library/PeopleFaceThumbnail';
@@ -37,19 +37,22 @@ function eligibleCandidates(people = [], items = []) {
 }
 
 export default function SelfPersonPicker({ people = [], items = [], onConfirmed }) {
-  const [dismissed, setDismissed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    try { return sessionStorage.getItem(DISMISSED_KEY) === '1'; } catch { return false; }
-  });
+  const [dismissed, setDismissed] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    try { setDismissed(sessionStorage.getItem(DISMISSED_KEY) === '1'); } catch {}
+    setHydrated(true);
+  }, []);
 
   const alreadyConfirmed = people.some((person) => Boolean(person?.isSelf));
   const candidates = useMemo(() => eligibleCandidates(people, items), [people, items]);
   const visible = candidates.slice(0, expanded ? MAX_CANDIDATES : INITIAL_CANDIDATES);
 
-  if (alreadyConfirmed || dismissed || !candidates.length) return null;
+  if (!hydrated || alreadyConfirmed || dismissed || !candidates.length) return null;
 
   function dismiss() {
     setDismissed(true);
