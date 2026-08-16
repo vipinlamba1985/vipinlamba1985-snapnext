@@ -17,6 +17,8 @@ test('AI and canonical render spend reserve from one shared company margin budge
   assert.match(profitGuard, /kind: 'ai'/);
   assert.match(productGate, /reserveMeteredWorkSpend/);
   assert.match(productGate, /kind: 'product'/);
+  assert.match(productGate, /costOverrunUsd/);
+  assert.match(productGate, /actualCostUsd: actual/);
 });
 
 test('canonical render cannot proceed without an explicit positive cost estimate', async () => {
@@ -45,6 +47,8 @@ test('every permanent media deletion entry point routes through the generation c
   const trash = await read('lib/trash-purge.js');
   const account = await read('lib/account-deletion.js');
   for (const source of [library, trash, account]) assert.match(source, /coordinatePermanentMediaDeletion/);
+  assert.match(account, /deleteAllControlledRenderArtifactsForUser/);
+  assert.match(account, /renderArtifactsVerifiedAbsent/);
 });
 
 test('deletion generation becomes active atomically and blocks cache/render reads', async () => {
@@ -67,6 +71,8 @@ test('controlled source and derived deletion verifies storage absence', async ()
   assert.match(strictDelete, /storage_deletion_verification_failed/);
   assert.match(coordinator, /deleteStoredMediaVerified/);
   assert.match(artifacts, /deleteStoredMediaVerified/);
+  assert.match(artifacts, /render_artifact_cleanup_required/);
+  assert.match(artifacts, /deletion_failed/);
 });
 
 test('render publication rechecks deletion generation before and after ready state', async () => {
