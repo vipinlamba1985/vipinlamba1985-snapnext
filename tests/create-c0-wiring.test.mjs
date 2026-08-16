@@ -47,6 +47,28 @@ test('every permanent media deletion entry point routes through the generation c
   for (const source of [library, trash, account]) assert.match(source, /coordinatePermanentMediaDeletion/);
 });
 
+test('deletion generation becomes active atomically and blocks cache/render reads', async () => {
+  const generation = await read('lib/media-deletion-generation.server.js');
+  const artifacts = await read('lib/create-render-artifacts.server.js');
+  assert.match(generation, /mediaDeletionInProgress: true/);
+  assert.match(generation, /\$inc: \{ mediaDeletionGeneration: 1 \}/);
+  assert.match(artifacts, /getMediaDeletionGenerationState/);
+  assert.match(artifacts, /deletionState\.inProgress/);
+  assert.match(artifacts, /media_deletion_in_progress/);
+  assert.match(artifacts, /renderReadWindowStillValid/);
+});
+
+test('controlled source and derived deletion verifies storage absence', async () => {
+  const strictDelete = await read('lib/storage-strict-delete.js');
+  const coordinator = await read('lib/media-deletion-coordinator.server.js');
+  const artifacts = await read('lib/create-render-artifacts.server.js');
+  assert.match(strictDelete, /deleteStoredMediaVerified/);
+  assert.match(strictDelete, /verifyStoredMediaAbsent/);
+  assert.match(strictDelete, /storage_deletion_verification_failed/);
+  assert.match(coordinator, /deleteStoredMediaVerified/);
+  assert.match(artifacts, /deleteStoredMediaVerified/);
+});
+
 test('render publication rechecks deletion generation before and after ready state', async () => {
   const artifacts = await read('lib/create-render-artifacts.server.js');
   assert.match(artifacts, /mediaDeletionGenerationIsCurrent/);
