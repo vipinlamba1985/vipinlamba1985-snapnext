@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { purgeExpiredTrash, trashCutoff, trashPurgeBatchSize, trashRetentionDays } from '../lib/trash-purge.js';
 
+async function storageOnlyDeletion({ docs = [], deleteStored }) {
+  for (const item of docs) {
+    await deleteStored({ provider: item.provider || 'local', storageKey: item.storageKey });
+  }
+}
+
 test('trash retention and batch settings are bounded', () => {
   assert.equal(trashRetentionDays('30'), 30);
   assert.equal(trashRetentionDays('0'), 1);
@@ -40,6 +46,7 @@ test('expired trash is atomically claimed and restored when storage deletion fai
     db,
     now: new Date('2026-07-31T00:00:00.000Z'),
     retentionDays: 30,
+    coordinateDeletion: storageOnlyDeletion,
     deleteStored: async (item) => {
       storageDeletes.push(item.storageKey);
       if (item.storageKey.endsWith('two.jpg')) throw new Error('S3 unavailable');
@@ -69,6 +76,7 @@ test('a restored or re-trashed row cannot be claimed from a stale candidate', as
   const result = await purgeExpiredTrash({
     db: { collection() { return collection; } },
     now: new Date('2026-07-31T00:00:00.000Z'),
+    coordinateDeletion: storageOnlyDeletion,
     deleteStored: async () => { storageCalled = true; },
   });
   assert.equal(storageCalled, false);
