@@ -1,0 +1,54 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const read = file => readFile(path.join(repoRoot, file), 'utf8');
+
+test('AI and canonical render spend reserve from one shared company margin budget', async () => {
+  const profitGuard = await read('lib/ai-profit-guard.js');
+  const productGate = await read('lib/product-spend-gate.js');
+  assert.match(profitGuard, /metered_work_budget_months/);
+  assert.match(profitGuard, /metered_work_budget_reservations/);
+  assert.match(profitGuard, /product_cost_ledger/);
+  assert.match(profitGuard, /remainingExternalWorkBudgetUsd/);
+  assert.match(profitGuard, /kind: 'ai'/);
+  assert.match(productGate, /reserveMeteredWorkSpend/);
+  assert.match(productGate, /kind: 'product'/);
+});
+
+test('canonical render cannot proceed without an explicit positive cost estimate', async () => {
+  const gate = await read('lib/product-spend-gate.js');
+  const artifacts = await read('lib/create-render-artifacts.server.js');
+  assert.match(gate, /product_cost_estimate_required/);
+  assert.match(artifacts, /estimatedRenderCostUsd/);
+  assert.match(artifacts, /reserveProductSpend/);
+});
+
+test('cache lookup happens before quota and spend reservations', async () => {
+  const artifacts = await read('lib/create-render-artifacts.server.js');
+  const readyIndex = artifacts.indexOf("existing?.status === 'ready'");
+  const quotaIndex = artifacts.indexOf('reserveCanonicalRenderQuota');
+  const costIndex = artifacts.indexOf('reserveProductSpend');
+  assert.ok(readyIndex > 0);
+  assert.ok(quotaIndex > readyIndex);
+  assert.ok(costIndex > quotaIndex);
+});
+
+test('every permanent media deletion entry point routes through the generation coordinator', async () => {
+  const library = await read('lib/media-library-service.js');
+  const trash = await read('lib/trash-purge.js');
+  const account = await read('lib/account-deletion.js');
+  for (const source of [library, trash, account]) assert.match(source, /coordinatePermanentMediaDeletion/);
+});
+
+test('render publication rechecks deletion generation before and after ready state', async () => {
+  const artifacts = await read('lib/create-render-artifacts.server.js');
+  assert.match(artifacts, /mediaDeletionGenerationIsCurrent/);
+  assert.match(artifacts, /media_deletion_generation_moved/);
+  assert.match(artifacts, /media_deletion_generation_moved_after_publish/);
+  assert.match(artifacts, /pending_validation/);
+  assert.match(artifacts, /stale_source/);
+});
