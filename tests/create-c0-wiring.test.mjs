@@ -29,9 +29,12 @@ test('canonical render cannot proceed without an explicit positive cost estimate
 
 test('cache lookup happens before quota and spend reservations', async () => {
   const artifacts = await read('lib/create-render-artifacts.server.js');
-  const readyIndex = artifacts.indexOf("existing?.status === 'ready'");
-  const quotaIndex = artifacts.indexOf('reserveCanonicalRenderQuota');
-  const costIndex = artifacts.indexOf('reserveProductSpend');
+  const prepareStart = artifacts.indexOf('export async function prepareCanonicalRender');
+  assert.ok(prepareStart > 0);
+  const prepare = artifacts.slice(prepareStart);
+  const readyIndex = prepare.indexOf("existing?.status === 'ready'");
+  const quotaIndex = prepare.indexOf('const quota = await reserveCanonicalRenderQuota');
+  const costIndex = prepare.indexOf('const cost = await reserveProductSpend');
   assert.ok(readyIndex > 0);
   assert.ok(quotaIndex > readyIndex);
   assert.ok(costIndex > quotaIndex);
