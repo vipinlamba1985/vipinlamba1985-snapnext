@@ -4,6 +4,7 @@ import { getUserFromRequest } from '@/lib/auth';
 import { runAiTask } from '@/lib/ai-router-budgeted';
 import { buildLifeIntelligenceContext, contextPromptSummary } from '@/lib/life-intelligence-context';
 import { averageMatchConfidence, recordLifeGptAudit, validateLifeGptCitations } from '@/lib/lifegpt-trust';
+import { buildAskSnapNextActions } from '@/lib/ask-snapnext-intent';
 
 export const runtime = 'nodejs';
 
@@ -40,6 +41,9 @@ function needsCreationClarification(query, resolved) {
   return isCreation && !hasScope;
 }
 function safeAiUnavailableMessage() { return 'AI writing is temporarily unavailable. Your matching memories are still available below.'; }
+function actionsFor(query, matches, clarificationNeeded = false) {
+  return buildAskSnapNextActions({ query, matchCount: matches.length, clarificationNeeded });
+}
 
 export async function POST(request) {
   const startedAt = Date.now();
@@ -49,7 +53,7 @@ export async function POST(request) {
     const body = await request.json().catch(() => ({}));
     const query = String(body.query || '').trim();
     if (!query) return json({ error: 'Query is required' }, 400);
-    if (query.length > 1200) return json({ error: 'Please shorten your LifeGPT request to 1,200 characters or less.' }, 400);
+    if (query.length > 1200) return json({ error: 'Please shorten your Ask SnapNext request to 1,200 characters or less.' }, 400);
 
     const db = await getDb();
     const intelligence = await buildLifeIntelligenceContext(db, user.id, query, { mediaLimit: 1000, matchLimit: 12 });
@@ -64,9 +68,10 @@ export async function POST(request) {
     if (needsCreationClarification(query, resolved)) {
       await recordLifeGptAudit(db, { ...baseAudit, mode: 'clarification', usedAi: false, creditsUsed: 0, citationValid: null, fallbackReason: 'creation_scope_missing', durationMs: Date.now() - startedAt });
       return json({
-        reply: 'I can create that. Which memories should I use—your latest photos, favorites, a person, or a confirmed event?',
+        reply: 'I can prepare that. Which memories should I use—your latest photos, favorites, a person, or a confirmed event?',
         matches: [], grounded: true, usedAi: false, creditsUsed: 0, clarificationNeeded: true,
         suggestions: ['Use my latest photos', 'Use my favorites', 'Choose a person', 'Choose an event'],
+        actions: actionsFor(query, [], true),
         queryContext, intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) },
         note: 'No AI Credits were used while I asked for the missing details.',
       });
@@ -76,6 +81,7 @@ export async function POST(request) {
       await recordLifeGptAudit(db, { ...baseAudit, mode: 'retrieval', usedAi: false, creditsUsed: 0, citationValid: null, fallbackReason: null, durationMs: Date.now() - startedAt });
       return json({
         reply: deterministicReply(query, matches, result.range, queryContext), matches, grounded: true, usedAi: false, creditsUsed: 0, queryContext,
+        actions: actionsFor(query, matches),
         memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
         intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) },
         note: 'Context assembly, confirmed-label resolution, graph lookup and retrieval consume 0 AI Credits.',
@@ -89,7 +95,7 @@ export async function POST(request) {
       memoryScore: item.qualityScore, matchConfidence: item.confidence, matchReasons: item.reasons,
     }));
     const strictPrompt = [
-      'You are LifeGPT, SnapNext\'s private memory assistant.',
+      'You are Ask SnapNext, SnapNext\'s private Life OS assistant.',
       'Answer ONLY from the evidence JSON and confirmed context below.',
       'Never invent people, relationships, places, dates, feelings, events, or facts.',
       'If evidence is insufficient, say so plainly.',
@@ -110,6 +116,7 @@ export async function POST(request) {
       await recordLifeGptAudit(db, { ...baseAudit, mode: 'narrative', usedAi: false, creditsUsed: 0, citationValid: null, fallbackReason: aiResult.error?.code || 'provider_unavailable', durationMs: Date.now() - startedAt });
       return json({
         reply: deterministicReply(query, matches, result.range, queryContext), matches, grounded: true, usedAi: false, creditsUsed: 0, aiDeferred: true, queryContext,
+        actions: actionsFor(query, matches),
         memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
         intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) }, note: safeAiUnavailableMessage(),
       });
@@ -122,6 +129,7 @@ export async function POST(request) {
       await recordLifeGptAudit(db, { ...baseAudit, mode: 'narrative', usedAi: true, creditsUsed, citationValid: false, citationCount: citationCheck.citations.length, invalidCitationCount: citationCheck.invalid.length, fallbackReason: 'citation_validation_failed', provider: aiResult.meta?.provider || null, durationMs: Date.now() - startedAt });
       return json({
         reply: deterministicReply(query, matches, result.range, queryContext), matches, grounded: true, usedAi: true, creditsUsed, citationFallback: true, queryContext,
+        actions: actionsFor(query, matches),
         memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
         intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) },
         note: 'The generated draft did not pass source validation, so only verified memory results are shown.', meta: aiResult.meta || null,
@@ -131,11 +139,12 @@ export async function POST(request) {
     await recordLifeGptAudit(db, { ...baseAudit, mode: 'narrative', usedAi: true, creditsUsed, citationValid: true, citationCount: citationCheck.citations.length, invalidCitationCount: 0, fallbackReason: null, provider: aiResult.meta?.provider || null, durationMs: Date.now() - startedAt });
     return json({
       reply: generatedReply, matches, grounded: true, usedAi: true, creditsUsed, citationValid: true, queryContext,
+      actions: actionsFor(query, matches),
       memoryBrain: { indexed: items.length, queryTerms: result.terms, explainable: true, averageConfidence: baseAudit.averageConfidence },
       intelligence: { graph, preferencesApplied: Object.keys(queryContext.preferences || {}) }, meta: aiResult.meta || null,
     });
   } catch (error) {
-    console.error('[lifegpt] query failed', error?.message);
-    return json({ error: 'LifeGPT could not complete that request right now.' }, 500);
+    console.error('[ask-snapnext] query failed', error?.message);
+    return json({ error: 'Ask SnapNext could not complete that request right now.' }, 500);
   }
 }
