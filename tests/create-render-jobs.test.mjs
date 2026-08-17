@@ -110,7 +110,7 @@ test('C1 failed provider spend is ledgered once per idempotent render job', asyn
   assert.equal(rows.length, 1);
   assert.equal(rows[0].actualCostUsd, 0.07);
   assert.equal(rows[0].approvedCostUsd, 0.05);
-  assert.equal(rows[0].costOverrunUsd, 0.020000000000000004);
+  assert.ok(Math.abs(rows[0].costOverrunUsd - 0.02) < 1e-12);
   assert.equal(rows[0].status, 'settled');
 });
 
