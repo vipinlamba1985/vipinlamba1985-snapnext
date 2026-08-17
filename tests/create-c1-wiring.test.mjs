@@ -20,6 +20,18 @@ test('C1 request API stays on top of C0 quota, spend, source and deletion gates'
   assert.doesNotMatch(route, /new URL\([^\n]*request\.url/);
 });
 
+test('C1 stalled attempts are cleaned and re-prepared before reservations can expire', async () => {
+  const route = await read('app/api/create/reels/render/route.js');
+  const jobs = await read('lib/create-render-jobs.server.js');
+  assert.match(route, /canonicalRenderJobNeedsRecovery/);
+  assert.match(route, /recoverStalledAttempt/);
+  assert.match(route, /markCanonicalRenderJobFailed/);
+  assert.match(jobs, /CANONICAL_RENDER_JOB_MAX_AGE_MS = 20 \* 60 \* 1000/);
+  assert.match(jobs, /render_dispatch_stalled/);
+  assert.match(jobs, /render_worker_stalled/);
+  assert.match(jobs, /render_validation_stalled/);
+});
+
 test('C1 provider gets signed private reads but no future final-object write capability at dispatch', async () => {
   const execution = await read('lib/create-render-execution.server.js');
   assert.match(execution, /storageAdapter\.getReadUrl/);
@@ -70,6 +82,15 @@ test('C1 dispatch is idempotent and ambiguous network failures remain retryable'
   assert.match(jobs, /retryable: true/);
 });
 
+test('C1 callback rejects expired work, ledgers reported failed cost, and does not swallow C0 cleanup', async () => {
+  const callback = await read('app/api/internal/create-render/callback/route.js');
+  assert.match(callback, /canonicalRenderJobDeadlineExpired/);
+  assert.match(callback, /recordCanonicalRenderAttemptCost/);
+  assert.match(callback, /actualRenderCostUsd: cost\.value/);
+  assert.match(callback, /render_job_deadline_exceeded/);
+  assert.doesNotMatch(callback, /failCanonicalRender\([\s\S]{0,500}?\.catch\(\(\) => null\)/);
+});
+
 test('C1 callback authenticates, validates codec and source window, completes storage, then finalizes', async () => {
   const callback = await read('app/api/internal/create-render/callback/route.js');
   const auth = callback.indexOf("if (!renderCallbackSecretMatches");
@@ -87,10 +108,15 @@ test('C1 callback authenticates, validates codec and source window, completes st
   assert.match(callback, /video\/mp4/);
 });
 
-test('C1 polling endpoint never exposes storage keys or provider credentials', async () => {
+test('C1 polling endpoint exposes only stable user-facing status and no worker/storage internals', async () => {
   const statusRoute = await read('app/api/create/reels/render/[jobId]/route.js');
+  const jobs = await read('lib/create-render-jobs.server.js');
   assert.match(statusRoute, /getCanonicalRenderJob/);
   assert.match(statusRoute, /getReadUrl/);
+  assert.match(statusRoute, /retryRecommended/);
+  assert.doesNotMatch(statusRoute, /artifact\.lastError/);
+  assert.doesNotMatch(statusRoute, /artifact\.deletionFailure/);
   assert.doesNotMatch(statusRoute, /outputStorageKey/);
   assert.doesNotMatch(statusRoute, /CREATE_RENDER_PROVIDER_KEY/);
+  assert.doesNotMatch(jobs.match(/export function safeCanonicalRenderJob[\s\S]*?\n}\n/)?.[0] || '', /providerJobId|artifactDocumentId|failureMessage|outputStorageKey/);
 });
