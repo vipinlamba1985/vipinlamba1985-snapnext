@@ -75,7 +75,7 @@ The canonical key remains:
 
 The worker may upload parts, but it is never authorized to call `CompleteMultipartUpload`. Only SnapNext can complete the multipart session after the worker reports the final probe and part ETags.
 
-This matters for deletion. S3 multipart parts do not become the final object until completion. SnapNext verified deletion now lists and aborts every pending multipart upload for the exact storage key **before** deleting and verifying the object. Therefore an already-issued part URL cannot later be completed into a deleted Reel.
+This matters for deletion. S3 multipart parts do not become the final object until completion. SnapNext verified deletion lists and aborts every pending multipart upload for the exact render storage key before deleting and verifying the object. A worker therefore cannot independently complete an old multipart session into a deleted Reel.
 
 ## 5. Soundtrack pinning
 
@@ -87,7 +87,7 @@ The current CC0 soundtrack includes its source checksum in the SnapNext catalog.
 
 The worker receives the original OGG source whose checksum is pinned by the catalog, rather than a different transcode with a different byte hash. A free/commercial-use label alone is not enough.
 
-## 6. Dispatch and idempotency
+## 6. Dispatch, idempotency, and bounded recovery
 
 The worker request carries:
 
@@ -103,6 +103,17 @@ The worker request carries:
 `jobId` is also sent as the HTTP idempotency key.
 
 A network timeout or ambiguous 5xx/429 response moves the SnapNext job to `dispatch_unknown` instead of creating a second artifact or consuming another quota reservation. Re-submitting the same manifest reuses the same active artifact/job and can safely redispatch the same idempotency key.
+
+C1 deliberately uses a shorter execution lifetime than the C0 45-minute quota/spend reservation lifetime:
+
+- hard job deadline: 20 minutes
+- `dispatching` recovery threshold: 60 seconds without an update
+- `rendering` / `uploading` recovery threshold: 10 minutes without an update
+- `validating` recovery threshold: 2 minutes without an update
+
+When an authenticated user re-requests an identical Reel and the active attempt is stalled, SnapNext first runs C0 verified cleanup, releases the old reservations, closes the old job, then prepares one fresh attempt. The artifact document identity stays canonical to the manifest, while the attempt/job id changes. A late callback for the superseded job therefore no longer matches the active attempt.
+
+A callback that reaches SnapNext after the 20-minute hard deadline is rejected and the attempt is failed through C0 cleanup before its 45-minute reservations can silently expire. If that late callback contains a valid trusted actual-cost report, the spend is still ledgered.
 
 Permanent worker rejections fail the C0 artifact and release its reservations.
 
@@ -124,30 +135,35 @@ Supported callbacks:
 
 For `completed`, SnapNext performs these gates before publication:
 
-1. validate worker probe against canonical H.264/AAC MP4 contract
-2. validate actual cost and planned output byte size
-3. recheck source hashes and media-deletion generation before multipart completion
-4. complete the multipart upload server-side using the worker's ETags
-5. verify exact output byte size in SnapNext S3
-6. verify S3 content type is `video/mp4`
-7. move artifact to `pending_validation`
-8. run the C0 final source-hash and deletion-generation validation
-9. conditionally publish `ready`
-10. recheck deletion generation after publication
-11. settle render quota and actual company render cost
-12. mark the job `ready`
+1. validate the reported actual-cost value when present
+2. validate worker probe against the canonical H.264/AAC MP4 contract
+3. validate planned output byte size
+4. recheck source hashes and media-deletion generation before multipart completion
+5. complete the multipart upload server-side using the worker's ETags
+6. verify exact output byte size in SnapNext S3
+7. verify S3 content type is `video/mp4`
+8. move artifact to `pending_validation`
+9. run the C0 final source-hash and deletion-generation validation
+10. conditionally publish `ready`
+11. recheck deletion generation after publication
+12. settle render quota and actual company render cost
+13. mark the job `ready`
 
 If SnapNext crashes after S3 multipart completion but before database finalization, a repeated `completed` callback first detects and verifies the already-created object, then resumes the same finalization path instead of attempting a second upload.
 
 Late callbacks cannot revive a `ready`, `failed`, `stale_source`, or `deletion_failed` artifact. Terminal stale attempts trigger another strict cleanup pass so a late worker cannot reintroduce controlled output.
 
+Cleanup failure is not swallowed. The callback returns a server failure and asks the trusted worker to retry instead of falsely acknowledging a deletion/cleanup that SnapNext could not verify.
+
 ## 8. Polling and download
 
 `GET /api/create/reels/render/:jobId`
 
-The user can poll a safe job/artifact projection. Storage keys, multipart ids, part URLs, and renderer credentials are never returned through the user polling API. A ready artifact receives a short-lived signed MP4 download URL and the frozen external-copy deletion notice.
+The user can poll a deliberately narrow job/artifact projection. Storage keys, multipart ids, part URLs, provider job ids, raw provider failure text, renderer credentials, and internal artifact document ids are not returned through the user polling API.
 
-## 9. Cost assumptions
+The polling response may return a stable `retryRecommended` / `retryReason` code if an active attempt has crossed a recovery threshold. A ready artifact receives a short-lived signed MP4 download URL and the frozen external-copy deletion notice.
+
+## 9. Cost assumptions and failed-attempt accounting
 
 The launch cost reservation is deliberately conservative and configurable:
 
@@ -155,7 +171,11 @@ The launch cost reservation is deliberately conservative and configurable:
 - `CREATE_RENDER_COST_PER_MINUTE_USD` — default 0.12
 - `CREATE_RENDER_COST_PER_SCENE_USD` — default 0.0015
 
-These values are internal reserve assumptions, not user prices. C0 records the trusted worker's actual render cost at settlement.
+These values are internal reserve assumptions, not user prices. Successful output continues to settle through the C0 product-spend reservation.
+
+A renderer can incur compute cost even when an output fails validation or is rejected because its source media changed. When the trusted worker reports a valid actual cost on a failed attempt, C1 writes one deterministic `product_cost_ledger` record keyed by the idempotent render job. Repeated callbacks cannot double-ledger the same attempt. If the worker reports no measured cost, SnapNext does not invent a zero-cost or estimated-cost settlement.
+
+Failed output does not consume the user's monthly successful-render allowance; its real provider cost still remains visible to the shared company Profit Guard through the product cost ledger.
 
 ## 10. Required production configuration
 
@@ -172,8 +192,22 @@ The external renderer must implement the `snapnext-canonical-reel-v1` contract a
 
 For production the callback should be configured to the canonical SnapNext endpoint, for example the production origin plus `/api/internal/create-render/callback`; previews should use an explicitly configured preview callback rather than an inbound request-derived URL.
 
+### S3 IAM required by the C1 server role
+
+The role used by the SnapNext server must keep permissions scoped to the SnapNext bucket and, where possible, the controlled prefixes. C1 requires the existing read/delete operations plus multipart operations:
+
+- object-level `s3:GetObject` for private source reads / verification
+- object-level `s3:PutObject` for creating and uploading multipart Reel objects
+- object-level `s3:DeleteObject` for verified controlled-output deletion
+- object-level `s3:AbortMultipartUpload` for revoking pending Reel publication
+- bucket-level `s3:ListBucketMultipartUploads` so strict deletion can discover pending uploads for the exact render key
+
+AWS documents `s3:PutObject` as the required S3 permission for CreateMultipartUpload and UploadPart, `s3:AbortMultipartUpload` for abort, and `s3:ListBucketMultipartUploads` for listing in-progress multipart uploads. If the bucket uses a customer-managed KMS key, the relevant KMS key policy/identity policy must additionally grant the required `kms:GenerateDataKey` and `kms:Decrypt` operations for multipart encryption/decryption.
+
+The trusted renderer itself receives no AWS IAM credentials. It receives only short-lived source read URLs and, after an authenticated `upload_plan`, short-lived signed UploadPart URLs.
+
 ## 11. What C1 does not claim
 
-C1 implements the SnapNext-side async execution protocol, controlled multipart publication, validation, polling, storage handoff, idempotency, deletion-race protection, and C0 settlement wiring.
+C1 implements the SnapNext-side async execution protocol, controlled multipart publication, validation, polling, storage handoff, idempotency, bounded job recovery, failed-attempt cost visibility, deletion-race protection, and C0 settlement wiring.
 
 It does **not** claim that a production FFmpeg/Remotion worker has been deployed, that the Create editor is calling these APIs, or that physical iPhone/Android export/share QA has passed. Those remain explicit gates before the feature can be presented as shipped to end users.
