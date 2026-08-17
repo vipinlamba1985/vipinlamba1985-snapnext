@@ -20,6 +20,19 @@ test('C1 request API stays on top of C0 quota, spend, source and deletion gates'
   assert.doesNotMatch(route, /new URL\([^\n]*request\.url/);
 });
 
+test('C1 never releases a ready Reel before accounting and deletion-generation checks pass', async () => {
+  const route = await read('app/api/create/reels/render/route.js');
+  const statusRoute = await read('app/api/create/reels/render/[jobId]/route.js');
+  assert.match(route, /canonicalRenderAccountingComplete/);
+  assert.match(route, /repairCanonicalRenderAccounting/);
+  assert.match(route, /mediaDeletionGenerationIsCurrent/);
+  assert.match(route, /Canonical Reel accounting must finish before download/);
+  assert.match(statusRoute, /canonicalRenderAccountingComplete/);
+  assert.match(statusRoute, /mediaDeletionGenerationIsCurrent/);
+  assert.match(statusRoute, /deletionSafetyPending/);
+  assert.match(statusRoute, /const releaseable = accountingComplete && generation\.current === true/);
+});
+
 test('C1 stalled attempts are cleaned and re-prepared before reservations can expire', async () => {
   const route = await read('app/api/create/reels/render/route.js');
   const jobs = await read('lib/create-render-jobs.server.js');
