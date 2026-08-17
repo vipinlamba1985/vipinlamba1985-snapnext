@@ -8,6 +8,11 @@ import {
   markCanonicalRenderPendingValidation,
   verifyCanonicalRenderSources,
 } from '@/lib/create-render-artifacts.server';
+import {
+  canonicalRenderAccountingComplete,
+  rememberCanonicalRenderActualCost,
+  repairCanonicalRenderAccounting,
+} from '@/lib/create-render-accounting.server';
 import { mediaDeletionGenerationIsCurrent } from '@/lib/media-deletion-generation.server';
 import {
   CANONICAL_REEL_MAX_OUTPUT_BYTES,
@@ -130,8 +135,25 @@ async function failAttempt({
   return markCanonicalRenderJobFailed({ db, job, code, message });
 }
 
-async function terminalArtifactResponse({ db, job, artifact }) {
+async function terminalArtifactResponse({ db, job, artifact, actualRenderCostUsd = null }) {
   if (artifact.status === 'ready') {
+    if (!canonicalRenderAccountingComplete(artifact)) {
+      const repaired = await repairCanonicalRenderAccounting({
+        db,
+        userId: job.userId,
+        artifact,
+        actualRenderCostUsd,
+      });
+      if (!repaired.ok) {
+        return json({
+          ok: false,
+          stale: repaired.stale === true,
+          code: repaired.reason || 'render_accounting_incomplete',
+          job: safeCanonicalRenderJob(job),
+        }, repaired.stale ? 409 : 503);
+      }
+      artifact = repaired.artifact;
+    }
     const ready = await markCanonicalRenderJobReady({ db, job });
     return json({ ok: true, idempotent: true, job: safeCanonicalRenderJob(ready) });
   }
@@ -268,14 +290,19 @@ export async function POST(request) {
     });
     if (!artifact || artifact.id !== job.id) return json({ error: 'Render artifact no longer matches this job.' }, 409);
 
-    const status = String(body.status || '').toLowerCase();
-    const terminal = await terminalArtifactResponse({ db, job, artifact });
-    if (terminal) return terminal;
-
     const cost = reportedCost(body);
     if (!cost.ok) {
       return json({ error: 'Renderer reported an invalid actual cost.', code: 'render_actual_cost_invalid' }, 422);
     }
+
+    const status = String(body.status || '').toLowerCase();
+    const terminal = await terminalArtifactResponse({
+      db,
+      job,
+      artifact,
+      actualRenderCostUsd: cost.value,
+    });
+    if (terminal) return terminal;
 
     if (canonicalRenderJobDeadlineExpired(job)) {
       const failed = await failAttempt({
@@ -401,7 +428,7 @@ export async function POST(request) {
             actualRenderCostUsd: cost.value,
             outcome: artifact.staleReason || artifact.status,
           });
-          return terminalArtifactResponse({ db, job, artifact });
+          return terminalArtifactResponse({ db, job, artifact, actualRenderCostUsd: cost.value });
         }
         const failed = await failAttempt({
           db,
@@ -439,6 +466,15 @@ export async function POST(request) {
     if (!pending) {
       const current = await db.collection('render_artifacts').findOne({ _id: job.artifactDocumentId, userId: job.userId });
       if (current?.status === 'ready') {
+        const repaired = await repairCanonicalRenderAccounting({
+          db,
+          userId: job.userId,
+          artifact: current,
+          actualRenderCostUsd: cost.value,
+        });
+        if (!repaired.ok) {
+          return json({ ok: false, code: repaired.reason || 'render_accounting_incomplete' }, repaired.stale ? 409 : 503);
+        }
         const ready = await markCanonicalRenderJobReady({ db, job: validatingJob || job });
         return json({ ok: true, idempotent: true, job: safeCanonicalRenderJob(ready) });
       }
@@ -470,6 +506,14 @@ export async function POST(request) {
       { $unset: { outputMultipartUploadId: '', outputExpectedBytes: '', outputMultipartCreatedAt: '' } },
     );
 
+    const accountingCost = cost.value ?? Number(pending.estimatedRenderCostUsd || 0);
+    await rememberCanonicalRenderActualCost({
+      db,
+      userId: job.userId,
+      artifactId: job.artifactDocumentId,
+      actualRenderCostUsd: accountingCost,
+    });
+
     const finalized = await finalizeCanonicalRender({
       db,
       userId: job.userId,
@@ -491,6 +535,18 @@ export async function POST(request) {
         message: finalized.stale ? 'Source media changed or was deleted before publication.' : 'Rendered MP4 could not be published.',
       });
       return json({ ok: false, code: finalized.reason, stale: finalized.stale === true, job: safeCanonicalRenderJob(failed) }, 409);
+    }
+
+    if (!canonicalRenderAccountingComplete(finalized.artifact)) {
+      const repaired = await repairCanonicalRenderAccounting({
+        db,
+        userId: job.userId,
+        artifact: finalized.artifact,
+        actualRenderCostUsd: accountingCost,
+      });
+      if (!repaired.ok) {
+        return json({ ok: false, code: repaired.reason || 'render_accounting_incomplete' }, repaired.stale ? 409 : 503);
+      }
     }
 
     const ready = await markCanonicalRenderJobReady({ db, job: validatingJob || job });
