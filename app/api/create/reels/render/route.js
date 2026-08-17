@@ -6,6 +6,10 @@ import {
   failCanonicalRender,
   prepareCanonicalRender,
 } from '@/lib/create-render-artifacts.server';
+import {
+  canonicalRenderAccountingComplete,
+  repairCanonicalRenderAccounting,
+} from '@/lib/create-render-accounting.server';
 import { validateCanonicalCreateManifest } from '@/lib/create-render-contract';
 import {
   canonicalRenderCallbackUrl,
@@ -51,6 +55,11 @@ function safeArtifact(artifact = null) {
 }
 
 async function readyPayload({ artifact, job = null }) {
+  if (!canonicalRenderAccountingComplete(artifact)) {
+    const error = new Error('Canonical Reel accounting must finish before download.');
+    error.code = 'render_accounting_incomplete';
+    throw error;
+  }
   const downloadUrl = await storage.getReadUrl({
     provider: artifact.provider || 's3',
     storageKey: artifact.storageKey,
@@ -66,6 +75,16 @@ async function readyPayload({ artifact, job = null }) {
     contentType: 'video/mp4',
     deletionNotice: 'Copies saved or shared outside SnapNext are controlled by the destination and cannot be deleted by SnapNext.',
   };
+}
+
+async function repairReadyArtifact({ db, userId, artifact }) {
+  if (!artifact || artifact.status !== 'ready') return { ok: false, reason: 'render_artifact_not_ready' };
+  if (canonicalRenderAccountingComplete(artifact)) return { ok: true, artifact };
+  try {
+    return await repairCanonicalRenderAccounting({ db, userId, artifact });
+  } catch (error) {
+    return { ok: false, reason: error?.code || 'render_accounting_repair_failed' };
+  }
 }
 
 async function prepareAttempt({ db, user, manifest, estimatedRenderCostUsd, output }) {
@@ -172,7 +191,14 @@ export async function POST(request) {
   }
 
   if (prepared.cacheHit && prepared.artifact?.status === 'ready') {
-    return json(await readyPayload({ artifact: prepared.artifact }), 200);
+    const repaired = await repairReadyArtifact({ db, userId: user.id, artifact: prepared.artifact });
+    if (!repaired.ok) {
+      return json({
+        error: 'This Reel is ready but its usage accounting is still being verified. Please retry.',
+        code: repaired.reason || 'render_accounting_incomplete',
+      }, repaired.stale ? 409 : 503);
+    }
+    return json(await readyPayload({ artifact: repaired.artifact }), 200);
   }
 
   let artifact = prepared.artifact;
@@ -199,7 +225,14 @@ export async function POST(request) {
     }, statusForPrepareFailure(prepared));
   }
   if (prepared.cacheHit && prepared.artifact?.status === 'ready') {
-    return json(await readyPayload({ artifact: prepared.artifact, job }), 200);
+    const repaired = await repairReadyArtifact({ db, userId: user.id, artifact: prepared.artifact });
+    if (!repaired.ok) {
+      return json({
+        error: 'This Reel is ready but its usage accounting is still being verified. Please retry.',
+        code: repaired.reason || 'render_accounting_incomplete',
+      }, repaired.stale ? 409 : 503);
+    }
+    return json(await readyPayload({ artifact: repaired.artifact, job }), 200);
   }
 
   artifact = prepared.artifact;
