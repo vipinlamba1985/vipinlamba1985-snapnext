@@ -188,7 +188,7 @@ export async function POST(request) {
   });
   if (recovered.error) return recovered.error;
   prepared = recovered.prepared;
-  job = recovered.job || job;
+  job = recovered.recovered ? recovered.job : job;
 
   if (!prepared.allowed) {
     return json({
