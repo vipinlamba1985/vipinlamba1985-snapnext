@@ -23,6 +23,7 @@ test('C1 request API stays on top of C0 quota, spend, source and deletion gates'
 test('C1 provider gets signed private reads but no future final-object write capability at dispatch', async () => {
   const execution = await read('lib/create-render-execution.server.js');
   assert.match(execution, /storageAdapter\.getReadUrl/);
+  assert.match(execution, /readUrl: track\.audioUrl/);
   assert.match(execution, /snapnext-controlled-multipart/);
   assert.match(execution, /uploadPlanStatus: 'upload_plan'/);
   assert.match(execution, /snapnext-canonical-reel-v1/i);
@@ -52,6 +53,12 @@ test('verified S3 deletion revokes pending multipart future writes before object
   assert.match(strictDelete, /AbortMultipartUploadCommand/);
   assert.ok(abortIndex >= 0);
   assert.ok(deleteIndex > abortIndex);
+});
+
+test('C1 render job metadata is removed during account deletion', async () => {
+  const accountDeletion = await read('lib/account-deletion.js');
+  assert.match(accountDeletion, /db\.collection\('render_jobs'\)\.deleteMany\(\{ userId \}\)/);
+  assert.match(accountDeletion, /renderJobs: count\(renderJobs\)/);
 });
 
 test('C1 dispatch is idempotent and ambiguous network failures remain retryable', async () => {
