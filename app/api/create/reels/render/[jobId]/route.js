@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { storage } from '@/lib/storage';
 import {
+  canonicalRenderJobNeedsRecovery,
   getCanonicalRenderJob,
   safeCanonicalRenderJob,
 } from '@/lib/create-render-jobs.server';
@@ -17,12 +18,10 @@ function safeArtifact(artifact = null) {
   if (!artifact) return null;
   return {
     id: artifact.id,
-    manifestHash: artifact.manifestHash,
     status: artifact.status,
     outputBytes: Number(artifact.outputBytes || 0) || null,
     createdAt: artifact.createdAt || null,
     readyAt: artifact.readyAt || null,
-    failure: artifact.lastError || artifact.staleReason || artifact.deletionFailure || null,
   };
 }
 
@@ -53,9 +52,12 @@ export async function GET(request, context) {
     });
   }
 
+  const recovery = canonicalRenderJobNeedsRecovery(job);
   return json({
     artifact: safeArtifact(artifact),
     job: safeCanonicalRenderJob(job),
+    retryRecommended: artifact.status === 'rendering' && recovery.recover === true,
+    retryReason: artifact.status === 'rendering' && recovery.recover ? recovery.reason : null,
     downloadUrl,
     contentType: artifact.status === 'ready' ? 'video/mp4' : null,
     deletionNotice: artifact.status === 'ready'
