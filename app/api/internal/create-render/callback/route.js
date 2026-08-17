@@ -23,11 +23,13 @@ import {
   signCanonicalRenderMultipartParts,
 } from '@/lib/create-render-multipart.server';
 import {
+  canonicalRenderJobDeadlineExpired,
   markCanonicalRenderJobFailed,
   markCanonicalRenderJobProgress,
   markCanonicalRenderJobReady,
   markCanonicalRenderJobUploading,
   markCanonicalRenderJobValidating,
+  recordCanonicalRenderAttemptCost,
   safeCanonicalRenderJob,
 } from '@/lib/create-render-jobs.server';
 
@@ -48,6 +50,16 @@ function cleanFailure(body = {}) {
     code: String(body.code || body.errorCode || 'render_provider_failed').slice(0, 200),
     message: String(body.error || body.message || 'Renderer reported a failure.').slice(0, 1000),
   };
+}
+
+function reportedCost(body = {}) {
+  const raw = body.actualRenderCostUsd ?? body.cost?.actualUsd;
+  if (raw === undefined || raw === null) return { ok: true, value: null };
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    return { ok: false, value: null };
+  }
+  return { ok: true, value };
 }
 
 function artifactSources(artifact = {}) {
@@ -94,15 +106,28 @@ async function strictCleanup(artifact) {
   });
 }
 
-async function failAttempt({ db, job, artifact, code, message }) {
+async function failAttempt({
+  db,
+  job,
+  artifact,
+  code,
+  message,
+  actualRenderCostUsd = null,
+}) {
+  await recordCanonicalRenderAttemptCost({
+    db,
+    job,
+    artifact,
+    actualRenderCostUsd,
+    outcome: code || 'render_failed',
+  });
   await failCanonicalRender({
     db,
     userId: job.userId,
     artifactId: job.artifactDocumentId,
     error: Object.assign(new Error(message || code), { code }),
-  }).catch(() => null);
-  const failed = await markCanonicalRenderJobFailed({ db, job, code, message });
-  return failed;
+  });
+  return markCanonicalRenderJobFailed({ db, job, code, message });
 }
 
 async function terminalArtifactResponse({ db, job, artifact }) {
@@ -114,12 +139,13 @@ async function terminalArtifactResponse({ db, job, artifact }) {
     try {
       await strictCleanup(artifact);
     } catch (error) {
-      return json({ error: 'Stale renderer output could not be removed safely.', code: 'render_stale_cleanup_failed' }, 500);
+      console.error('[create-render-callback] terminal cleanup failed', error?.code || error?.name, error?.message);
+      return json({ error: 'Stale renderer output could not be removed safely.', code: 'render_stale_cleanup_failed' }, 503);
     }
     const failed = await markCanonicalRenderJobFailed({
       db,
       job,
-      code: artifact.staleReason || artifact.lastError || artifact.status,
+      code: artifact.staleReason || artifact.status,
       message: 'This render attempt is no longer publishable.',
     });
     return json({ ok: false, stale: artifact.status === 'stale_source', job: safeCanonicalRenderJob(failed) }, 409);
@@ -141,7 +167,6 @@ async function handleUploadPlan({ db, job, artifact, body }) {
 
   const precheck = await activeSourceWindow({ db, artifact });
   if (!precheck.ok) {
-    await strictCleanup(artifact).catch(() => null);
     const failed = await failAttempt({
       db,
       job,
@@ -185,17 +210,22 @@ async function handleUploadPlan({ db, job, artifact, body }) {
   }
 
   const current = await db.collection('render_artifacts').findOne({ _id: artifact._id, userId: artifact.userId });
-  const postcheck = current ? await activeSourceWindow({ db, artifact: current }) : { ok: false, generation: { current: false }, sources: { ok: false } };
+  const postcheck = current
+    ? await activeSourceWindow({ db, artifact: current })
+    : { ok: false, generation: { current: false }, sources: { ok: false } };
   if (!current || current.status !== 'rendering' || !postcheck.ok) {
-    await strictCleanup(current || artifact).catch(() => null);
-    const failed = await failAttempt({
-      db,
-      job,
-      artifact: current || artifact,
-      code: 'render_upload_lease_stale',
-      message: 'Render upload became stale before publication.',
-    });
-    return json({ ok: false, stale: true, job: safeCanonicalRenderJob(failed) }, 409);
+    if (current) {
+      const failed = await failAttempt({
+        db,
+        job,
+        artifact: current,
+        code: 'render_upload_lease_stale',
+        message: 'Render upload became stale before publication.',
+      });
+      return json({ ok: false, stale: true, job: safeCanonicalRenderJob(failed) }, 409);
+    }
+    await abortCanonicalRenderMultipartUpload({ storageKey: artifact.storageKey, uploadId }).catch(() => null);
+    return json({ error: 'Render upload lease was lost.', code: 'render_upload_lease_lost' }, 409);
   }
 
   const partCount = Math.ceil(bytes / CANONICAL_REEL_MULTIPART_PART_SIZE_BYTES);
@@ -224,220 +254,261 @@ export async function POST(request) {
     return json({ error: 'Unauthorized' }, 401);
   }
 
-  const body = await request.json().catch(() => ({}));
-  const jobId = String(body.jobId || '').trim();
-  if (!jobId) return json({ error: 'jobId is required.' }, 400);
-
-  const db = await getDb();
-  const job = await db.collection('render_jobs').findOne({ id: jobId });
-  if (!job) return json({ error: 'Render job not found.' }, 404);
-  let artifact = await db.collection('render_artifacts').findOne({
-    _id: job.artifactDocumentId,
-    userId: job.userId,
-  });
-  if (!artifact || artifact.id !== job.id) return json({ error: 'Render artifact no longer matches this job.' }, 409);
-
-  const status = String(body.status || '').toLowerCase();
-  const terminal = await terminalArtifactResponse({ db, job, artifact });
-  if (terminal) return terminal;
-
-  if (status === 'progress' || status === 'rendering') {
-    if (artifact.status !== 'rendering') return json({ error: 'Render is no longer active.' }, 409);
-    const updated = await markCanonicalRenderJobProgress({ db, job, progress: body.progress });
-    return json({ ok: true, job: safeCanonicalRenderJob(updated || job) });
-  }
-
-  if (status === 'upload_plan') {
-    return handleUploadPlan({ db, job, artifact, body });
-  }
-
-  if (status === 'failed') {
-    const failure = cleanFailure(body);
-    const failed = await failAttempt({ db, job, artifact, ...failure });
-    return json({ ok: true, job: safeCanonicalRenderJob(failed) });
-  }
-
-  if (status !== 'completed') {
-    return json({ error: 'Unsupported renderer callback status.' }, 400);
-  }
-
-  const outputBytes = outputSize(body.outputBytes ?? body.output?.bytes);
-  if (!outputBytes || Number(artifact.outputExpectedBytes || 0) !== outputBytes || !artifact.outputMultipartUploadId) {
-    await strictCleanup(artifact).catch(() => null);
-    const failed = await failAttempt({
-      db,
-      job,
-      artifact,
-      code: 'render_multipart_plan_missing',
-      message: 'Renderer completed without a valid SnapNext multipart upload plan.',
-    });
-    return json({ ok: false, code: 'render_multipart_plan_missing', job: safeCanonicalRenderJob(failed) }, 422);
-  }
-
-  const probeValidation = validateCanonicalRenderProbe({
-    manifest: artifact.canonicalManifest,
-    probe: body.probe || body.output?.probe || {},
-    outputBytes,
-  });
-  if (!probeValidation.ok) {
-    await strictCleanup(artifact).catch(() => null);
-    const failed = await failAttempt({
-      db,
-      job,
-      artifact,
-      code: probeValidation.reason,
-      message: 'Renderer output did not satisfy the canonical MP4 contract.',
-    });
-    return json({ ok: false, code: probeValidation.reason, job: safeCanonicalRenderJob(failed) }, 422);
-  }
-
-  const reportedCost = body.actualRenderCostUsd ?? body.cost?.actualUsd;
-  const parsedCost = reportedCost === undefined || reportedCost === null ? null : Number(reportedCost);
-  if (parsedCost !== null && (!Number.isFinite(parsedCost) || parsedCost < 0 || parsedCost > 100)) {
-    await strictCleanup(artifact).catch(() => null);
-    const failed = await failAttempt({
-      db,
-      job,
-      artifact,
-      code: 'render_actual_cost_invalid',
-      message: 'Renderer reported an invalid actual cost.',
-    });
-    return json({ ok: false, code: 'render_actual_cost_invalid', job: safeCanonicalRenderJob(failed) }, 422);
-  }
-
-  const publicationWindow = await activeSourceWindow({ db, artifact });
-  if (!publicationWindow.ok) {
-    await strictCleanup(artifact).catch(() => null);
-    const failed = await failAttempt({
-      db,
-      job,
-      artifact,
-      code: publicationWindow.generation.current ? 'render_source_verification_failed' : 'media_deletion_generation_moved',
-      message: 'Source media changed or deletion started before publication.',
-    });
-    return json({ ok: false, stale: true, job: safeCanonicalRenderJob(failed) }, 409);
-  }
-
-  let stored = null;
   try {
-    stored = await storage.verify({
-      provider: artifact.provider || 's3',
-      storageKey: artifact.storageKey,
-      expectedSize: outputBytes,
+    const body = await request.json().catch(() => ({}));
+    const jobId = String(body.jobId || '').trim();
+    if (!jobId) return json({ error: 'jobId is required.' }, 400);
+
+    const db = await getDb();
+    const job = await db.collection('render_jobs').findOne({ id: jobId });
+    if (!job) return json({ error: 'Render job not found.' }, 404);
+    let artifact = await db.collection('render_artifacts').findOne({
+      _id: job.artifactDocumentId,
+      userId: job.userId,
     });
-  } catch (error) {
-    if (!objectIsMissing(error)) {
-      await strictCleanup(artifact).catch(() => null);
+    if (!artifact || artifact.id !== job.id) return json({ error: 'Render artifact no longer matches this job.' }, 409);
+
+    const status = String(body.status || '').toLowerCase();
+    const terminal = await terminalArtifactResponse({ db, job, artifact });
+    if (terminal) return terminal;
+
+    const cost = reportedCost(body);
+    if (!cost.ok) {
+      return json({ error: 'Renderer reported an invalid actual cost.', code: 'render_actual_cost_invalid' }, 422);
+    }
+
+    if (canonicalRenderJobDeadlineExpired(job)) {
       const failed = await failAttempt({
         db,
         job,
         artifact,
-        code: 'render_output_storage_verification_failed',
-        message: error?.message || 'Rendered MP4 could not be verified in SnapNext storage.',
+        code: 'render_job_deadline_exceeded',
+        message: 'Renderer callback arrived after the bounded execution deadline.',
+        actualRenderCostUsd: cost.value,
       });
-      return json({ ok: false, code: 'render_output_storage_verification_failed', job: safeCanonicalRenderJob(failed) }, 422);
+      return json({ ok: false, expired: true, code: 'render_job_deadline_exceeded', job: safeCanonicalRenderJob(failed) }, 410);
     }
-  }
 
-  if (!stored) {
-    try {
-      await completeCanonicalRenderMultipartUpload({
-        storageKey: artifact.storageKey,
-        uploadId: artifact.outputMultipartUploadId,
-        parts: body.parts || body.output?.parts || [],
+    if (status === 'progress' || status === 'rendering') {
+      if (artifact.status !== 'rendering') return json({ error: 'Render is no longer active.' }, 409);
+      const updated = await markCanonicalRenderJobProgress({ db, job, progress: body.progress });
+      return json({ ok: true, job: safeCanonicalRenderJob(updated || job) });
+    }
+
+    if (status === 'upload_plan') {
+      return handleUploadPlan({ db, job, artifact, body });
+    }
+
+    if (status === 'failed') {
+      const failure = cleanFailure(body);
+      const failed = await failAttempt({
+        db,
+        job,
+        artifact,
+        ...failure,
+        actualRenderCostUsd: cost.value,
       });
+      return json({ ok: true, job: safeCanonicalRenderJob(failed) });
+    }
+
+    if (status !== 'completed') {
+      return json({ error: 'Unsupported renderer callback status.' }, 400);
+    }
+
+    const outputBytes = outputSize(body.outputBytes ?? body.output?.bytes);
+    if (!outputBytes || Number(artifact.outputExpectedBytes || 0) !== outputBytes || !artifact.outputMultipartUploadId) {
+      const failed = await failAttempt({
+        db,
+        job,
+        artifact,
+        code: 'render_multipart_plan_missing',
+        message: 'Renderer completed without a valid SnapNext multipart upload plan.',
+        actualRenderCostUsd: cost.value,
+      });
+      return json({ ok: false, code: 'render_multipart_plan_missing', job: safeCanonicalRenderJob(failed) }, 422);
+    }
+
+    const probeValidation = validateCanonicalRenderProbe({
+      manifest: artifact.canonicalManifest,
+      probe: body.probe || body.output?.probe || {},
+      outputBytes,
+    });
+    if (!probeValidation.ok) {
+      const failed = await failAttempt({
+        db,
+        job,
+        artifact,
+        code: probeValidation.reason,
+        message: 'Renderer output did not satisfy the canonical MP4 contract.',
+        actualRenderCostUsd: cost.value,
+      });
+      return json({ ok: false, code: probeValidation.reason, job: safeCanonicalRenderJob(failed) }, 422);
+    }
+
+    const publicationWindow = await activeSourceWindow({ db, artifact });
+    if (!publicationWindow.ok) {
+      const failed = await failAttempt({
+        db,
+        job,
+        artifact,
+        code: publicationWindow.generation.current ? 'render_source_verification_failed' : 'media_deletion_generation_moved',
+        message: 'Source media changed or deletion started before publication.',
+        actualRenderCostUsd: cost.value,
+      });
+      return json({ ok: false, stale: true, job: safeCanonicalRenderJob(failed) }, 409);
+    }
+
+    let stored = null;
+    try {
       stored = await storage.verify({
         provider: artifact.provider || 's3',
         storageKey: artifact.storageKey,
         expectedSize: outputBytes,
       });
     } catch (error) {
-      artifact = await db.collection('render_artifacts').findOne({ _id: artifact._id, userId: artifact.userId }) || artifact;
-      if (['stale_source', 'failed', 'deletion_failed'].includes(artifact.status)) {
-        return terminalArtifactResponse({ db, job, artifact });
+      if (!objectIsMissing(error)) {
+        const failed = await failAttempt({
+          db,
+          job,
+          artifact,
+          code: 'render_output_storage_verification_failed',
+          message: error?.message || 'Rendered MP4 could not be verified in SnapNext storage.',
+          actualRenderCostUsd: cost.value,
+        });
+        return json({ ok: false, code: 'render_output_storage_verification_failed', job: safeCanonicalRenderJob(failed) }, 422);
       }
-      await strictCleanup(artifact).catch(() => null);
+    }
+
+    if (!stored) {
+      try {
+        await completeCanonicalRenderMultipartUpload({
+          storageKey: artifact.storageKey,
+          uploadId: artifact.outputMultipartUploadId,
+          parts: body.parts || body.output?.parts || [],
+        });
+        stored = await storage.verify({
+          provider: artifact.provider || 's3',
+          storageKey: artifact.storageKey,
+          expectedSize: outputBytes,
+        });
+      } catch (error) {
+        artifact = await db.collection('render_artifacts').findOne({ _id: artifact._id, userId: artifact.userId }) || artifact;
+        if (['stale_source', 'failed', 'deletion_failed'].includes(artifact.status)) {
+          await recordCanonicalRenderAttemptCost({
+            db,
+            job,
+            artifact,
+            actualRenderCostUsd: cost.value,
+            outcome: artifact.staleReason || artifact.status,
+          });
+          return terminalArtifactResponse({ db, job, artifact });
+        }
+        const failed = await failAttempt({
+          db,
+          job,
+          artifact,
+          code: error?.code || 'render_multipart_completion_failed',
+          message: error?.message || 'Rendered MP4 multipart upload could not be completed.',
+          actualRenderCostUsd: cost.value,
+        });
+        return json({ ok: false, code: error?.code || 'render_multipart_completion_failed', job: safeCanonicalRenderJob(failed) }, 422);
+      }
+    }
+
+    if (String(stored.contentType || '').toLowerCase() !== 'video/mp4') {
       const failed = await failAttempt({
         db,
         job,
         artifact,
-        code: error?.code || 'render_multipart_completion_failed',
-        message: error?.message || 'Rendered MP4 multipart upload could not be completed.',
+        code: 'render_output_content_type_invalid',
+        message: 'Rendered output was not stored as video/mp4.',
+        actualRenderCostUsd: cost.value,
       });
-      return json({ ok: false, code: error?.code || 'render_multipart_completion_failed', job: safeCanonicalRenderJob(failed) }, 422);
+      return json({ ok: false, code: 'render_output_content_type_invalid', job: safeCanonicalRenderJob(failed) }, 422);
     }
-  }
 
-  if (String(stored.contentType || '').toLowerCase() !== 'video/mp4') {
-    await strictCleanup(artifact).catch(() => null);
-    const failed = await failAttempt({
+    const validatingJob = await markCanonicalRenderJobValidating({ db, job, probe: probeValidation.normalized });
+    let pending = await markCanonicalRenderPendingValidation({
       db,
-      job,
-      artifact,
-      code: 'render_output_content_type_invalid',
-      message: 'Rendered output was not stored as video/mp4.',
+      userId: job.userId,
+      artifactId: job.artifactDocumentId,
+      provider: artifact.provider || 's3',
+      storageKey: artifact.storageKey,
+      outputBytes,
     });
-    return json({ ok: false, code: 'render_output_content_type_invalid', job: safeCanonicalRenderJob(failed) }, 422);
-  }
-
-  const validatingJob = await markCanonicalRenderJobValidating({ db, job, probe: probeValidation.normalized });
-  let pending = await markCanonicalRenderPendingValidation({
-    db,
-    userId: job.userId,
-    artifactId: job.artifactDocumentId,
-    provider: artifact.provider || 's3',
-    storageKey: artifact.storageKey,
-    outputBytes,
-  });
-  if (!pending) {
-    const current = await db.collection('render_artifacts').findOne({ _id: job.artifactDocumentId, userId: job.userId });
-    if (current?.status === 'ready') {
-      const ready = await markCanonicalRenderJobReady({ db, job: validatingJob || job });
-      return json({ ok: true, idempotent: true, job: safeCanonicalRenderJob(ready) });
+    if (!pending) {
+      const current = await db.collection('render_artifacts').findOne({ _id: job.artifactDocumentId, userId: job.userId });
+      if (current?.status === 'ready') {
+        const ready = await markCanonicalRenderJobReady({ db, job: validatingJob || job });
+        return json({ ok: true, idempotent: true, job: safeCanonicalRenderJob(ready) });
+      }
+      if (current?.status === 'pending_validation') {
+        pending = current;
+      } else {
+        if (current) {
+          await recordCanonicalRenderAttemptCost({
+            db,
+            job,
+            artifact: current,
+            actualRenderCostUsd: cost.value,
+            outcome: current.staleReason || 'render_artifact_not_rendering',
+          });
+          await strictCleanup(current);
+        }
+        const failed = await markCanonicalRenderJobFailed({
+          db,
+          job: validatingJob || job,
+          code: current?.staleReason || 'render_artifact_not_rendering',
+          message: 'Render artifact became stale before validation.',
+        });
+        return json({ ok: false, stale: true, job: safeCanonicalRenderJob(failed) }, 409);
+      }
     }
-    if (current?.status === 'pending_validation') pending = current;
-    else {
-      if (current) await strictCleanup(current).catch(() => null);
+
+    await db.collection('render_artifacts').updateOne(
+      { _id: pending._id, userId: job.userId, status: 'pending_validation' },
+      { $unset: { outputMultipartUploadId: '', outputExpectedBytes: '', outputMultipartCreatedAt: '' } },
+    );
+
+    const finalized = await finalizeCanonicalRender({
+      db,
+      userId: job.userId,
+      artifactId: job.artifactDocumentId,
+      actualRenderCostUsd: cost.value,
+    });
+    if (!finalized.ok) {
+      await recordCanonicalRenderAttemptCost({
+        db,
+        job,
+        artifact: pending,
+        actualRenderCostUsd: cost.value,
+        outcome: finalized.reason || 'render_finalization_failed',
+      });
       const failed = await markCanonicalRenderJobFailed({
         db,
         job: validatingJob || job,
-        code: current?.staleReason || 'render_artifact_not_rendering',
-        message: 'Render artifact became stale before validation.',
+        code: finalized.reason || 'render_finalization_failed',
+        message: finalized.stale ? 'Source media changed or was deleted before publication.' : 'Rendered MP4 could not be published.',
       });
-      return json({ ok: false, stale: true, job: safeCanonicalRenderJob(failed) }, 409);
+      return json({ ok: false, code: finalized.reason, stale: finalized.stale === true, job: safeCanonicalRenderJob(failed) }, 409);
     }
-  }
 
-  await db.collection('render_artifacts').updateOne(
-    { _id: pending._id, userId: job.userId, status: 'pending_validation' },
-    { $unset: { outputMultipartUploadId: '', outputExpectedBytes: '', outputMultipartCreatedAt: '' } },
-  );
-
-  const finalized = await finalizeCanonicalRender({
-    db,
-    userId: job.userId,
-    artifactId: job.artifactDocumentId,
-    actualRenderCostUsd: parsedCost,
-  });
-  if (!finalized.ok) {
-    const failed = await markCanonicalRenderJobFailed({
-      db,
-      job: validatingJob || job,
-      code: finalized.reason || 'render_finalization_failed',
-      message: finalized.stale ? 'Source media changed or was deleted before publication.' : 'Rendered MP4 could not be published.',
+    const ready = await markCanonicalRenderJobReady({ db, job: validatingJob || job });
+    return json({
+      ok: true,
+      job: safeCanonicalRenderJob(ready),
+      artifact: {
+        id: finalized.artifact.id,
+        status: finalized.artifact.status,
+        manifestHash: finalized.artifact.manifestHash,
+        outputBytes: finalized.artifact.outputBytes,
+      },
     });
-    return json({ ok: false, code: finalized.reason, stale: finalized.stale === true, job: safeCanonicalRenderJob(failed) }, 409);
+  } catch (error) {
+    console.error('[create-render-callback] processing failed', error?.code || error?.name, error?.message);
+    return json({
+      error: 'Canonical render callback could not be processed safely. The worker should retry.',
+      code: error?.code || 'render_callback_processing_failed',
+    }, 503);
   }
-
-  const ready = await markCanonicalRenderJobReady({ db, job: validatingJob || job });
-  return json({
-    ok: true,
-    job: safeCanonicalRenderJob(ready),
-    artifact: {
-      id: finalized.artifact.id,
-      status: finalized.artifact.status,
-      manifestHash: finalized.artifact.manifestHash,
-      outputBytes: finalized.artifact.outputBytes,
-    },
-  });
 }
