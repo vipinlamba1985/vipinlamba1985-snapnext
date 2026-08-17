@@ -16,16 +16,42 @@ test('C1 request API stays on top of C0 quota, spend, source and deletion gates'
   assert.match(route, /ensureCanonicalRenderJob/);
   assert.match(route, /dispatchCanonicalRenderJob/);
   assert.match(route, /failCanonicalRender/);
+  assert.match(route, /canonicalRenderCallbackUrl/);
+  assert.doesNotMatch(route, /new URL\([^\n]*request\.url/);
 });
 
-test('C1 provider receives signed private inputs and writes only the canonical render key', async () => {
+test('C1 provider gets signed private reads but no future final-object write capability at dispatch', async () => {
   const execution = await read('lib/create-render-execution.server.js');
   assert.match(execution, /storageAdapter\.getReadUrl/);
-  assert.match(execution, /renders\\\//);
-  assert.match(execution, /PutObjectCommand/);
-  assert.match(execution, /ContentType: 'video\/mp4'/);
+  assert.match(execution, /snapnext-controlled-multipart/);
+  assert.match(execution, /uploadPlanStatus: 'upload_plan'/);
   assert.match(execution, /snapnext-canonical-reel-v1/i);
+  assert.doesNotMatch(execution, /uploadUrl/);
+  assert.doesNotMatch(execution, /PutObjectCommand/);
   assert.doesNotMatch(execution, /CREATE_RENDER_CALLBACK_SECRET[^\n]*payload/i);
+});
+
+test('C1 multipart publication is controlled by SnapNext and completion stays server-side', async () => {
+  const multipart = await read('lib/create-render-multipart.server.js');
+  const callback = await read('app/api/internal/create-render/callback/route.js');
+  assert.match(multipart, /CreateMultipartUploadCommand/);
+  assert.match(multipart, /UploadPartCommand/);
+  assert.match(multipart, /CompleteMultipartUploadCommand/);
+  assert.match(multipart, /renders\\\//);
+  assert.match(callback, /status === 'upload_plan'/);
+  assert.match(callback, /activeSourceWindow/);
+  assert.match(callback, /completeCanonicalRenderMultipartUpload/);
+  assert.match(callback, /body\.parts/);
+});
+
+test('verified S3 deletion revokes pending multipart future writes before object deletion', async () => {
+  const strictDelete = await read('lib/storage-strict-delete.js');
+  const abortIndex = strictDelete.indexOf('await abortS3MultipartUploadsForKey');
+  const deleteIndex = strictDelete.indexOf('await client.send(new DeleteObjectCommand');
+  assert.match(strictDelete, /ListMultipartUploadsCommand/);
+  assert.match(strictDelete, /AbortMultipartUploadCommand/);
+  assert.ok(abortIndex >= 0);
+  assert.ok(deleteIndex > abortIndex);
 });
 
 test('C1 dispatch is idempotent and ambiguous network failures remain retryable', async () => {
@@ -37,17 +63,19 @@ test('C1 dispatch is idempotent and ambiguous network failures remain retryable'
   assert.match(jobs, /retryable: true/);
 });
 
-test('C1 callback authenticates, verifies S3 output, validates codec contract and only then finalizes', async () => {
+test('C1 callback authenticates, validates codec and source window, completes storage, then finalizes', async () => {
   const callback = await read('app/api/internal/create-render/callback/route.js');
   const auth = callback.indexOf("if (!renderCallbackSecretMatches");
   const probe = callback.indexOf('const probeValidation = validateCanonicalRenderProbe');
-  const verify = callback.indexOf('stored = await storage.verify');
-  const pending = callback.indexOf('const pending = await markCanonicalRenderPendingValidation');
+  const sourceWindow = callback.indexOf('const publicationWindow = await activeSourceWindow');
+  const complete = callback.indexOf('await completeCanonicalRenderMultipartUpload');
+  const pending = callback.indexOf('let pending = await markCanonicalRenderPendingValidation');
   const finalize = callback.indexOf('const finalized = await finalizeCanonicalRender');
   assert.ok(auth >= 0);
   assert.ok(probe > auth);
-  assert.ok(verify > probe);
-  assert.ok(pending > verify);
+  assert.ok(sourceWindow > probe);
+  assert.ok(complete > sourceWindow);
+  assert.ok(pending > complete);
   assert.ok(finalize > pending);
   assert.match(callback, /video\/mp4/);
 });
