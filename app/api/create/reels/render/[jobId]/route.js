@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { storage } from '@/lib/storage';
+import { canonicalRenderAccountingComplete } from '@/lib/create-render-accounting.server';
 import {
   canonicalRenderJobNeedsRecovery,
   getCanonicalRenderJob,
@@ -16,12 +17,13 @@ function json(data, status = 200) {
 
 function safeArtifact(artifact = null) {
   if (!artifact) return null;
+  const accountingComplete = canonicalRenderAccountingComplete(artifact);
   return {
     id: artifact.id,
-    status: artifact.status,
+    status: artifact.status === 'ready' && !accountingComplete ? 'validating' : artifact.status,
     outputBytes: Number(artifact.outputBytes || 0) || null,
     createdAt: artifact.createdAt || null,
-    readyAt: artifact.readyAt || null,
+    readyAt: accountingComplete ? artifact.readyAt || null : null,
   };
 }
 
@@ -41,8 +43,9 @@ export async function GET(request, context) {
   });
   if (!artifact) return json({ error: 'Render artifact not found.' }, 404);
 
+  const accountingComplete = canonicalRenderAccountingComplete(artifact);
   let downloadUrl = null;
-  if (artifact.status === 'ready') {
+  if (accountingComplete) {
     downloadUrl = await storage.getReadUrl({
       provider: artifact.provider || 's3',
       storageKey: artifact.storageKey,
@@ -58,9 +61,10 @@ export async function GET(request, context) {
     job: safeCanonicalRenderJob(job),
     retryRecommended: artifact.status === 'rendering' && recovery.recover === true,
     retryReason: artifact.status === 'rendering' && recovery.recover ? recovery.reason : null,
+    accountingPending: artifact.status === 'ready' && !accountingComplete,
     downloadUrl,
-    contentType: artifact.status === 'ready' ? 'video/mp4' : null,
-    deletionNotice: artifact.status === 'ready'
+    contentType: accountingComplete ? 'video/mp4' : null,
+    deletionNotice: accountingComplete
       ? 'Copies saved or shared outside SnapNext are controlled by the destination and cannot be deleted by SnapNext.'
       : null,
   });
