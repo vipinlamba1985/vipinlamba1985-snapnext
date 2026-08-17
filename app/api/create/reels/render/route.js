@@ -14,8 +14,10 @@ import {
   validateCanonicalRenderExecution,
 } from '@/lib/create-render-execution.server';
 import {
+  canonicalRenderJobNeedsRecovery,
   dispatchCanonicalRenderJob,
   ensureCanonicalRenderJob,
+  markCanonicalRenderJobFailed,
   safeCanonicalRenderJob,
 } from '@/lib/create-render-jobs.server';
 
@@ -66,6 +68,72 @@ async function readyPayload({ artifact, job = null }) {
   };
 }
 
+async function prepareAttempt({ db, user, manifest, estimatedRenderCostUsd, output }) {
+  return prepareCanonicalRender({
+    db,
+    user,
+    manifest,
+    estimatedRenderCostUsd,
+    renderer: 'canonical-worker-v1',
+    metadata: {
+      requestSurface: 'create_reel_export',
+      output,
+    },
+  });
+}
+
+async function recoverStalledAttempt({
+  db,
+  user,
+  prepared,
+  job,
+  manifest,
+  estimatedRenderCostUsd,
+  output,
+}) {
+  const recovery = canonicalRenderJobNeedsRecovery(job);
+  if (!prepared.inFlight || !recovery.recover) return { prepared, job, recovered: false };
+
+  try {
+    await failCanonicalRender({
+      db,
+      userId: user.id,
+      artifactId: prepared.artifact._id,
+      error: Object.assign(new Error('Canonical renderer attempt exceeded its bounded execution window.'), {
+        code: recovery.reason || 'render_job_recovery_required',
+      }),
+    });
+  } catch (error) {
+    return {
+      error: json({
+        error: 'The previous Reel attempt could not be cleaned up safely. Please retry.',
+        code: error?.code || 'render_recovery_cleanup_failed',
+      }, 503),
+    };
+  }
+
+  await markCanonicalRenderJobFailed({
+    db,
+    job,
+    code: recovery.reason || 'render_job_recovery_required',
+    message: 'The previous render attempt was closed before its quota and cost reservations could expire.',
+  });
+
+  const nextPrepared = await prepareAttempt({
+    db,
+    user,
+    manifest,
+    estimatedRenderCostUsd,
+    output,
+  });
+  if (!nextPrepared.allowed) return { prepared: nextPrepared, job: null, recovered: true };
+  if (nextPrepared.cacheHit && nextPrepared.artifact?.status === 'ready') {
+    return { prepared: nextPrepared, job: null, recovered: true };
+  }
+  const nextJob = await ensureCanonicalRenderJob({ db, userId: user.id, artifact: nextPrepared.artifact });
+  return { prepared: nextPrepared, job: nextJob, recovered: true };
+}
+
 export async function POST(request) {
   const user = await getUserFromRequest(request);
   if (!user) return json({ error: 'Unauthorized' }, 401);
@@ -86,16 +154,12 @@ export async function POST(request) {
   }
 
   const db = await getDb();
-  const prepared = await prepareCanonicalRender({
+  let prepared = await prepareAttempt({
     db,
     user,
     manifest: manifestValidation.canonical,
     estimatedRenderCostUsd,
-    renderer: 'canonical-worker-v1',
-    metadata: {
-      requestSurface: 'create_reel_export',
-      output: execution.output,
-    },
+    output: execution.output,
   });
 
   if (!prepared.allowed) {
@@ -111,17 +175,59 @@ export async function POST(request) {
     return json(await readyPayload({ artifact: prepared.artifact }), 200);
   }
 
-  const artifact = prepared.artifact;
-  const job = await ensureCanonicalRenderJob({ db, userId: user.id, artifact });
-  const providerStatus = canonicalRenderProviderStatus();
+  let artifact = prepared.artifact;
+  let job = await ensureCanonicalRenderJob({ db, userId: user.id, artifact });
+  const recovered = await recoverStalledAttempt({
+    db,
+    user,
+    prepared,
+    job,
+    manifest: manifestValidation.canonical,
+    estimatedRenderCostUsd,
+    output: execution.output,
+  });
+  if (recovered.error) return recovered.error;
+  prepared = recovered.prepared;
+  job = recovered.job || job;
 
+  if (!prepared.allowed) {
+    return json({
+      error: 'Canonical Reel export cannot restart right now.',
+      code: prepared.reason,
+      layer: prepared.layer || null,
+      quota: prepared.quota || null,
+    }, statusForPrepareFailure(prepared));
+  }
+  if (prepared.cacheHit && prepared.artifact?.status === 'ready') {
+    return json(await readyPayload({ artifact: prepared.artifact, job }), 200);
+  }
+
+  artifact = prepared.artifact;
+  if (!job || job.id !== artifact.id) {
+    job = await ensureCanonicalRenderJob({ db, userId: user.id, artifact });
+  }
+
+  const providerStatus = canonicalRenderProviderStatus();
   if (!providerStatus.ready) {
     if (!prepared.inFlight) {
-      await failCanonicalRender({
+      try {
+        await failCanonicalRender({
+          db,
+          userId: user.id,
+          artifactId: artifact._id,
+          error: Object.assign(new Error('Canonical renderer is not configured.'), { code: 'render_provider_not_configured' }),
+        });
+      } catch (error) {
+        return json({
+          error: 'Canonical renderer is unavailable and the pending attempt could not be cleaned up safely.',
+          code: error?.code || 'render_provider_cleanup_failed',
+        }, 503);
+      }
+      await markCanonicalRenderJobFailed({
         db,
-        userId: user.id,
-        artifactId: artifact._id,
-        error: Object.assign(new Error('Canonical renderer is not configured.'), { code: 'render_provider_not_configured' }),
+        job,
+        code: 'render_provider_not_configured',
+        message: 'Canonical renderer is not configured.',
       });
       return json({
         error: 'Canonical Reel export is being activated. No export allowance was used.',
@@ -164,6 +270,7 @@ export async function POST(request) {
     job: safeCanonicalRenderJob(dispatched.job || job),
     dispatchAccepted: dispatched.accepted === true,
     retryable: dispatched.retryable === true,
+    recoveredPreviousAttempt: recovered.recovered === true,
     includedWithPlan: true,
   }, 202);
 }
