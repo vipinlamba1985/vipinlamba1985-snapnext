@@ -8,6 +8,7 @@ import {
 } from '@/lib/create-render-artifacts.server';
 import { validateCanonicalCreateManifest } from '@/lib/create-render-contract';
 import {
+  canonicalRenderCallbackUrl,
   canonicalRenderProviderStatus,
   estimateCanonicalRenderCostUsd,
   validateCanonicalRenderExecution,
@@ -139,7 +140,7 @@ export async function POST(request) {
     return json({ cached: false, artifact: safeArtifact(artifact), job: safeCanonicalRenderJob(job) }, 202);
   }
 
-  const callbackUrl = new URL('/api/internal/create-render/callback', request.url).toString();
+  const callbackUrl = canonicalRenderCallbackUrl();
   const dispatched = await dispatchCanonicalRenderJob({
     db,
     userId: user.id,
