@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   CANONICAL_REEL_MAX_DURATION_MS,
   CANONICAL_REEL_MAX_SCENES,
+  CANONICAL_REEL_MULTIPART_PART_SIZE_BYTES,
   canonicalRenderOutputSpec,
   canonicalRenderProviderStatus,
   estimateCanonicalRenderCostUsd,
@@ -58,6 +59,7 @@ function manifest(overrides = {}) {
 test('C1 keeps canonical Reel execution bounded', () => {
   assert.equal(CANONICAL_REEL_MAX_DURATION_MS, 60_000);
   assert.equal(CANONICAL_REEL_MAX_SCENES, 20);
+  assert.equal(CANONICAL_REEL_MULTIPART_PART_SIZE_BYTES, 10 * 1024 * 1024);
   assert.equal(validateCanonicalRenderExecution(manifest()).ok, true);
 
   const tooLong = manifest({ totalDurationMs: 60_001 });
@@ -149,6 +151,7 @@ test('C1 rejects renderer output that is not the canonical MP4 contract', () => 
 test('C1 renderer configuration fails closed and callback comparison is constant-length', () => {
   const env = {
     CREATE_RENDER_PROVIDER_URL: 'https://renderer.example.test/jobs',
+    CREATE_RENDER_CALLBACK_URL: 'https://snapnext.example.test/api/internal/create-render/callback',
     CREATE_RENDER_PROVIDER_KEY: 'provider-key-123456789',
     CREATE_RENDER_CALLBACK_SECRET: '12345678901234567890123456789012',
     AWS_ACCESS_KEY_ID: 'test',
@@ -158,6 +161,7 @@ test('C1 renderer configuration fails closed and callback comparison is constant
   };
   assert.equal(canonicalRenderProviderStatus(env, 's3').ready, true);
   assert.equal(canonicalRenderProviderStatus({ ...env, CREATE_RENDER_CALLBACK_SECRET: '' }, 's3').ready, false);
+  assert.equal(canonicalRenderProviderStatus({ ...env, CREATE_RENDER_CALLBACK_URL: 'http://unsafe.test/callback' }, 's3').ready, false);
   assert.equal(canonicalRenderProviderStatus(env, 'local').ready, false);
   assert.equal(renderCallbackSecretMatches(env.CREATE_RENDER_CALLBACK_SECRET, env.CREATE_RENDER_CALLBACK_SECRET), true);
   assert.equal(renderCallbackSecretMatches('wrong', env.CREATE_RENDER_CALLBACK_SECRET), false);
