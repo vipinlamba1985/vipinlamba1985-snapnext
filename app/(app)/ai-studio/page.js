@@ -12,7 +12,7 @@ import {
 const GOALS = [
   { id: 'restore', title: 'Restore a photo', detail: 'Repair an old family photo while keeping the original untouched.', icon: WandSparkles, href: '/ai-studio/restoration' },
   { id: 'caption', title: 'Caption', detail: 'Turn one memory into words that sound like you.', icon: PenLine, mode: 'caption' },
-  { id: 'reel', title: 'Reel', detail: 'Build a short video from the moments you choose.', icon: Film, href: '/ai-video' },
+  { id: 'reel', title: 'Reel', detail: 'Build a short video from the moments you choose.', icon: Film, href: '/create/reel' },
   { id: 'story', title: 'Story', detail: 'Start from memories SnapNext has already brought together.', icon: BookOpen, href: '/memories' },
   { id: 'emoji', title: 'Emoji pack', detail: 'Give a thought or caption the right feeling.', icon: Smile, mode: 'emoji' },
   { id: 'timeline', title: 'Timeline', detail: 'Rediscover chapters and turn them into something shareable.', icon: Layers3, href: '/memories' },
