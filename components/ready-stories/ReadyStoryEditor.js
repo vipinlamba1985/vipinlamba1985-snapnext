@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Check, Copy, Download, Images, Loader2, Send, Sparkles } from 'lucide-react';
+import { Check, Copy, Download, Film, Images, Loader2, Send, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch, mediaSrc } from '@/lib/api-client';
 
@@ -38,14 +38,16 @@ function cellsFor(count, size) {
   return [[0, 0, half, half], [half, 0, half, half], [0, half, half, half], [half, half, half, half]];
 }
 
+async function fetchMediaBlob(id) {
+  const response = await fetch(mediaSrc(id), { credentials: 'same-origin' });
+  if (!response.ok) throw new Error('Could not load the saved story media.');
+  return response.blob();
+}
+
 async function buildCollageBlob(ids) {
   const selected = ids.slice(0, 4);
   if (!selected.length) throw new Error('This story has no photos to export.');
-  const blobs = await Promise.all(selected.map(async id => {
-    const response = await fetch(mediaSrc(id), { credentials: 'same-origin' });
-    if (!response.ok) throw new Error('Could not load one of the story photos.');
-    return response.blob();
-  }));
+  const blobs = await Promise.all(selected.map(fetchMediaBlob));
   const images = await Promise.all(blobs.map(loadImage));
   const size = 1080;
   const canvas = document.createElement('canvas');
@@ -93,9 +95,15 @@ export default function ReadyStoryEditor({ storyId }) {
     toast.success('Story caption copied.');
   }
 
-  async function exportCollage() {
+  async function exportStory() {
     setBusy('export');
     try {
+      if (story?.videoMediaId) {
+        const blob = await fetchMediaBlob(story.videoMediaId);
+        saveBlob(blob, 'snapnext-memory-reel.mp4');
+        toast.success('Memory Reel ready to save or post.');
+        return;
+      }
       const blob = await buildCollageBlob(story?.collageMediaIds || story?.mediaIds || []);
       saveBlob(blob, `${String(story?.title || 'snapnext-story').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.jpg`);
       toast.success('Collage ready to save or post.');
@@ -106,8 +114,15 @@ export default function ReadyStoryEditor({ storyId }) {
   async function shareStory() {
     setBusy('share');
     try {
-      const blob = await buildCollageBlob(story?.collageMediaIds || story?.mediaIds || []);
-      const file = new File([blob], 'snapnext-story.jpg', { type: 'image/jpeg' });
+      const isVideo = Boolean(story?.videoMediaId);
+      const blob = isVideo
+        ? await fetchMediaBlob(story.videoMediaId)
+        : await buildCollageBlob(story?.collageMediaIds || story?.mediaIds || []);
+      const file = new File(
+        [blob],
+        isVideo ? 'snapnext-memory-reel.mp4' : 'snapnext-story.jpg',
+        { type: isVideo ? 'video/mp4' : 'image/jpeg' },
+      );
       if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
         await navigator.share({ title: story?.title || 'SnapNext story', text: caption.trim(), files: [file] });
         return;
@@ -127,22 +142,25 @@ export default function ReadyStoryEditor({ storyId }) {
   if (!story) return <div className="mx-auto max-w-2xl py-16 text-center"><Images className="mx-auto h-10 w-10 text-white/25" /><h1 className="mt-4 text-2xl font-black">This ready story is no longer available</h1><Link href="/dashboard" className="mt-5 inline-flex rounded-full bg-white px-5 py-3 text-sm font-black text-black">Back to Home</Link></div>;
 
   const ids = story.collageMediaIds?.length ? story.collageMediaIds : story.mediaIds || [];
+  const isSavedReel = Boolean(story.videoMediaId);
   return <div className="mx-auto max-w-5xl space-y-5 pb-28">
     <header><div className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.16em] text-pink-200/75"><Sparkles className="h-3.5 w-3.5" />Ready story</div><h1 className="mt-2 text-3xl font-black tracking-tight">{story.title}</h1><p className="mt-2 text-sm text-white/50">{story.kicker} · {story.sourceCount} saved moments · private until you choose to share.</p></header>
     <div className="grid gap-5 lg:grid-cols-[1.05fr_.95fr]">
-      <StoryCollage ids={ids} />
+      {isSavedReel
+        ? <div className="relative aspect-[9/16] max-h-[680px] overflow-hidden rounded-[2rem] bg-black lg:mx-auto lg:w-full"><video data-testid="ready-story-saved-reel" src={mediaSrc(story.videoMediaId)} controls playsInline preload="metadata" className="h-full w-full object-contain" /></div>
+        : <StoryCollage ids={ids} />}
       <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
-        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/8 px-3 py-1.5 text-xs font-bold text-emerald-100"><Check className="h-3.5 w-3.5" />Prepared without a new AI generation</div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/8 px-3 py-1.5 text-xs font-bold text-emerald-100"><Check className="h-3.5 w-3.5" />{isSavedReel ? 'Uses the finished Reel already saved in your Library' : 'Prepared without a new AI generation'}</div>
         <label className="mt-5 block text-xs font-black uppercase tracking-wider text-white/45">Caption</label>
         <textarea value={caption} onChange={event => setCaption(event.target.value)} rows={8} className="mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm leading-6 text-white outline-none focus:border-pink-300/30" />
-        <p className="mt-2 text-xs leading-5 text-white/38">Edit anything you want. SnapNext assembled this private draft from your saved photos; it does not auto-post.</p>
+        <p className="mt-2 text-xs leading-5 text-white/38">Edit anything you want. SnapNext keeps this private and never auto-posts it.</p>
         <div className="mt-5 grid gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
           <button onClick={copyPost} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/12 px-4 text-sm font-bold"><Copy className="h-4 w-4" />Copy</button>
-          <button onClick={exportCollage} disabled={!!busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/12 px-4 text-sm font-bold disabled:opacity-50">{busy === 'export' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Export</button>
+          <button data-testid="ready-story-export" onClick={exportStory} disabled={!!busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/12 px-4 text-sm font-bold disabled:opacity-50">{busy === 'export' ? <Loader2 className="h-4 w-4 animate-spin" /> : isSavedReel ? <Film className="h-4 w-4" /> : <Download className="h-4 w-4" />}{isSavedReel ? 'Export Reel' : 'Export'}</button>
           <button onClick={shareStory} disabled={!!busy} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-white px-4 text-sm font-black text-black disabled:opacity-50">{busy === 'share' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Share</button>
         </div>
       </section>
     </div>
-    <div className="rounded-2xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs leading-5 text-white/42">The collage is rendered on your device when you export or share it. SnapNext stores only the private story manifest and references to your existing photos, so this feature does not create another full-resolution copy in cloud storage.</div>
+    <div className="rounded-2xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs leading-5 text-white/42">{isSavedReel ? 'This Ready Story reuses the one Library copy you explicitly saved; it does not render or charge for another Reel. Downloaded or shared copies leave SnapNext deletion control.' : 'The collage is rendered on your device when you export or share it. SnapNext stores only the private story manifest and references to your existing photos, so this feature does not create another full-resolution copy in cloud storage.'}</div>
   </div>;
 }
