@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ArrowRight, Sparkles, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
-import { StoryCollage } from '@/components/ready-stories/StoryVisuals';
+import { StoryCollage, StoryMotionReel } from '@/components/ready-stories/StoryVisuals';
 import StoryReelAudio from '@/components/ready-stories/StoryReelAudio';
 
 function StoryBadge({ story }) {
@@ -19,6 +19,7 @@ function StoryBadge({ story }) {
     'on-this-day': 'On this day',
     'saved-story': 'Saved story',
     'confirmed-event': 'Memory story',
+    'created-reel': 'Saved Reel',
   };
   const label = labels[story?.type] || 'Memory story';
   return <div className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/45 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white/90 backdrop-blur"><Sparkles className="h-3 w-3" />{label}</div>;
@@ -68,7 +69,7 @@ export default function HomeReadyStories() {
     <div>
       <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.16em] text-pink-200/75"><Sparkles className="h-3.5 w-3.5" />Ready for you</div>
       <h2 className="mt-1 text-[24px] font-black tracking-tight">SnapNext made these from your memories</h2>
-      <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">Auto-playing memory stories and richer collages, smart-selected from people, dates, places and existing photo intelligence. A free CC0 soundtrack is ready when you tap sound. Private until you choose to share.</p>
+      <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">Auto-playing memory stories, saved Reels and richer collages from your own library. Free story audio stays optional, and a Reel you explicitly saved keeps its own embedded sound. Private until you choose to share.</p>
     </div>
 
     <article data-testid={`home-ready-story-${featured.id}`} className="overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.035]">
@@ -78,18 +79,20 @@ export default function HomeReadyStories() {
         <button onClick={() => dismiss(featured.id)} aria-label="Dismiss this story" className="absolute right-4 top-[4.6rem] grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-black/45 backdrop-blur"><X className="h-4 w-4" /></button>
       </div>
       <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-4">
-        <p className="text-[11px] font-semibold leading-4 text-white/45">Smart-selected from {featured.sourceCount} related moments · {featured.selectedCount || featured.mediaIds?.length || 0} best frames · private draft</p>
+        <p className="text-[11px] font-semibold leading-4 text-white/45">{featured.type === 'created-reel' ? `Finished Reel from ${featured.sourceCount} saved moments` : `Smart-selected from ${featured.sourceCount} related moments · ${featured.selectedCount || featured.mediaIds?.length || 0} best frames`} · private draft</p>
         <Link data-testid="home-ready-story-review" href={`/ready-story/${encodeURIComponent(featured.id)}`} className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full bg-white px-4 text-xs font-black text-black">Review & share<ArrowRight className="h-3.5 w-3.5" /></Link>
       </div>
     </article>
 
     {rest.length > 0 && <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">{rest.map(story => <article key={story.id} className="w-[230px] shrink-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]">
       <div className="relative h-40">
-        <StoryCollage ids={story.collageMediaIds || story.mediaIds} layout={story.collageLayout} className="h-full w-full" />
-        <div className="absolute left-3 top-3"><StoryBadge story={story} /></div>
-        <button onClick={() => dismiss(story.id)} aria-label="Dismiss this story" className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/45"><X className="h-3.5 w-3.5" /></button>
+        {story.videoMediaId
+          ? <StoryMotionReel story={story} compact showTitle={false} showMutedBadge={false} className="h-full w-full" />
+          : <StoryCollage ids={story.collageMediaIds || story.mediaIds} layout={story.collageLayout} className="h-full w-full" />}
+        {!story.videoMediaId && <div className="absolute left-3 top-3"><StoryBadge story={story} /></div>}
+        <button onClick={() => dismiss(story.id)} aria-label="Dismiss this story" className="absolute right-3 bottom-3 grid h-8 w-8 place-items-center rounded-full bg-black/55"><X className="h-3.5 w-3.5" /></button>
       </div>
-      <div className="p-4"><p className="text-[11px] font-black text-pink-100/70">{story.kicker}</p><h3 className="mt-1 line-clamp-2 font-black">{story.title}</h3><p className="mt-1 text-[11px] text-white/40">{story.sourceCount} related moments · smart selection</p><Link href={`/ready-story/${encodeURIComponent(story.id)}`} className="mt-3 inline-flex min-h-9 items-center gap-1 rounded-full border border-white/12 px-3 text-xs font-bold text-white/75">Review<ArrowRight className="h-3 w-3" /></Link></div>
+      <div className="p-4"><p className="text-[11px] font-black text-pink-100/70">{story.kicker}</p><h3 className="mt-1 line-clamp-2 font-black">{story.title}</h3><p className="mt-1 text-[11px] text-white/40">{story.type === 'created-reel' ? `${story.sourceCount} source moments · saved video` : `${story.sourceCount} related moments · smart selection`}</p><Link href={`/ready-story/${encodeURIComponent(story.id)}`} className="mt-3 inline-flex min-h-9 items-center gap-1 rounded-full border border-white/12 px-3 text-xs font-bold text-white/75">Review<ArrowRight className="h-3 w-3" /></Link></div>
     </article>)}</div>}
   </section>;
 }
