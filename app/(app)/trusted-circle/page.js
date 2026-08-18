@@ -17,6 +17,10 @@ const PERM_LABELS = {
   shareProfilePicture: { label: 'Profile picture', detail: 'Let this trusted person see your profile picture.' },
 };
 
+function sharedMediaSrc(id) {
+  return `/api/shared/media/${encodeURIComponent(id)}`;
+}
+
 export default function TrustedCirclePage() {
   const [data, setData] = useState({ accepted: [], incoming: [], outgoing: [], blocked: [] });
   const [albums, setAlbums] = useState({ owned: [], shared: [] });
@@ -221,22 +225,12 @@ export default function TrustedCirclePage() {
                 <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-cyan-400/10"><MapPin className="h-4.5 w-4.5 text-cyan-100" /></div>
                 <div className="min-w-0 flex-1">
                   <h3 className="font-black">{suggestion.tripTitle}</h3>
-                  <p className="mt-1 text-sm text-white/45">
-                    {suggestion.count} photo{suggestion.count === 1 ? '' : 's'} · for {suggestion.recipient.name}
-                  </p>
+                  <p className="mt-1 text-sm text-white/45">{suggestion.count} photo{suggestion.count === 1 ? '' : 's'} · for {suggestion.recipient.name}</p>
                   <p className="mt-1 text-xs text-white/35">{suggestion.reason}</p>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  data-testid={`trusted-trip-approve-${suggestion.id}`}
-                  onClick={() => approveTripShare(suggestion)}
-                  disabled={busy === `trip-${suggestion.id}`}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 text-xs font-black disabled:opacity-50"
-                >
-                  {busy === `trip-${suggestion.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                  Share these {suggestion.count}
-                </button>
+                <button data-testid={`trusted-trip-approve-${suggestion.id}`} onClick={() => approveTripShare(suggestion)} disabled={busy === `trip-${suggestion.id}`} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 px-5 text-xs font-black disabled:opacity-50">{busy === `trip-${suggestion.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Share these {suggestion.count}</button>
                 <button data-testid={`trusted-trip-dismiss-${suggestion.id}`} onClick={() => dismissTripShare(suggestion.id)} className="min-h-10 rounded-full border border-white/8 bg-white/5 px-4 text-xs font-black text-white/55">Not now</button>
               </div>
             </div>
@@ -250,9 +244,9 @@ export default function TrustedCirclePage() {
       <section data-testid="trusted-shared-with-you">
         <SectionHeader title="Shared with you" subtitle="Memories other trusted people chose to send" />
         {!sharedPhotos.length && !sharedAlbums.length && !memories.length ? <EmptyState icon={ImageIcon} title="Nothing shared yet" detail="When a trusted person shares a photo, album, or memory story with you, it will appear here." /> : <div className="space-y-5">
-          {sharedPhotos.length > 0 && <div><MiniHeading title="Photos" /><div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 md:grid-cols-6">{sharedPhotos.slice(0, 18).map(item => <div key={item.id} className="relative aspect-square overflow-hidden rounded-xl bg-white/5"><img src={mediaSrc(item.media.id)} className="h-full w-full object-cover" alt="" /><div className="absolute inset-x-1 bottom-1 truncate rounded-lg bg-black/65 px-1.5 py-1 text-[9px] text-white/75">From {item.owner?.name || 'a trusted person'}</div></div>)}</div></div>}
+          {sharedPhotos.length > 0 && <div><MiniHeading title="Photos" /><div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 md:grid-cols-6">{sharedPhotos.slice(0, 18).map(item => <div key={item.id} className="relative aspect-square overflow-hidden rounded-xl bg-white/5"><img src={sharedMediaSrc(item.media.id)} className="h-full w-full object-cover" alt="" /><div className="absolute inset-x-1 bottom-1 truncate rounded-lg bg-black/65 px-1.5 py-1 text-[9px] text-white/75">From {item.owner?.name || 'a trusted person'}</div></div>)}</div></div>}
           {sharedAlbums.length > 0 && <div><MiniHeading title="Albums" /><div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">{sharedAlbums.map(album => <Link data-testid={`trusted-album-${album.id}`} key={album.id} href={`/trusted-circle/album/${album.id}`} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4"><div className="grid h-10 w-10 place-items-center rounded-xl bg-purple-500/10"><ImageIcon className="h-4.5 w-4.5 text-purple-100" /></div><div className="min-w-0 flex-1"><h3 className="truncate text-sm font-black">{album.name}</h3><p className="mt-1 text-xs text-white/38">{album.mine ? 'You created this album' : 'Shared with you'}</p></div><ChevronRight className="h-4 w-4 text-white/25" /></Link>)}</div></div>}
-          {memories.length > 0 && <div><MiniHeading title="Memory stories" /><div className="space-y-2">{memories.map(memory => <div key={memory.id} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{memory.title}</h3><p className="mt-1 text-xs text-white/40">From {memory.owner?.name || 'a trusted person'}</p></div><button data-testid={`trusted-react-${memory.id}`} onClick={() => apiFetch(`/shared/memories/${memory.id}/react`, { method: 'POST', body: JSON.stringify({ emoji: '❤️' }) }).then(() => toast.success('Reaction sent ❤️')).catch(error => toast.error(error.message))} className="rounded-full bg-white/5 px-3 py-2 text-xs">❤️</button></div>{memory.mediaItems?.length > 0 && <div className="mt-3 flex gap-1.5 overflow-x-auto no-scrollbar">{memory.mediaItems.slice(0, 8).map(media => <img key={media.id} src={mediaSrc(media.id)} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />)}</div>}</div>)}</div></div>}
+          {memories.length > 0 && <div><MiniHeading title="Memory stories" /><div className="space-y-2">{memories.map(memory => <div key={memory.id} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="font-black">{memory.title}</h3><p className="mt-1 text-xs text-white/40">From {memory.owner?.name || 'a trusted person'}</p></div><button data-testid={`trusted-react-${memory.id}`} onClick={() => apiFetch(`/shared/memories/${memory.id}/react`, { method: 'POST', body: JSON.stringify({ emoji: '❤️' }) }).then(() => toast.success('Reaction sent ❤️')).catch(error => toast.error(error.message))} className="rounded-full bg-white/5 px-3 py-2 text-xs">❤️</button></div>{memory.mediaItems?.length > 0 && <div className="mt-3 flex gap-1.5 overflow-x-auto no-scrollbar">{memory.mediaItems.slice(0, 8).map(media => media.kind === 'video' ? <video data-testid={`trusted-shared-video-${media.id}`} key={media.id} src={sharedMediaSrc(media.id)} controls playsInline preload="metadata" className="h-28 w-20 shrink-0 rounded-xl bg-black object-cover" /> : <img key={media.id} src={sharedMediaSrc(media.id)} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />)}</div>}</div>)}</div></div>}
         </div>}
       </section>
 
