@@ -7,6 +7,7 @@ import {
   READY_STORY_LIMIT,
   READY_STORY_MEDIA_LIMIT,
 } from '@/lib/ready-story-drafts';
+import { buildCreatedReelReadyStoryCandidates } from '@/lib/created-reel-ready-story';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,8 @@ function fingerprint(candidate) {
     kicker: candidate.kicker,
     caption: candidate.caption,
     mediaIds: candidate.mediaIds,
+    collageMediaIds: candidate.collageMediaIds,
+    videoMediaId: candidate.videoMediaId || null,
     happenedAt: candidate.happenedAt,
     source: candidate.source,
   });
@@ -52,11 +55,12 @@ async function context(request) {
 
 async function loadInputs(db, userId) {
   return Promise.all([
-    db.collection('media').find({ userId, trashed: { $ne: true }, kind: 'photo' }).project({
+    db.collection('media').find({ userId, trashed: { $ne: true }, kind: { $in: ['photo', 'video'] } }).project({
       _id: 0,
       id: 1,
       name: 1,
       kind: 1,
+      mime: 1,
       trashed: 1,
       capturedAt: 1,
       takenAt: 1,
@@ -68,7 +72,11 @@ async function loadInputs(db, userId) {
       userTags: 1,
       peopleIntelligence: 1,
       aiAnalysis: 1,
-    }).sort({ createdAt: -1 }).limit(READY_STORY_MEDIA_LIMIT).toArray(),
+      sourceMediaIds: 1,
+      creativeOrigin: 1,
+      durationMs: 1,
+      aspectRatio: 1,
+    }).sort({ uploadedAt: -1, createdAt: -1 }).limit(READY_STORY_MEDIA_LIMIT).toArray(),
     db.collection('memory_events').find({ userId, deleted: { $ne: true } }).project({ _id: 0 }).sort({ updatedAt: -1 }).limit(100).toArray(),
     db.collection('life_events').find({ userId, archivedAt: null }).project({ _id: 0 }).sort({ updatedAt: -1 }).limit(100).toArray(),
     db.collection('life_profiles').find({ userId, archivedAt: null }).project({ _id: 0 }).sort({ updatedAt: -1 }).limit(100).toArray(),
@@ -76,9 +84,26 @@ async function loadInputs(db, userId) {
   ]);
 }
 
+function combineCandidates(generated = [], createdReels = []) {
+  const byId = new Map();
+  for (const candidate of [...createdReels, ...generated]) {
+    if (!candidate?.id || byId.has(candidate.id)) continue;
+    byId.set(candidate.id, candidate);
+  }
+  return [...byId.values()]
+    .sort((left, right) => {
+      if (Number(right.score || 0) !== Number(left.score || 0)) return Number(right.score || 0) - Number(left.score || 0);
+      return new Date(right.happenedAt || 0) - new Date(left.happenedAt || 0);
+    })
+    .slice(0, READY_STORY_LIMIT);
+}
+
 async function refreshDrafts(db, userId) {
   const [media, memoryEvents, lifeEvents, profiles, stories] = await loadInputs(db, userId);
-  const candidates = buildReadyStoryCandidates({ media, memoryEvents, lifeEvents, profiles, stories, limit: READY_STORY_LIMIT });
+  const candidates = combineCandidates(
+    buildReadyStoryCandidates({ media, memoryEvents, lifeEvents, profiles, stories, limit: READY_STORY_LIMIT }),
+    buildCreatedReelReadyStoryCandidates({ media, limit: READY_STORY_LIMIT }),
+  );
   const collection = db.collection(COLLECTION);
   const dismissed = candidates.length
     ? await collection.find({ userId, kind: PROJECT_KIND, id: { $in: candidates.map(item => item.id) }, status: 'dismissed' }).project({ _id: 0, id: 1 }).toArray()

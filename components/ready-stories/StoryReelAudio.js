@@ -8,7 +8,7 @@ import { StoryMotionReel } from '@/components/ready-stories/StoryVisuals';
 export default function StoryReelAudio({ story, className = '', compact = false, showTitle = true }) {
   const rootRef = useRef(null);
   const audioRef = useRef(null);
-  const soundtrack = useMemo(() => soundtrackForStory(story), [story]);
+  const soundtrack = useMemo(() => story?.videoMediaId ? null : soundtrackForStory(story), [story]);
   const [soundOn, setSoundOn] = useState(false);
   const [inView, setInView] = useState(true);
   const [audioError, setAudioError] = useState(false);
