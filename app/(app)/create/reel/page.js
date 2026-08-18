@@ -12,9 +12,11 @@ import {
   Music2,
   Play,
   Plus,
+  Save,
   Share2,
   ShieldCheck,
   Sparkles,
+  Users,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -61,6 +63,10 @@ function mergeMedia(primary = [], secondary = []) {
   return [...byId.values()];
 }
 
+function trustedPersonName(favorite = {}) {
+  return favorite?.other?.name || favorite?.other?.email || 'Trusted person';
+}
+
 export default function CreateReelPage() {
   const [library, setLibrary] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -69,6 +75,10 @@ export default function CreateReelPage() {
   const [includeMusic, setIncludeMusic] = useState(true);
   const [preparation, setPreparation] = useState(null);
   const [renderState, setRenderState] = useState(null);
+  const [savedMedia, setSavedMedia] = useState(null);
+  const [readyStoryId, setReadyStoryId] = useState('');
+  const [trustedPeople, setTrustedPeople] = useState([]);
+  const [showTrustedShare, setShowTrustedShare] = useState(false);
   const [busy, setBusy] = useState('loading');
 
   useEffect(() => {
@@ -118,6 +128,10 @@ export default function CreateReelPage() {
   function resetPrepared() {
     setPreparation(null);
     setRenderState(null);
+    setSavedMedia(null);
+    setReadyStoryId('');
+    setTrustedPeople([]);
+    setShowTrustedShare(false);
   }
 
   function toggleMedia(id) {
@@ -144,6 +158,10 @@ export default function CreateReelPage() {
       });
       setPreparation(result);
       setRenderState(null);
+      setSavedMedia(null);
+      setReadyStoryId('');
+      setTrustedPeople([]);
+      setShowTrustedShare(false);
       toast.success('Reel preview verified.');
     } catch (error) {
       toast.error(error.message || 'This Reel could not be prepared.');
@@ -165,6 +183,73 @@ export default function CreateReelPage() {
       else toast.success('Reel render started.');
     } catch (error) {
       toast.error(error.message || 'Reel render could not start.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function saveReadyReel() {
+    if (savedMedia && !savedMedia.trashed) return;
+    const artifactId = String(renderState?.artifact?.id || renderState?.job?.id || '').trim();
+    if (!artifactId) return toast.error('The finished Reel identity is unavailable. Refresh the render status and try again.');
+    setBusy('save-library');
+    try {
+      const result = await apiFetch(`/create/reels/render/${encodeURIComponent(artifactId)}/save`, { method: 'POST' });
+      setSavedMedia(result.media || null);
+      if (result.media?.trashed) {
+        toast('This Reel is already saved but currently in Trash.');
+        return;
+      }
+      toast.success(result.alreadySaved ? 'This Reel is already in your Library.' : 'Reel saved to your Library.');
+
+      try {
+        const refreshed = await apiFetch('/ready-story-drafts', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'refresh' }),
+        });
+        const story = (refreshed.items || []).find((item) => item?.videoMediaId === result.media?.id);
+        if (story?.id) setReadyStoryId(story.id);
+      } catch {}
+    } catch (error) {
+      toast.error(error.message || 'This Reel could not be saved to your Library.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function openTrustedShare() {
+    if (!savedMedia?.id || savedMedia?.trashed) return toast('Save the Reel to your active Library before sharing it privately.');
+    setShowTrustedShare(true);
+    if (trustedPeople.length) return;
+    setBusy('load-trusted');
+    try {
+      const result = await apiFetch('/trusted-circle');
+      setTrustedPeople(Array.isArray(result.accepted) ? result.accepted : []);
+    } catch (error) {
+      toast.error(error.message || 'Your trusted circle could not load.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function shareSavedReel(favorite) {
+    const recipientUserId = favorite?.other?.id;
+    if (!savedMedia?.id || !recipientUserId) return;
+    const shareKey = `share-trusted-${recipientUserId}`;
+    setBusy(shareKey);
+    try {
+      await apiFetch('/shared/memories', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: 'SnapNext Memory Reel',
+          recipientUserId,
+          mediaIds: [savedMedia.id],
+        }),
+      });
+      toast.success(`Memory Reel shared privately with ${trustedPersonName(favorite)}.`);
+      setShowTrustedShare(false);
+    } catch (error) {
+      toast.error(error.message || 'The Reel was not shared.');
     } finally {
       setBusy('');
     }
@@ -200,7 +285,7 @@ export default function CreateReelPage() {
           <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Turn your memories into a Reel</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-white/50 md:text-base">Choose the exact memories, preview the canonical edit, then approve rendering. Previewing does not spend AI Credits or reserve a Reel allowance.</p>
         </div>
-        <div className="rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.06] px-4 py-3 text-xs text-emerald-100"><div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" />Originals stay untouched</div><div className="mt-1 text-emerald-100/60">Only the final derived MP4 is rendered.</div></div>
+        <div className="rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.06] px-4 py-3 text-xs text-emerald-100"><div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" />Originals stay untouched</div><div className="mt-1 text-emerald-100/60">A Library copy is created only if you explicitly save the finished Reel.</div></div>
       </header>
 
       {handoff?.mediaIds?.length > 0 && <section data-testid="create-reel-ask-handoff" className="rounded-3xl border border-cyan-300/15 bg-cyan-400/[0.05] p-4 md:p-5"><div className="flex items-start gap-3"><Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-cyan-200" /><div><h2 className="font-black">Brought over from Ask SnapNext</h2><p className="mt-1 text-sm leading-5 text-white/50">{handoff.query || 'Your grounded memory matches are preselected below.'}</p><p className="mt-2 text-xs text-white/35">The handoff exists only in this browser tab. The server re-verifies ownership and source hashes before export.</p></div></div></section>}
@@ -230,7 +315,17 @@ export default function CreateReelPage() {
             {!preparation ? <><p className="mt-2 text-sm leading-5 text-white/45">SnapNext will verify every selected source, build the final scene order, check the monthly Reel allowance and confirm the renderer is available.</p><button data-testid="create-reel-preview" onClick={prepareReel} disabled={busy === 'prepare' || !selectedIds.length} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 px-4 text-sm font-black disabled:opacity-40">{busy === 'prepare' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Preview Reel</button></> : <div data-testid="create-reel-prepared" className="mt-4 space-y-3 text-sm"><SummaryRow label="Scenes" value={preview?.sceneCount} /><SummaryRow label="Length" value={formatDuration(preview?.durationMs)} /><SummaryRow label="Format" value={preview?.aspectRatio} /><SummaryRow label="Music" value={preview?.soundtrack || 'Off'} /><SummaryRow label="Included renders left" value={preview?.quota?.unlimited ? 'Unlimited' : preview?.quota?.remaining} /><div className="rounded-2xl border border-emerald-300/10 bg-emerald-300/[0.05] p-3 text-xs leading-5 text-emerald-100/70">Preview verified. No AI provider was called and no render allowance was reserved.</div>{quotaBlocked && <div className="rounded-2xl border border-amber-300/15 bg-amber-300/[0.06] p-3 text-xs leading-5 text-amber-100">Your included Reel allowance for this period is used. <Link href="/billing" className="font-black underline">View plans</Link>.</div>}{rendererBlocked && <div className="rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.05] p-3 text-xs leading-5 text-cyan-100">The canonical MP4 renderer is still being activated. Your preview is safe and no allowance has been used.</div>}<button data-testid="create-reel-render" onClick={renderReel} disabled={busy === 'render' || quotaBlocked || rendererBlocked} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-black text-black disabled:opacity-35">{busy === 'render' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}Render MP4</button><button onClick={prepareReel} disabled={busy === 'prepare'} className="w-full rounded-2xl border border-white/8 px-4 py-3 text-xs font-black text-white/55">Refresh preview</button></div>}
           </div>
 
-          {renderState && <div data-testid="create-reel-render-state" className="rounded-3xl border border-white/8 bg-white/[0.03] p-5"><h2 className="font-black">Render status</h2><div className="mt-3 space-y-2 text-sm"><SummaryRow label="Job" value={renderState.job?.status || renderState.artifact?.status || 'Preparing'} />{renderState.accountingPending && <p className="text-xs text-white/40">Final usage accounting is being verified.</p>}{renderState.deletionSafetyPending && <p className="text-xs text-white/40">Source deletion safety is being rechecked.</p>}{!renderReady && renderState.job?.status && !['failed', 'ready'].includes(renderState.job.status) && <div className="flex items-center gap-2 rounded-2xl bg-white/5 p-3 text-xs text-white/50"><Loader2 className="h-3.5 w-3.5 animate-spin" />Rendering continues safely in SnapNext.</div>}{renderReady && <div className="space-y-2 pt-2"><a data-testid="create-reel-download" href={renderState.downloadUrl} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 px-4 text-sm font-black"><Download className="h-4 w-4" />Download MP4</a><button data-testid="create-reel-share" onClick={shareReadyReel} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/8 bg-white/5 px-4 text-sm font-black"><Share2 className="h-4 w-4" />Share file</button><p className="text-[11px] leading-4 text-white/35">{renderState.deletionNotice}</p></div>}</div></div>}
+          {renderState && <div data-testid="create-reel-render-state" className="rounded-3xl border border-white/8 bg-white/[0.03] p-5"><h2 className="font-black">Render status</h2><div className="mt-3 space-y-2 text-sm"><SummaryRow label="Job" value={renderState.job?.status || renderState.artifact?.status || 'Preparing'} />{renderState.accountingPending && <p className="text-xs text-white/40">Final usage accounting is being verified.</p>}{renderState.deletionSafetyPending && <p className="text-xs text-white/40">Source deletion safety is being rechecked.</p>}{!renderReady && renderState.job?.status && !['failed', 'ready'].includes(renderState.job.status) && <div className="flex items-center gap-2 rounded-2xl bg-white/5 p-3 text-xs text-white/50"><Loader2 className="h-3.5 w-3.5 animate-spin" />Rendering continues safely in SnapNext.</div>}{renderReady && <div className="space-y-2 pt-2">
+            <button data-testid="create-reel-save-library" onClick={saveReadyReel} disabled={busy === 'save-library' || Boolean(savedMedia && !savedMedia.trashed)} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-black text-black disabled:opacity-65">{busy === 'save-library' ? <Loader2 className="h-4 w-4 animate-spin" /> : savedMedia && !savedMedia.trashed ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}{savedMedia?.trashed ? 'Saved Reel is in Trash' : savedMedia ? 'Saved to Library' : 'Save to Library'}</button>
+            <p className="text-[11px] leading-4 text-white/38">Saving is optional and uses your plan storage. It creates one independent Library copy; the source photos and videos are never changed.</p>
+            {savedMedia && !savedMedia.trashed && <div data-testid="create-reel-library-actions" className="grid grid-cols-2 gap-2"><Link href="/gallery" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/8 bg-white/5 px-3 text-xs font-black">Open Library</Link>{readyStoryId ? <Link data-testid="create-reel-ready-story" href={`/ready-story/${encodeURIComponent(readyStoryId)}`} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/8 bg-white/5 px-3 text-xs font-black">Ready Story</Link> : <span className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/8 bg-white/[0.02] px-3 text-center text-[10px] font-bold text-white/35">Ready Story will refresh automatically</span>}</div>}
+            {savedMedia?.trashed && <Link href="/trash" className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-amber-300/15 bg-amber-300/[0.05] px-3 text-xs font-black text-amber-100">Open Trash to restore</Link>}
+            {savedMedia && !savedMedia.trashed && <button data-testid="create-reel-share-trusted" onClick={openTrustedShare} disabled={busy === 'load-trusted'} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.05] px-4 text-sm font-black text-cyan-100">{busy === 'load-trusted' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}Share with trusted person</button>}
+            {showTrustedShare && savedMedia && !savedMedia.trashed && <div data-testid="create-reel-trusted-picker" className="rounded-2xl border border-white/8 bg-black/20 p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-black">Trusted circle</p><p className="mt-0.5 text-[10px] text-white/35">Nothing is shared until you choose a person.</p></div><button aria-label="Close trusted sharing" onClick={() => setShowTrustedShare(false)} className="grid h-7 w-7 place-items-center rounded-full bg-white/5"><X className="h-3.5 w-3.5" /></button></div>{busy === 'load-trusted' ? <div className="mt-3 flex items-center gap-2 text-xs text-white/40"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading trusted people…</div> : trustedPeople.length ? <div className="mt-3 space-y-2">{trustedPeople.map((favorite) => { const recipientId = favorite?.other?.id || favorite?.id; const shareBusy = busy === `share-trusted-${recipientId}`; return <button data-testid={`create-reel-share-trusted-${favorite.id}`} key={favorite.id} onClick={() => shareSavedReel(favorite)} disabled={shareBusy} className="flex min-h-10 w-full items-center justify-between gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 text-left text-xs font-bold disabled:opacity-50"><span className="truncate">{trustedPersonName(favorite)}</span>{shareBusy ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Share2 className="h-3.5 w-3.5 shrink-0" />}</button>; })}</div> : <div className="mt-3 rounded-xl border border-dashed border-white/10 p-3 text-xs leading-5 text-white/40">Nobody is in your trusted circle yet. <Link href="/trusted-circle" className="font-black text-pink-200">Invite someone</Link> first.</div>}</div>}
+            <a data-testid="create-reel-download" href={renderState.downloadUrl} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 px-4 text-sm font-black"><Download className="h-4 w-4" />Download MP4</a>
+            <button data-testid="create-reel-share" onClick={shareReadyReel} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/8 bg-white/5 px-4 text-sm font-black"><Share2 className="h-4 w-4" />Share file</button>
+            <p className="text-[11px] leading-4 text-white/35">{renderState.deletionNotice}</p>
+          </div>}</div></div>}
         </aside>
       </section>
     </div>
