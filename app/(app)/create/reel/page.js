@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -74,8 +75,11 @@ export default function CreateReelPage() {
     let cancelled = false;
     const localHandoff = safeHandoff();
     if (localHandoff) {
-      setHandoff(localHandoff);
-      setSelectedIds(localHandoff.mediaIds);
+      Promise.resolve().then(() => {
+        if (cancelled) return;
+        setHandoff(localHandoff);
+        setSelectedIds(localHandoff.mediaIds);
+      });
     }
     apiFetch('/media?view=gallery&filter=all&limit=60')
       .then((data) => {
@@ -205,12 +209,12 @@ export default function CreateReelPage() {
         <div className="space-y-6">
           <div className="rounded-3xl border border-white/8 bg-white/[0.03] p-4 md:p-5">
             <div className="flex items-center justify-between gap-3"><div><h2 className="font-black">Selected memories</h2><p className="mt-1 text-xs text-white/40">{selectedIds.length} of {MAX_SCENES} selected</p></div>{selectedIds.length > 0 && <button onClick={() => { setSelectedIds([]); resetPrepared(); }} className="rounded-full border border-white/8 px-3 py-2 text-xs font-bold text-white/50">Clear</button>}</div>
-            {selectedMedia.length ? <div data-testid="create-reel-selected" className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">{selectedMedia.map((item, index) => <div key={item.id} className="relative overflow-hidden rounded-2xl border border-pink-300/20 bg-black/20"><div className="aspect-[4/5] overflow-hidden"><img src={galleryThumbnailSrc(item.id, 360)} alt={item.name || `Memory ${index + 1}`} className="h-full w-full object-cover" /></div><span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[10px] font-black">{index + 1}</span>{item.kind === 'video' && <span className="absolute bottom-2 left-2 rounded-full bg-black/70 p-1.5"><Play className="h-3 w-3 fill-white" /></span>}<button aria-label="Remove memory" onClick={() => toggleMedia(item.id)} className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-black/70"><X className="h-3.5 w-3.5" /></button></div>)}</div> : <div className="mt-4 rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-white/40">Choose memories below to start your Reel.</div>}
+            {selectedMedia.length ? <div data-testid="create-reel-selected" className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">{selectedMedia.map((item, index) => <div key={item.id} className="relative overflow-hidden rounded-2xl border border-pink-300/20 bg-black/20"><div className="relative aspect-[4/5] overflow-hidden"><Image src={galleryThumbnailSrc(item.id, 360)} alt={item.name || `Memory ${index + 1}`} fill sizes="(min-width: 768px) 120px, 33vw" className="object-cover" unoptimized /></div><span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[10px] font-black">{index + 1}</span>{item.kind === 'video' && <span className="absolute bottom-2 left-2 rounded-full bg-black/70 p-1.5"><Play className="h-3 w-3 fill-white" /></span>}<button aria-label="Remove memory" onClick={() => toggleMedia(item.id)} className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-black/70"><X className="h-3.5 w-3.5" /></button></div>)}</div> : <div className="mt-4 rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-white/40">Choose memories below to start your Reel.</div>}
           </div>
 
           <div className="rounded-3xl border border-white/8 bg-white/[0.03] p-4 md:p-5">
             <div className="flex items-center justify-between gap-3"><div><h2 className="font-black">Add from Library</h2><p className="mt-1 text-xs text-white/40">Recent photos and videos. Ask SnapNext selections remain available even if they are older.</p></div><Link href="/gallery" className="text-xs font-bold text-pink-200">Open Library</Link></div>
-            {busy === 'loading' && !allMedia.length ? <div className="mt-5 flex items-center gap-2 text-sm text-white/40"><Loader2 className="h-4 w-4 animate-spin" />Loading memories…</div> : <div data-testid="create-reel-library" className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-2">{allMedia.slice(0, 60).map((item) => { const selected = selectedSet.has(String(item.id)); return <button key={item.id} onClick={() => toggleMedia(item.id)} className={`relative h-24 w-20 shrink-0 overflow-hidden rounded-2xl border-2 ${selected ? 'border-pink-400' : 'border-transparent'}`}><img src={galleryThumbnailSrc(item.id, 320)} alt={item.name || 'Memory'} className="h-full w-full object-cover" /><span className={`absolute bottom-1.5 right-1.5 grid h-6 w-6 place-items-center rounded-full ${selected ? 'bg-pink-500 text-white' : 'bg-black/70 text-white/80'}`}>{selected ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}</span></button>; })}</div>}
+            {busy === 'loading' && !allMedia.length ? <div className="mt-5 flex items-center gap-2 text-sm text-white/40"><Loader2 className="h-4 w-4 animate-spin" />Loading memories…</div> : <div data-testid="create-reel-library" className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-2">{allMedia.slice(0, 60).map((item) => { const selected = selectedSet.has(String(item.id)); return <button key={item.id} onClick={() => toggleMedia(item.id)} className={`relative h-24 w-20 shrink-0 overflow-hidden rounded-2xl border-2 ${selected ? 'border-pink-400' : 'border-transparent'}`}><Image src={galleryThumbnailSrc(item.id, 320)} alt={item.name || 'Memory'} fill sizes="80px" className="object-cover" unoptimized /><span className={`absolute bottom-1.5 right-1.5 grid h-6 w-6 place-items-center rounded-full ${selected ? 'bg-pink-500 text-white' : 'bg-black/70 text-white/80'}`}>{selected ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}</span></button>; })}</div>}
           </div>
 
           <div className="rounded-3xl border border-white/8 bg-white/[0.03] p-4 md:p-5">
