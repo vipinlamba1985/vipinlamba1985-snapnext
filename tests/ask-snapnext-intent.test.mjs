@@ -35,10 +35,11 @@ test('Ask SnapNext actions navigate only and never spend or share automatically'
       assert.equal(action.executesTask, false);
       assert.equal(action.spendsCredits, false);
       assert.equal(action.sharesMedia, false);
-      assert.match(action.href, /^\/(gallery|ai-studio(?:\/(?:restoration|enhance))?|circles)$/);
+      assert.match(action.href, /^\/(gallery|create\/reel|ai-studio\/(?:restoration|enhance)|circles)$/);
       assert.doesNotMatch(action.href, /https?:|javascript:|data:/i);
     }
   }
+  assert.equal(buildAskSnapNextActions({ query: 'Create a reel from this trip', matchCount: 8 })[0].href, '/create/reel');
 });
 
 test('ambiguous creation clarification cannot bypass the review step', () => {
