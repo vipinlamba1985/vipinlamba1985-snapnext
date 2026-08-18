@@ -14,8 +14,39 @@ const STARTERS = [
   'Prepare a reel from my latest trip',
 ];
 
+const CREATE_REEL_HANDOFF_KEY = 'snapnext:create-reel-handoff:v1';
+const CREATE_REEL_HANDOFF_TTL_MS = 30 * 60 * 1000;
+const CREATE_REEL_HANDOFF_MAX_MEDIA = 20;
+
 function messageId() { return crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`; }
 function formatDate(value) { if (!value) return ''; try { return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return ''; } }
+
+function rememberCreateReelHandoff(message, action) {
+  if (typeof window === 'undefined' || action?.id !== 'continue-in-create') return;
+  const seen = new Set();
+  const media = (message?.matches || [])
+    .filter((item) => item?.id && ['photo', 'video'].includes(item?.kind) && !seen.has(String(item.id)) && seen.add(String(item.id)))
+    .slice(0, CREATE_REEL_HANDOFF_MAX_MEDIA)
+    .map((item) => ({
+      id: String(item.id),
+      kind: item.kind,
+      name: String(item.name || 'Saved memory').slice(0, 180),
+      createdAt: item.createdAt || null,
+    }));
+  if (!media.length) return;
+  const now = Date.now();
+  try {
+    window.sessionStorage.setItem(CREATE_REEL_HANDOFF_KEY, JSON.stringify({
+      version: 1,
+      query: String(message?.query || '').slice(0, 1200),
+      media,
+      mediaIds: media.map((item) => item.id),
+      createdAt: now,
+      expiresAt: now + CREATE_REEL_HANDOFF_TTL_MS,
+      source: 'ask_snapnext_grounded_matches',
+    }));
+  } catch {}
+}
 
 export default function ChatPage() {
   const [messages, setMessages] = useState([{
@@ -117,7 +148,7 @@ export default function ChatPage() {
             {!!message.suggestions?.length && <div className="flex flex-wrap gap-2">{message.suggestions.map((suggestion) => <button data-testid="ask-snapnext-suggestion" key={suggestion} onClick={() => sendMessage(suggestion)} disabled={loading} className="min-h-10 rounded-full border border-pink-300/20 bg-pink-400/10 px-3 py-2 text-xs font-semibold text-pink-100">{suggestion}</button>)}</div>}
 
             {!!message.actions?.length && <div data-testid="ask-snapnext-actions" className="space-y-2 rounded-2xl border border-cyan-300/15 bg-cyan-400/[0.05] p-3">{message.actions.map((action) => (
-              <Link data-testid={`ask-snapnext-action-${action.id}`} key={action.id} href={action.href} className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2.5 transition hover:bg-white/[0.07]">
+              <Link data-testid={`ask-snapnext-action-${action.id}`} key={action.id} href={action.href} onClick={() => rememberCreateReelHandoff(message, action)} className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2.5 transition hover:bg-white/[0.07]">
                 <span className="min-w-0"><span className="block text-sm font-black text-white">{action.label}</span>{action.detail && <span className="mt-0.5 block text-[11px] leading-4 text-white/45">{action.detail}</span>}</span>
                 <ArrowRight className="h-4 w-4 shrink-0 text-cyan-200" />
               </Link>
