@@ -19,6 +19,7 @@ function policyLabel(value) {
 }
 
 function networkAllowsWifiPolicy() {
+  if (typeof navigator === 'undefined') return true;
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   if (!connection) return true;
   if (connection.saveData) return false;
