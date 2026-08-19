@@ -1,5 +1,5 @@
 import FamilyWatchLauncher from '@/components/family/FamilyWatchLauncher';
-import HomeReadyStories from '@/components/home/HomeReadyStories';
+import MagicHomeHighlight from '@/components/magic-library/MagicHomeHighlight';
 import HomeWeatherWelcome from '@/components/home/HomeWeatherWelcome';
 
 export default function DashboardLayout({ children }) {
@@ -7,7 +7,7 @@ export default function DashboardLayout({ children }) {
     <div className="home-weather-layout">
       <HomeWeatherWelcome />
       <div className="mx-auto mt-5 max-w-5xl">
-        <HomeReadyStories />
+        <MagicHomeHighlight />
       </div>
       {children}
       <div className="mx-auto -mt-20 max-w-5xl pb-32 md:-mt-2 md:pb-12">
