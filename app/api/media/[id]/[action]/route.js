@@ -28,7 +28,11 @@ export async function POST(request, context) {
       id: String(id || ''),
       action: String(action || ''),
     });
-    await markMagicManifestDirty(db, user.id, dirtyReason(String(action || '')));
+    await markMagicManifestDirty(db, user.id, dirtyReason(String(action || ''))).catch((error) => {
+      // The requested media mutation already committed. Do not return a false
+      // 500 that invites clients to retry a toggle such as favorite.
+      console.error('[media-action] could not mark Magic manifest dirty:', error?.message || error);
+    });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof MediaLibraryServiceError) {
