@@ -23,7 +23,9 @@ export async function POST(request) {
   const db = await getDb();
   try {
     const result = await applyBulkMediaAction({ db, userId: user.id, body });
-    await markMagicManifestDirty(db, user.id, dirtyReason(String(body?.action || '')));
+    await markMagicManifestDirty(db, user.id, dirtyReason(String(body?.action || ''))).catch((error) => {
+      console.error('[media-bulk] could not mark Magic manifest dirty:', error?.message || error);
+    });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof MediaLibraryServiceError) {
