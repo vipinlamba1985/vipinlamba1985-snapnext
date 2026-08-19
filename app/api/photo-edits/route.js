@@ -5,6 +5,8 @@ import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { storage } from '@/lib/storage';
 import { entitlementForUser } from '@/lib/entitlements';
+import { pendingMagicEligibilityFields } from '@/lib/magic-manifest';
+import { markMagicManifestDirty } from '@/lib/magic-manifest.server';
 
 export const runtime = 'nodejs';
 
@@ -63,7 +65,10 @@ export async function POST(request) {
     enhancement: { recipe: String(recipe).slice(0, 80), createdAt: now, localProcessing: true },
     aiAnalysis: { tags: source.aiAnalysis?.tags || [], faces: [], autoAlbum: 'Enhanced Photos' },
     createdAt: now,
+    uploadedAt: now,
+    ...pendingMagicEligibilityFields(now),
   });
+  await markMagicManifestDirty(db, user.id, 'asset_added');
 
   return json({ item: { id, name: safeName, size: buffer.length }, message: 'Your enhanced copy is saved in SnapNext.' });
 }
