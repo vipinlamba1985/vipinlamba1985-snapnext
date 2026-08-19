@@ -12,7 +12,7 @@ function CardIcon({ type }) {
   return <CalendarDays className="h-4 w-4" aria-hidden="true" />;
 }
 
-function StoryCard({ card }) {
+function MagicCard({ card }) {
   const cover = card?.cover_asset_id;
   return (
     <article
@@ -108,10 +108,10 @@ export default function MagicManifestV1() {
           <p className="text-[11px] font-black uppercase tracking-[0.2em] text-pink-300/75">Prepared from your library</p>
           <h2 id="magic-for-you-heading" className="mt-1 text-2xl font-black tracking-tight">For you</h2>
         </div>
-        <span className="text-xs font-bold text-white/35">{state.cards.length} stories</span>
+        <span className="text-xs font-bold text-white/35">{state.cards.length} highlights</span>
       </div>
       <div data-testid="magic-card-deck" className="no-scrollbar -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-3 sm:mx-0 sm:px-0">
-        {state.cards.map(card => <StoryCard key={card.card_id || card.card_key} card={card} />)}
+        {state.cards.map(card => <MagicCard key={card.card_id || card.card_key} card={card} />)}
       </div>
     </section>
   );
