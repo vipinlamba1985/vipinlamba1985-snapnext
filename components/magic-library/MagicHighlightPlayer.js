@@ -49,10 +49,10 @@ export default function MagicHighlightPlayer({ card, assets = [], onClose }) {
   }, [card?.card_id, card?.card_key]);
 
   useEffect(() => {
-    if (!playing || activeIsVideo || frames.length < 2) return undefined;
+    if (!playing || (activeIsVideo && !videoFailed) || frames.length < 2) return undefined;
     const timer = window.setTimeout(next, PHOTO_FRAME_MS);
     return () => window.clearTimeout(timer);
-  }, [playing, activeIsVideo, index, frames.length, next]);
+  }, [playing, activeIsVideo, videoFailed, index, frames.length, next]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -146,7 +146,7 @@ export default function MagicHighlightPlayer({ card, assets = [], onClose }) {
             <span key={frame.id} className={`h-1 flex-1 rounded-full ${frameIndex <= index ? 'bg-white' : 'bg-white/30'}`} />
           ))}
         </div>
-        <div className="mt-3 flex justify-between">
+        <div className="relative z-30 mt-3 flex justify-between">
           <button onClick={onClose} aria-label="Back to Magic" className="grid h-11 w-11 place-items-center rounded-full bg-black/40 backdrop-blur"><ArrowLeft className="h-5 w-5" /></button>
           <button onClick={toggleSound} aria-label={soundOn ? 'Mute soundtrack' : 'Play soundtrack'} title={soundtrack ? `${soundtrack.title} · ${soundtrack.license}` : undefined} className="inline-flex h-11 items-center gap-2 rounded-full bg-black/40 px-3 backdrop-blur">
             {soundOn ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
@@ -156,7 +156,7 @@ export default function MagicHighlightPlayer({ card, assets = [], onClose }) {
 
         <button onClick={() => setPlaying(value => !value)} className="flex-1" aria-label={playing ? 'Pause highlight' : 'Play highlight'} />
 
-        <div>
+        <div className="relative z-30">
           <span className="rounded-full bg-black/40 px-3 py-1.5 text-[11px] font-black uppercase tracking-[.16em]">Magic</span>
           <h1 className="mt-3 text-3xl font-black tracking-tight">{card.title}</h1>
           <div className="mt-2 flex items-center justify-between gap-4">
@@ -171,8 +171,8 @@ export default function MagicHighlightPlayer({ card, assets = [], onClose }) {
         </div>
       </div>
 
-      <button onClick={previous} className="absolute bottom-28 left-0 top-20 w-1/4" aria-label="Previous memory" />
-      <button onClick={next} className="absolute bottom-28 right-0 top-20 w-1/4" aria-label="Next memory" />
+      <button onClick={previous} className="absolute bottom-28 left-0 top-20 z-10 w-1/4" aria-label="Previous memory" />
+      <button onClick={next} className="absolute bottom-28 right-0 top-20 z-10 w-1/4" aria-label="Next memory" />
       <style>{`@keyframes snapnextMagicKenBurns { 0% { transform:scale(1.075); opacity:.35; } 12% { opacity:1; } 100% { transform:scale(1); opacity:1; } }`}</style>
     </div>
   );
