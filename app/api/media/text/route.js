@@ -15,7 +15,9 @@ export async function POST(request) {
   const db = await getDb();
   try {
     const item = await createTextMedia({ db, userId: user.id, body });
-    await markMagicManifestDirty(db, user.id, 'asset_added');
+    await markMagicManifestDirty(db, user.id, 'asset_added').catch((error) => {
+      console.error('[media-text] could not mark Magic manifest dirty:', error?.message || error);
+    });
     return NextResponse.json({ ok: true, item });
   } catch (error) {
     if (error instanceof MediaLibraryServiceError) {
