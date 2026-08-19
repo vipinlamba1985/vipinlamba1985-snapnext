@@ -6,7 +6,12 @@ import { MessageCircle, Sparkles } from 'lucide-react';
 
 export default function AskSnapNextLauncher() {
   const pathname = usePathname();
-  if (pathname === '/chat' || pathname.startsWith('/chat/')) return null;
+  const inChat = pathname === '/chat' || pathname.startsWith('/chat/');
+  const inLibrary = pathname === '/gallery'
+    || pathname.startsWith('/gallery/')
+    || pathname === '/magic-library'
+    || pathname.startsWith('/magic-library/');
+  if (inChat || inLibrary) return null;
 
   return (
     <Link
