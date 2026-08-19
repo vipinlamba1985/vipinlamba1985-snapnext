@@ -209,6 +209,7 @@ test('fresh explicit consent after verified deletion may enable future T2 cards'
 test('Screenshots V1 uses deterministic provenance and ignores AI-only classification', () => {
   assert.equal(isDeterministicScreenshot(item('a', { name: 'Screenshot 2026-08-18.png' })), true);
   assert.equal(isDeterministicScreenshot(item('b', { userCategory: 'screenshots', name: 'IMG_1234.PNG' })), true);
+  assert.equal(isDeterministicScreenshot(item('manual', { name: 'IMG_8888.PNG', screenshotTypeSource: 'user', userScreenshotType: 'info' })), true);
   assert.equal(isDeterministicScreenshot(item('c', { name: 'IMG_1234.PNG', aiAnalysis: { contentType: 'screenshot' } })), false);
 });
 
@@ -218,6 +219,7 @@ test('coverage aggregation measures capture and deterministic screenshot gates t
   assert.match(source, /takenAt/);
   assert.match(source, /mediaCreatedAt/);
   assert.match(source, /deterministicScreenshotMatches/);
+  assert.match(source, /userScreenshotType/);
 });
 
 test('MIN_MAGIC_CARDS is configuration, not a hard-coded branch', () => {
@@ -237,4 +239,27 @@ test('Library hides the global Ask launcher but keeps it elsewhere', async () =>
   assert.match(launcher, /pathname === '\/gallery'/);
   assert.match(launcher, /pathname\.startsWith\('\/gallery\/'\)/);
   assert.match(launcher, /href="\/chat"/);
+});
+
+test('worker protects newer dirty mutations with revision compare-and-set', async () => {
+  const server = await readFile(new URL('../lib/magic-manifest.server.js', import.meta.url), 'utf8');
+  assert.match(server, /\$inc:\s*\{\s*dirty_revision:\s*1\s*\}/);
+  assert.match(server, /dirty_revision:\s*lease\.dirtyRevision/);
+  assert.match(server, /Generation itself never clears dirty state/);
+});
+
+test('backfill cursor is advanced only after an entry is handled', async () => {
+  const server = await readFile(new URL('../lib/magic-manifest.server.js', import.meta.url), 'utf8');
+  const stopCheck = server.indexOf('if (processed >= remaining || Date.now() >= deadline) break;');
+  const cursorAdvance = server.indexOf('lastCursor = userId;', stopCheck);
+  assert.ok(stopCheck >= 0 && cursorAdvance > stopCheck);
+  assert.match(server, /handledFetchedEntries === ids\.length/);
+});
+
+test('category changes reset eligibility and invalidation failures do not falsify mutation failure', async () => {
+  const organize = await readFile(new URL('../app/api/media/[id]/organize/route.js', import.meta.url), 'utf8');
+  const action = await readFile(new URL('../app/api/media/[id]/[action]/route.js', import.meta.url), 'utf8');
+  assert.match(organize, /pendingMagicEligibilityFields\(now\)/);
+  assert.match(organize, /'eligibility_changed'/);
+  assert.match(action, /markMagicManifestDirty[\s\S]*\.catch/);
 });
