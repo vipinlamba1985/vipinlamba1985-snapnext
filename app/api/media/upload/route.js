@@ -10,6 +10,8 @@ import { effectivePlan } from '@/lib/entitlements';
 import { storage } from '@/lib/storage';
 import { analyzeMediaOnce } from '@/lib/cached-media-analysis';
 import { resolveStorageScope, getStorageScopeUsage } from '@/lib/storage-scope';
+import { pendingMagicEligibilityFields } from '@/lib/magic-manifest';
+import { markMagicManifestDirty } from '@/lib/magic-manifest.server';
 
 function clean(doc) {
   const { _id, ...rest } = doc;
@@ -124,6 +126,7 @@ export async function POST(request) {
         name: file.name,
         mime: file.type,
       });
+      const now = new Date();
 
       const doc = {
         id,
@@ -141,8 +144,10 @@ export async function POST(request) {
         aiAnalysis: null,
         aiAnalysisStatus: 'pending',
         aiAnalysisCached: false,
-        aiAnalysisQueuedAt: new Date(),
-        createdAt: new Date(),
+        aiAnalysisQueuedAt: now,
+        createdAt: now,
+        uploadedAt: now,
+        ...pendingMagicEligibilityFields(now),
       };
       await db.collection('media').insertOne(doc);
       saved.push(clean(doc));
@@ -159,6 +164,12 @@ export async function POST(request) {
       console.error('[upload] failed:', error?.message);
       skipped.push({ name: file?.name || 'unknown', reason: 'error', message: 'Could not save this file.', retryable: true });
     }
+  }
+
+  if (saved.length) {
+    await markMagicManifestDirty(db, user.id, 'asset_added').catch(error => {
+      console.error('[upload] could not mark Magic manifest dirty:', error?.message);
+    });
   }
 
   if (enrichmentJobs.length) {

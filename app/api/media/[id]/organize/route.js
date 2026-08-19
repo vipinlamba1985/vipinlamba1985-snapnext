@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getUserFromRequest } from '@/lib/auth';
 import { MEDIA_CATEGORIES, SCREENSHOT_TYPES } from '@/lib/media-category';
+import { pendingMagicEligibilityFields } from '@/lib/magic-manifest';
+import { markMagicManifestDirty } from '@/lib/magic-manifest.server';
 import {
   loadActivatedPersonAssignments,
   parseAssignedPersonClusterIds,
@@ -19,6 +21,9 @@ export async function PATCH(request, { params }) {
   const set = {};
   const pull = {};
   const db = await getDb();
+  const now = new Date();
+  let eligibilityChanged = false;
+  let faceAssignmentChanged = false;
 
   if (body.category !== undefined) {
     const category = String(body.category || '').trim().toLowerCase();
@@ -26,6 +31,7 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Invalid category' }, { status: 400 });
     }
     set.userCategory = category;
+    eligibilityChanged = true;
   }
 
   if (body.screenshotType !== undefined) {
@@ -37,6 +43,7 @@ export async function PATCH(request, { params }) {
     set.screenshotTypeSource = 'user';
     set.screenshotTypeConfidence = 1;
     set.screenshotTypeReason = 'Chosen by user';
+    eligibilityChanged = true;
   }
 
   if (body.tags !== undefined) {
@@ -52,6 +59,7 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Invalid person assignment' }, { status: 400 });
     }
     pull.userConfirmedPeople = { clusterId };
+    faceAssignmentChanged = true;
   }
 
   let peopleToAdd = [];
@@ -60,6 +68,7 @@ export async function PATCH(request, { params }) {
       const clusterIds = parseAssignedPersonClusterIds(body.addConfirmedPersonClusterIds);
       const peopleById = await loadActivatedPersonAssignments({ db, userId: user.id, clusterIds });
       peopleToAdd = clusterIds.map((clusterId) => peopleById.get(clusterId));
+      faceAssignmentChanged = peopleToAdd.length > 0;
     } catch (error) {
       if (error instanceof UserConfirmedPeopleError) {
         return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
@@ -72,7 +81,8 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
   }
 
-  const now = new Date();
+  if (eligibilityChanged) Object.assign(set, pendingMagicEligibilityFields(now));
+
   for (const person of peopleToAdd) {
     await db.collection('media').updateOne(
       {
@@ -110,6 +120,15 @@ export async function PATCH(request, { params }) {
   }
 
   if (!result) return NextResponse.json({ error: 'Memory not found' }, { status: 404 });
+
+  if (eligibilityChanged || faceAssignmentChanged) {
+    await markMagicManifestDirty(db, user.id, eligibilityChanged ? 'eligibility_changed' : 'face_assignment_changed').catch((error) => {
+      // The organization mutation already committed. Never turn that success
+      // into a retryable 500 merely because secondary invalidation failed.
+      console.error('[media-organize] could not mark Magic manifest dirty:', error?.message || error);
+    });
+  }
+
   const { _id, ...item } = result;
   return NextResponse.json({ ok: true, item });
 }
