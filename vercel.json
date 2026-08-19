@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/magic-manifest",
-      "schedule": "*/15 * * * *"
+      "schedule": "15 6 * * *"
     },
     {
       "path": "/api/cron/trash-purge",
