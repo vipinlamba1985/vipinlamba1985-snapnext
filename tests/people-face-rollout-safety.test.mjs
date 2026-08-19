@@ -90,15 +90,16 @@ test('regrant cannot bypass unresolved deletion or dormant rollout', () => {
   assert.match(route, /people_rollout_disabled/);
 });
 
-test('Library exposes status and deep-links to authoritative Privacy & security controls', () => {
+test('Magic V1 exposes no face surface and privacy enforcement lives in the manifest GET path', () => {
   const page = read('app/(app)/gallery/magic/page.js');
-  const component = read('components/magic-library/PeopleFaceConsent.js');
-  assert.match(page, /<PeopleFaceConsent \/>/);
-  assert.match(component, /people-face-privacy-status/);
-  assert.match(component, /href="\/privacy-security"/);
-  assert.match(component, /Manage face privacy/);
-  assert.doesNotMatch(component, /method: 'POST'/);
-  assert.doesNotMatch(component, /method: 'DELETE'/);
+  const manifestRoute = read('app/api/magic-library/manifest/route.js');
+  const server = read('lib/magic-manifest.server.js');
+
+  assert.doesNotMatch(page, /PeopleFaceConsent|PeopleMagicBootstrap|PeopleLocalAnalysisBackfill|MagicLibraryGalleryMagic/);
+  assert.match(manifestRoute, /readMagicManifestForUser/);
+  assert.match(manifestRoute, /private, no-store/);
+  assert.match(server, /faceCardsAllowedForState/);
+  assert.match(server, /face_deletion_requests/);
 });
 
 test('local analysis config is gated by independent local consent', () => {
