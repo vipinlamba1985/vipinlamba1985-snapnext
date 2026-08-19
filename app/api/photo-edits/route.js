@@ -68,7 +68,9 @@ export async function POST(request) {
     uploadedAt: now,
     ...pendingMagicEligibilityFields(now),
   });
-  await markMagicManifestDirty(db, user.id, 'asset_added');
+  await markMagicManifestDirty(db, user.id, 'asset_added').catch((error) => {
+    console.error('[photo-edits] could not mark Magic manifest dirty:', error?.message || error);
+  });
 
   return json({ item: { id, name: safeName, size: buffer.length }, message: 'Your enhanced copy is saved in SnapNext.' });
 }
