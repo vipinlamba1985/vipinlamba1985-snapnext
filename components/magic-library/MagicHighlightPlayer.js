@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Music2, Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import { mediaSrc } from '@/lib/api-client';
 import { galleryThumbnailSrc } from '@/lib/gallery-media-client';
@@ -28,17 +28,17 @@ export default function MagicHighlightPlayer({ card, assets = [], onClose }) {
   const active = frames[index] || null;
   const activeIsVideo = active?.kind === 'video';
 
-  function next() {
+  const next = useCallback(() => {
     if (!frames.length) return;
     setVideoFailed(false);
     setIndex(current => (current + 1) % frames.length);
-  }
+  }, [frames.length]);
 
-  function previous() {
+  const previous = useCallback(() => {
     if (!frames.length) return;
     setVideoFailed(false);
     setIndex(current => (current - 1 + frames.length) % frames.length);
-  }
+  }, [frames.length]);
 
   useEffect(() => {
     setIndex(0);
@@ -52,7 +52,7 @@ export default function MagicHighlightPlayer({ card, assets = [], onClose }) {
     if (!playing || activeIsVideo || frames.length < 2) return undefined;
     const timer = window.setTimeout(next, PHOTO_FRAME_MS);
     return () => window.clearTimeout(timer);
-  }, [playing, activeIsVideo, index, frames.length]);
+  }, [playing, activeIsVideo, index, frames.length, next]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -79,7 +79,7 @@ export default function MagicHighlightPlayer({ card, assets = [], onClose }) {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  });
+  }, [next, onClose, previous]);
 
   async function toggleSound() {
     const audio = audioRef.current;
