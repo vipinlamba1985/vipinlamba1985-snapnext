@@ -1,7 +1,7 @@
 export default function BrandLogo({ size = 32, className = '', alt = 'SnapNext AI', priority = false }) {
   return (
     <img
-      src="/logo.svg"
+      src="/logo.png"
       alt={alt}
       width={size}
       height={size}
